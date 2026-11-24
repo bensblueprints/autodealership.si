@@ -1,0 +1,7 @@
+[Unit]
+Description=Check AutoDealership.SI DNS for initial certificate
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=30min
+[Install]
+WantedBy=timers.target

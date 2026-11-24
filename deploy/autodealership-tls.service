@@ -1,0 +1,5 @@
+[Unit]
+Description=Enable TLS after AutoDealership.SI DNS points to this host
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /usr/local/sbin/autodealership-tls.sh

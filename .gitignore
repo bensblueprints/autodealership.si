@@ -1,0 +1,8 @@
+.env
+.env.*
+node_modules/
+showroom-data/
+deploy/data/
+*.sqlite*
+*.pem
+*.key
