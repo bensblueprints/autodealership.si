@@ -235,7 +235,7 @@
     return JSON.stringify(result);
   }
 
-  function openCar(car,book=false,push=true) {
+  function openCar(car,book=false,push=true,notify=true) {
     if(!car)return false;
     const url=new URL("vehicle.html",location.href);
     url.searchParams.set("stock",car.id);
@@ -247,7 +247,7 @@
     }
     listing.onload=()=>{
       activeWorkflow=null;review=null;watchActions(listing.contentDocument);
-      if(!book)announceCar(car);
+      if(!book && notify)announceCar(car);
       const back=listing.contentDocument?.getElementById("back");
       if(back)back.onclick=e=>{e.preventDefault();history.back();};
     };
@@ -377,11 +377,14 @@
               }))
             });
           },
-          open_vehicle({car_id}) {
+          async open_vehicle({car_id}) {
             const car = window.Store.cars().find(item => identifiers(item).includes(normalize(car_id)));
             if (!car) return "Vehicle is no longer available.";
-            openCar(car);
-            return "Opened the full vehicle page. The shopper can request a test drive or confirm availability there.";
+            if(currentCar()?.id!==car.id || !vehicleDoc()?.getElementById("request-drive")){
+              openCar(car,false,true,false);
+              await new Promise(resolve=>listing.addEventListener("load",resolve,{once:true}));
+            }
+            return "The selected vehicle is open. Continue the shopper’s requested action using shopper_action.";
           }
         },
         onMessage: ({message,source}) => {
@@ -393,7 +396,9 @@
         onError: () => {status.textContent = "Voice connection interrupted. Text search is available.";}
       });
       if (canceled) { await connection.endSession(); idle("Voice by ElevenLabs"); return; }
-      session = connection;launcher.textContent="Voice concierge · Open";
+      session = connection;
+      if(currentCar())session.sendContextualUpdate?.("Currently selected vehicle: "+title(currentCar())+", ID "+currentCar().id+". Use shopper_action directly for this listing.");
+      launcher.textContent="Voice concierge · Open";
       connecting = false;
       voice.disabled = false;
       voice.textContent = "End Voice Chat";
