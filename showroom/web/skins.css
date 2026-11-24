@@ -4,6 +4,13 @@
 [data-skin] .carlink,[data-skin] .offer,[data-skin] .page-section,[data-skin] .search,[data-skin] .price-panel,[data-skin] .info-grid>*,[data-skin] .page-card,[data-skin] #dealer-contact{background:var(--card);color:var(--ink);border-color:var(--hair)}
 [data-skin] .top nav a,[data-skin] .top nav button,[data-skin] .section-nav a,[data-skin] .search input,[data-skin] .info-page #intro,[data-skin] .equipment li{color:var(--ink)}
 [data-skin] .hero{color:white}[data-skin] .hero .eyebrow{color:#daf36c}
-[data-skin=pearl] .primary,[data-skin=sand] .primary{color:white}
-[data-skin=pearl] .filters button,[data-skin=sand] .filters button{color:var(--ink)}
-[data-skin=pearl] .filters button[aria-pressed=true],[data-skin=sand] .filters button[aria-pressed=true]{color:white}
+
+[data-skin] .hero .scrim{background:linear-gradient(90deg,#080c0af0 0%,#080c0ad9 35%,#080c0a40 76%),linear-gradient(0deg,#080c0ac4,transparent 65%)}
+[data-skin] .hero .secondary,[data-skin] .slide button,[data-skin] .save,[data-skin] .close,[data-skin] #enlarge{background:#191e1afa;color:#fff}
+[data-skin] .hero .secondary b,[data-skin] .save[aria-pressed=true]{color:#d6fc57}
+[data-skin] .hero .primary{background:var(--acid);color:var(--on-accent)}
+[data-skin] input::placeholder,[data-skin] textarea::placeholder{color:var(--muted);opacity:1}
+[data-skin] #showroom-concierge input::placeholder{color:#bbc2b8}
+[data-skin] #photo-view,[data-skin] .photo-controls,[data-skin] .photo-missing{color-scheme:dark;color:#fff}
+[data-skin] :is(button,input,select,textarea):focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+[data-skin] .hero :focus-visible{outline-color:white}

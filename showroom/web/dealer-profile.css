@@ -1,7 +1,7 @@
 .brand [data-dealer-logo]{display:none;max-width:min(205px,30vw);height:40px;object-fit:contain;object-position:left center}
 .brand.has-dealer-logo [data-dealer-logo]{display:block}
 .brand.has-dealer-logo svg,.brand.has-dealer-logo #brandname{display:none}
-#dealer-contact{border-top:1px solid var(--hair);background:#171a16;padding:clamp(24px,4vw,55px) 5vw;color:var(--ink);scroll-margin-top:20px}
+#dealer-contact{border-top:1px solid var(--hair);background:var(--card);padding:clamp(24px,4vw,55px) 5vw;color:var(--ink);scroll-margin-top:20px}
 #dealer-contact[hidden],.top [data-contact-nav][hidden]{display:none}
 #dealer-contact h2{font-size:clamp(24px,3.5vw,44px);letter-spacing:-.05em;line-height:1.12;margin:0 0 26px;overflow-wrap:anywhere}
 .contact-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(210px,100%),1fr));gap:24px 5vw;max-width:1250px}
@@ -16,11 +16,11 @@
 @media(max-width:680px){.brand [data-dealer-logo]{height:33px;max-width:min(160px,42vw)}.contact-grid{grid-template-columns:1fr}.top nav{overflow-x:auto}.top nav>a,.top nav>button{white-space:nowrap}}
 @media(max-width:680px){.top nav:has([data-contact-nav]){display:flex}}
 .top nav button[hidden],#dealership-page-menu[hidden],#dealer-page-links[hidden]{display:none}
-#dealer-page-links{padding:24px 5vw 40px;border-top:1px solid var(--hair);background:#171a16;color:var(--ink)}
+#dealer-page-links{padding:24px 5vw 40px;border-top:1px solid var(--hair);background:var(--card);color:var(--ink)}
 .dealer-page-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));gap:22px 4vw;max-width:1200px}
 .dealer-page-groups h3{font-size:14px;font-weight:700;margin:0 0 8px;color:var(--ink)}
 .dealer-page-groups ul{list-style:none;padding:0;margin:0}
 .dealer-page-groups a{display:inline-block;font-size:13px;padding:5px 0;color:var(--muted);text-decoration:none;overflow-wrap:anywhere}
 .dealer-page-groups a:hover,.dealer-page-groups a:focus-visible,.dealer-page-groups a[aria-current=page]{color:var(--acid);text-decoration:underline}
-#dealership-page-menu{position:fixed;z-index:95;left:5vw;right:5vw;padding:clamp(16px,3vw,30px);border:1px solid #4c5447;border-radius:10px;background:#1b1f19;box-shadow:0 12px 36px #0009;max-height:65vh;overflow:auto}
+#dealership-page-menu{position:fixed;z-index:95;left:5vw;right:5vw;padding:clamp(16px,3vw,30px);border:1px solid #4c5447;border-radius:10px;background:var(--control);box-shadow:0 12px 36px #0009;max-height:65vh;overflow:auto}
 @media(max-width:680px){.dealer-page-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.dealer-page-groups a{padding:7px 0}}
