@@ -10,7 +10,7 @@
   panel.id = "showroom-concierge";
   panel.hidden = true;
   panel.setAttribute("aria-label", "Showroom assistant");
-  panel.innerHTML = '<header><div><small>PERSONAL SHOPPER</small><h2>Showroom concierge</h2></div><button type="button" class="ac-close" aria-label="Close assistant">×</button></header><div class="ac-log" role="log" aria-live="polite"></div><div class="ac-suggestions"><button type="button">SUVs under $30k</button><button type="button">Show all cars</button></div><form class="ac-form"><input aria-label="Ask about inventory" placeholder="Ask about the inventory…" maxlength="300" required><button aria-label="Send message">Send Message</button></form><footer><button type="button" class="ac-voice">Start Voice Chat</button><span class="ac-status" role="status">Voice by ElevenLabs</span></footer>';
+  panel.innerHTML = '<header><div><small>PERSONAL SHOPPER</small><h2>Showroom concierge</h2></div><button type="button" class="ac-close" aria-label="Minimize concierge">Minimize</button></header><div class="ac-log" role="log" aria-live="polite"></div><div class="ac-suggestions"><button type="button">SUVs under $30k</button><button type="button">Show all cars</button></div><form class="ac-form"><input aria-label="Ask about inventory" placeholder="Ask about the inventory…" maxlength="300" required><button aria-label="Send message">Send Message</button></form><footer><button type="button" class="ac-voice">Start Voice Chat</button><span class="ac-status" role="status">Voice by ElevenLabs</span></footer>';
   document.body.append(panel);
   const log = panel.querySelector(".ac-log");
   const field = panel.querySelector("input");
@@ -66,8 +66,7 @@
   field.addEventListener("input",saveChat);
   function close() {
     panel.hidden = true;
-    if (connecting) canceled = true;
-    if (session) session.endSession().catch(() => {});
+    launcher.textContent=session || connecting ? "Voice concierge · Open" : "Dealer Concierge";
     launcher.setAttribute("aria-expanded","false");launcher.hidden=false; saveChat(); (opener?.offsetParent ? opener : launcher).focus();
   }
   function open() {
@@ -153,6 +152,87 @@
     const id=new URL(listing?.src || location.href).searchParams.get("stock");
     return id && Store.cars().find(c=>c.id===id || c.vin===id);
   }
+  const vehicleDoc=()=>listing ? listing.contentDocument : document;
+  function vehiclePrompt(car){
+    if(!car)return "Welcome to the showroom. What kind of vehicle are you looking for?";
+    const options=["schedule a test drive"];
+    if(Store.settings().options?.payment!==false)options.push("estimate a monthly payment");
+    if(Store.settings().options?.trade!==false)options.push("request a trade-in appraisal");
+    return "You're looking at the "+title(car)+". Would you like to "+new Intl.ListFormat("en",{type:"disjunction"}).format(options)+"?";
+  }
+  function announceCar(car){
+    const prompt=vehiclePrompt(car);
+    addLine(prompt);
+    if(session)session.sendUserMessage("Website navigation event: the shopper selected "+title(car)+", ID "+car.id+". Briefly offer the available next steps: "+prompt);
+  }
+  document.addEventListener("click",e=>{
+    if(!session && !connecting && panel.hidden || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button!==0)return;
+    const a=e.target.closest('a[href]');if(!a)return;
+    const url=new URL(a.href);
+    if(url.origin!==location.origin || !url.pathname.endsWith("/vehicle.html"))return;
+    const car=Store.cars().find(c=>c.id===url.searchParams.get("stock"));
+    if(car){e.preventDefault();openCar(car);}
+  },true);
+  let activeWorkflow;
+  let review=null;
+  function watchActions(doc){
+    doc.addEventListener("click",event=>{
+      const btn=event.target.closest?.("#request-drive,#vehicle-actions [data-retail]");
+      if(!btn)return;
+      const kind=btn.id==="request-drive"?"test_drive":({payment:"financing",trade:"trade_in"})[btn.dataset.retail];
+      if(!kind)return;
+      activeWorkflow=kind;review=null;
+      if(session && event.isTrusted)session.sendUserMessage("Website action: shopper chose "+kind+" for "+title(currentCar())+". Help fill the form by voice. Read it first with shopper_action.");
+    },true);
+  }
+  watchActions(document);
+  async function shopperAction(args){
+    const car=currentCar(),doc=vehicleDoc(),kind=args.workflow;
+    if(!car || !doc || !doc.getElementById("request-drive"))return "Open the selected listing first, then retry.";
+    const booking=kind==="test_drive",finance=kind==="financing";
+    if(!booking && !finance && kind!=="trade_in")return "Unknown workflow.";
+    const dialogSelector=booking?"#drive":".retail-dialog";
+    const trigger=doc.querySelector(booking?"#request-drive":finance?'#vehicle-actions [data-retail="payment"]':'#vehicle-actions [data-retail="trade"]');
+    if(!trigger || trigger.hidden)return "This action is unavailable on this listing.";
+    if(activeWorkflow!==kind || !doc.querySelector(dialogSelector)?.open){
+      doc.querySelectorAll("dialog[open]").forEach(d=>d.close());
+      trigger.click();activeWorkflow=kind;review=null;
+    }
+    const dialog=doc.querySelector(dialogSelector),form=dialog?.querySelector("form");
+    if(!form || form.hidden)return dialog?.innerText || "The form is unavailable.";
+    const allowed=booking?["name","email","phone","slot","message"]:finance?["rate","months","down","residual"]:["name","email","phone","tradeCar","tradeMiles","condition"];
+    if(booking && form.elements.slot.options.length<2){
+      for(let i=0;i<30 && form.elements.slot.options.length<2;i++)await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    for(const key of allowed){
+      if(args[key]==null || args[key]==="")continue;
+      const input=form.elements.namedItem(key);
+      if(!input)return "That field is unavailable: "+key;
+      if(key==="slot" && !Array.from(input.options).some(o=>o.value===args.slot))return "Choose a currently offered time.";
+      input.value=String(args[key]);input.dispatchEvent(new Event("input",{bubbles:true}));
+    }
+    if(finance)return JSON.stringify({vehicle:title(car),terms:Object.fromEntries(new FormData(form)),estimate:form.querySelector("output")?.textContent,disclosure:dialog.querySelector(".retail-note")?.textContent});
+    const missing=allowed.filter(key=>form.elements[key] && !form.elements[key].validity.valid);
+    const details=Object.fromEntries(new FormData(form));
+    const signature=JSON.stringify([car.id,kind,details]);
+    if(args.submit===true){
+      if(missing.length || review!==signature)return "Read the completed details back and ask for confirmation first.";
+      if(form.querySelector("button[type=submit],button.primary")?.disabled)return "Submission is already in progress.";
+      review=null;form.requestSubmit();
+      for(let i=0;i<80;i++){
+        await new Promise(resolve=>setTimeout(resolve,100));
+        if(booking && form.hidden)return doc.getElementById("drive-status").textContent;
+        if(!booking && !form.isConnected)return dialog.innerText;
+        if(!form.querySelector("button")?.disabled)return (booking?doc.getElementById("drive-status"):form.querySelector('[role=status]'))?.textContent || "Review the entries and try again.";
+      }
+      return "Submission is pending. Check the on-screen status before reporting a result.";
+    }
+    review=missing.length?null:signature;
+    const result={vehicle:title(car),details,missing,readyForConfirmation:!missing.length};
+    if(booking){result.timezone="America/Chicago";result.times=Array.from(form.elements.slot.options).filter(o=>o.value).map(o=>[o.value,o.text]);}
+    return JSON.stringify(result);
+  }
+
   function openCar(car,book=false,push=true) {
     if(!car)return false;
     const url=new URL("vehicle.html",location.href);
@@ -164,6 +244,8 @@
       document.body.append(listing);
     }
     listing.onload=()=>{
+      activeWorkflow=null;review=null;watchActions(listing.contentDocument);
+      if(!book)announceCar(car);
       const back=listing.contentDocument?.getElementById("back");
       if(back)back.onclick=e=>{e.preventDefault();history.back();};
     };
@@ -256,7 +338,7 @@
     return sdkLoad;
   }
   function idle(label) {
-    session = undefined;
+    launcher.textContent="Dealer Concierge";session = undefined;
     connecting = false;
     voice.disabled = false;
     voice.textContent = "Start Voice Chat";
@@ -273,13 +355,14 @@
       const client = await sdk();
       if(canceled) { idle("Voice by ElevenLabs"); return; }
       const connection = await client.Conversation.startSession({
-        agentId, connectionType:"websocket",
+        agentId, connectionType:"websocket", dynamicVariables:{showroom_greeting:vehiclePrompt(currentCar())},
         workletPaths: {
           rawAudioProcessor:"vendor/rawAudioProcessor.js",
           audioConcatProcessor:"vendor/audioConcatProcessor.js"
         },
         libsampleratePath:"vendor/libsamplerate.worklet.js",
         clientTools: {
+          shopper_action:shopperAction,
           search_inventory({query}) {
             const matches = search(String(query || "all"));
             return JSON.stringify({
@@ -301,15 +384,14 @@
         },
         onMessage: ({message,source}) => {
           if(!message)return;
-          if(source==="user" && /(?:want|like|can|schedule|book|reserve|arrange).{0,40}test[ -]?drive/i.test(message))handleText(message);
-          else addLine(message,source==="user"?"user":"reply");
+          addLine(message,source==="user"?"user":"reply");
         },
         onModeChange: ({mode}) => { status.textContent = mode === "speaking" ? "Concierge speaking" : "Listening…"; },
         onDisconnect: () => idle("Voice session ended"),
         onError: () => {status.textContent = "Voice connection interrupted. Text search is available.";}
       });
       if (canceled) { await connection.endSession(); idle("Voice by ElevenLabs"); return; }
-      session = connection;
+      session = connection;launcher.textContent="Voice concierge · Open";
       connecting = false;
       voice.disabled = false;
       voice.textContent = "End Voice Chat";
@@ -318,6 +400,10 @@
       idle("Voice unavailable. Check microphone access or type below.");
     }
   });
+  if(currentCar()){
+    invite.querySelector("p").textContent=title(currentCar());
+    invite.querySelector("span").textContent=vehiclePrompt(currentCar());
+  }
   let restored;
   try {restored=JSON.parse(sessionStorage.getItem("showroom-chat"));}catch{}
   if(restored?.messages?.length){for(const m of restored.messages)addLine(m.content,m.kind);field.value=restored.draft||"";if(restored.open)open();saveChat();}
