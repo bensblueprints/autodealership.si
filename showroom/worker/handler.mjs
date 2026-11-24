@@ -41,7 +41,7 @@ async function sticker(vin,provider) {
 export default {
   async fetch(request,env) {
     const url=new URL(request.url);
-    if(["/api/test-drives","/api/test-drives/desk"].includes(url.pathname))return appointmentApi(request,env);
+    if(["/api/test-drives","/api/test-drives/desk","/api/test-drives/notes"].includes(url.pathname))return appointmentApi(request,env);
     if(url.pathname==="/api/dealer-profile")return dealershipProfile(request,env);
     if(!["GET","HEAD"].includes(request.method))return new Response("Method unavailable",{status:405});
     if(url.pathname==="/api/window-sticker")return sticker((url.searchParams.get("vin")||"").toUpperCase(),url.searchParams.get("provider")||"stellantis");

@@ -189,6 +189,11 @@
   async function shopperAction(args){
     const car=currentCar(),doc=vehicleDoc(),kind=args.workflow;
     if(!car || !doc || !doc.getElementById("request-drive"))return "Open the selected listing first, then retry.";
+    if(kind==="customer_notes"){
+      if(!["tradeIn","preferences"].includes(args.note_field) || typeof args.answer!=="string")return "Choose tradeIn or preferences and provide the shopper’s answer.";
+      try{return await doc.defaultView.saveBookedCustomerNote(args.note_field,args.answer);}
+      catch{return "Saving the note failed. Retry before saying it was saved.";}
+    }
     const booking=kind==="test_drive",finance=kind==="financing";
     if(!booking && !finance && kind!=="trade_in")return "Unknown workflow.";
     const dialogSelector=booking?"#drive":".retail-dialog";
@@ -223,7 +228,7 @@
       review=null;form.requestSubmit();
       for(let i=0;i<80;i++){
         await new Promise(resolve=>setTimeout(resolve,100));
-        if(booking && form.hidden)return doc.getElementById("drive-status").textContent;
+        if(booking && form.hidden)return doc.getElementById("drive-status").textContent+" Now ask whether they have a trade-in. Save their answer with customer_notes, then ask what they are looking for specifically.";
         if(!booking && !form.isConnected)return dialog.innerText;
         if(!form.querySelector("button")?.disabled)return (booking?doc.getElementById("drive-status"):form.querySelector('[role=status]'))?.textContent || "Review the entries and try again.";
       }

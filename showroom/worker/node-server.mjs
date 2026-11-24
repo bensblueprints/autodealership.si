@@ -15,8 +15,12 @@ const db=new DatabaseSync(join(dataDir,"appointments.sqlite"));
 db.exec("CREATE TABLE IF NOT EXISTS bookings(key TEXT PRIMARY KEY, body TEXT NOT NULL)");
 const bucket={
   async list({prefix}){return {objects:db.prepare("SELECT key FROM bookings WHERE key LIKE ?").all(prefix+"%"),truncated:false};},
-  async get(key){if(key.startsWith("appointments/")){const row=db.prepare("SELECT body FROM bookings WHERE key=?").get(key);return row?{json:async()=>JSON.parse(row.body)}:null;}const value=stored();return value?{etag:value.etag,json:async()=>value.settings}:null;},
+  async get(key){if(key.startsWith("appointments/") || key.startsWith("drive-notes/")){const row=db.prepare("SELECT body FROM bookings WHERE key=?").get(key);return row?{json:async()=>JSON.parse(row.body)}:null;}const value=stored();return value?{etag:value.etag,json:async()=>value.settings}:null;},
   async put(key,body,options){
+    if(key.startsWith("drive-notes/")){
+      db.prepare("INSERT INTO bookings(key,body) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET body=excluded.body").run(key,body);
+      return {};
+    }
     if(key.startsWith("appointments/"))return db.prepare("INSERT OR IGNORE INTO bookings(key,body) VALUES(?,?)").run(key,body).changes?{}:null;
     const prior=stored(),condition=options.onlyIf;
     if(condition.etagMatches && condition.etagMatches!==prior?.etag)return null;

@@ -194,6 +194,33 @@
   get("request-drive").onclick=()=>{get("drive").showModal();if(!get("leadform").hidden)loadTimes();};
   if(new URLSearchParams(location.search).get("book")==="1")get("request-drive").click();
   document.querySelectorAll("dialog .close").forEach(btn=>btn.onclick=()=>btn.closest("dialog").close());
+  let receipt, nextNote="tradeIn";
+  const follow=get("follow-up");
+  const phone=get("leadform").elements.phone;
+  function checkPhone(){
+    const number=phone.value.trim(),digits=number.replace(/\D/g,"");
+    phone.setCustomValidity(/^\+?[0-9(). \-]+$/.test(number) && /^\d{7,15}$/.test(digits) ? "" : "Enter a callback number with 7 to 15 digits.");
+  }
+  phone.addEventListener("input",checkPhone);
+  async function saveCustomerNote(field,answer){
+    if(!receipt)return "No completed booking is open.";
+    if(!answer?.trim())return "Ask the shopper for their answer.";
+    const response=await fetch("/api/test-drives/notes?vin="+encodeURIComponent(car.vin),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:receipt.slot,token:receipt.token,field,answer})});
+    if(!response.ok)throw Error("The note could not be saved. Please try again.");
+    if(field==="tradeIn" && nextNote==="tradeIn"){
+      nextNote="preferences";get("follow-up-question").textContent="Is there anything specific you’re looking for in your next vehicle?";
+    }
+    if(field==="preferences"){nextNote=null;follow.hidden=true;}
+    follow.elements.answer.value="";
+    return field==="tradeIn"?"Trade-in note saved. Ask what the shopper is looking for specifically.":"Shopping preferences saved in the customer notes.";
+  }
+  window.saveBookedCustomerNote=saveCustomerNote;
+  follow.onsubmit=async event=>{
+    event.preventDefault();const button=follow.querySelector("button");button.disabled=true;
+    try{await saveCustomerNote(nextNote,follow.elements.answer.value);follow.querySelector("[role=status]").textContent="Answer saved.";}
+    catch(e){follow.querySelector("[role=status]").textContent=e.message;}
+    finally{button.disabled=false;}
+  };
   get("leadform").onsubmit=async event=>{
     event.preventDefault();
     const form=event.currentTarget,button=form.querySelector("button");
@@ -207,6 +234,7 @@
       if(!response.ok){if(response.status===409)await loadTimes();throw Error(result.error||"Booking unavailable.");}
       try{await Store.addLead({...data,carId:car.id,source:"Scheduled test drive",message:data.message+" · "+data.slot});}catch{}
       get("drive-status").textContent="Reserved for "+form.elements.slot.selectedOptions[0].text+" Central time. Confirmation "+result.confirmation;
+      receipt={slot:data.slot,token:result.noteToken};follow.hidden=false;
       form.hidden=true;get("drive-title").textContent="Test drive scheduled";
     }catch(error){get("drive-status").textContent=error.message || "Your reservation could not be saved. Please try again.";button.disabled=false;}
   };
