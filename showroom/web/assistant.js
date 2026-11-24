@@ -216,7 +216,9 @@
     const details=Object.fromEntries(new FormData(form));
     const signature=JSON.stringify([car.id,kind,details]);
     if(args.submit===true){
-      if(missing.length || review!==signature)return "Read the completed details back and ask for confirmation first.";
+      if(missing.length)return JSON.stringify({submitted:false,missing,instruction:"Ask only for the missing or invalid fields."});
+      // The agent can deliver the chosen slot and the shopper's confirmation in the same call.
+      if(!booking && review!==signature)return "Read the completed appraisal details back and ask for confirmation first.";
       if(form.querySelector("button[type=submit],button.primary")?.disabled)return "Submission is already in progress.";
       review=null;form.requestSubmit();
       for(let i=0;i<80;i++){
