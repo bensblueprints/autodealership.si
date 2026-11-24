@@ -30,9 +30,33 @@
   }
   const launcher=document.createElement("button");
   launcher.id="concierge-launcher";
-  launcher.textContent="Chat with concierge";
+  launcher.textContent="Dealer Concierge";
+  launcher.setAttribute("aria-controls",panel.id);
+  launcher.setAttribute("aria-expanded","false");
   launcher.onclick=open;
   document.body.append(launcher);
+  const invite=document.createElement("aside");
+  invite.id="concierge-invite";
+  invite.hidden=true;
+  invite.setAttribute("aria-label","Dealer Concierge invitation");
+  invite.innerHTML='<button class="invite-close" type="button" aria-label="Dismiss invitation">×</button><p>Looking for a vehicle?</p><span>Talk to the Dealer Concierge about the inventory or book a test drive.</span><button type="button" class="invite-talk">Start Voice Chat</button>';
+  document.body.append(invite);
+  const inviteKey="dealer-concierge-invited";
+  function dismissInvite(){
+    invite.hidden=true;
+    try{sessionStorage.setItem(inviteKey,"1");}catch{}
+  }
+  invite.querySelector(".invite-close").onclick=()=>{dismissInvite();launcher.focus();};
+  invite.querySelector(".invite-talk").onclick=()=>{open();voice.focus();voice.click();};
+  function scheduleInvite(){
+    setTimeout(()=>{
+      try{if(sessionStorage.getItem(inviteKey))return;}catch{}
+      if(!panel.hidden || document.querySelector("dialog[open]"))return;
+      invite.hidden=false;
+      try{sessionStorage.setItem(inviteKey,"1");}catch{}
+    },1800);
+  }
+  if(document.readyState==="complete")scheduleInvite();else addEventListener("load",scheduleInvite,{once:true});
   let listing;
   const initialUrl=location.href;
   const messages=[];
@@ -44,9 +68,10 @@
     panel.hidden = true;
     if (connecting) canceled = true;
     if (session) session.endSession().catch(() => {});
-    launcher.hidden=false; saveChat(); opener?.focus?.();
+    launcher.setAttribute("aria-expanded","false");launcher.hidden=false; saveChat(); (opener?.offsetParent ? opener : launcher).focus();
   }
   function open() {
+    dismissInvite();launcher.setAttribute("aria-expanded","true");
     opener = document.activeElement;
     panel.hidden = false;
     launcher.hidden=true; saveChat(); field.focus();
@@ -145,7 +170,7 @@
     listing.src=url.href;
     if(push)history.pushState({conciergeCar:car.id,book},"",url);
     if(book || matchMedia("(max-width:650px)").matches){
-      panel.hidden=true;launcher.hidden=false;saveChat();
+      panel.hidden=true;launcher.setAttribute("aria-expanded","false");launcher.hidden=false;saveChat();
     }
     return true;
   }
