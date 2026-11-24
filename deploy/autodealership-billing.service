@@ -1,0 +1,17 @@
+[Unit]
+Description=AutoDealership.SI dealer signup and billing
+After=network-online.target
+[Service]
+DynamicUser=yes
+StateDirectory=autodealership-billing
+StateDirectoryMode=0700
+Environment=BILLING_DATA=/var/lib/autodealership-billing
+EnvironmentFile=-/etc/autodealership-billing.env
+ExecStart=/usr/bin/python3 /opt/autodealership-billing/server.py
+Restart=on-failure
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+[Install]
+WantedBy=multi-user.target

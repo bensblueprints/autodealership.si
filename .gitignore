@@ -6,3 +6,5 @@ deploy/data/
 *.sqlite*
 *.pem
 *.key
+__pycache__/
+billing-data/
