@@ -3,7 +3,7 @@
 <body>
 <header><div class="brand"><span class="mark" aria-hidden="true">C</span><div><b id="brand"></b><small>Dealer workspace</small></div></div><a class="showlink" href="index.html">Open showroom ↗</a></header>
 <main>
-<div class="topline"><div><div class="eyebrow">Dealer dashboard</div><h1>Sales desk<span>.</span></h1></div><a class="quiet" href="/dealer-login">Dealer sign in</a><button id="brandSettings" class="quiet">Store settings</button></div>
+<div class="topline"><div><div class="eyebrow">Dealer dashboard</div><h1>Sales desk<span>.</span></h1></div><a id="desk-login" class="quiet" href="/dealer-login">Dealer sign in</a><button hidden id="desk-users">Staff accounts</button><button hidden id="desk-logout">Sign out</button><button id="brandSettings" class="quiet">Store settings</button></div>
 <section class="metrics" aria-label="Sales metrics"><div><span>Listed vehicles</span><b id="countCars">0</b></div><div><span>Total inquiries</span><b id="countLeads">0</b></div><div><span>Awaiting contact</span><b id="countNew">0</b></div></section>
 <nav aria-label="Workspace sections"><button data-view="banners" aria-pressed="false">Homepage banners</button><button data-view="leads" class="active" aria-pressed="true">Lead inbox</button><button data-view="inventory" aria-pressed="false">Inventory</button><button data-view="pages" aria-pressed="false">Pages</button></nav>
 <section id="leads"><details id="drive-desk"><summary>Scheduled test drives</summary><div aria-live="polite"></div></details><div class="sectionhead"><div><h2>Shopper inquiries</h2><p>Vehicle interest and contact details from your showroom.</p></div><select id="statusFilter" aria-label="Filter leads by status"><option value="">All statuses</option><option>New</option><option>Contacted</option><option>Appointment set</option><option>Closed</option></select></div><div id="leadList"></div></section>
@@ -51,6 +51,6 @@ document.querySelector("#drive-desk").addEventListener("toggle",async function()
       }
       out.append(notes);
     }}catch(e){out.textContent=e.message;}});
-</script></body></html>
+</script><script src="dealer-users.js"></script></body></html>
 
 

@@ -1,5 +1,6 @@
 import {AsyncLocalStorage} from "node:async_hooks";
-import {createHash} from "node:crypto";
+import {promisify} from "node:util";
+import {scrypt,randomBytes,createHash} from "node:crypto";
 import {bookingDatabase} from "./booking-database.mjs";
 import {timingSafeEqual} from "node:crypto";
 import {createServer} from "node:http";
@@ -23,6 +24,10 @@ const db={async query(sql,args){
 }};
 await db.query("CREATE TABLE IF NOT EXISTS homepage_banners (id integer PRIMARY KEY, revision integer NOT NULL, config jsonb NOT NULL)");
 await db.query("CREATE TABLE IF NOT EXISTS bhph_offers(vehicle text PRIMARY KEY, revision integer NOT NULL, offer jsonb NOT NULL)");
+const passwordHash=promisify(scrypt);
+await pool.query(`CREATE TABLE IF NOT EXISTS public.dealer_users(site text NOT NULL,email text NOT NULL,salt text NOT NULL,hash text NOT NULL,active boolean NOT NULL DEFAULT true,PRIMARY KEY(site,email));
+CREATE TABLE IF NOT EXISTS public.dealer_sessions(token text PRIMARY KEY,site text NOT NULL,email text NOT NULL,expires timestamptz NOT NULL);
+CREATE TABLE IF NOT EXISTS public.dealer_login_attempts(site text NOT NULL,ip text NOT NULL,attempts integer NOT NULL,started timestamptz NOT NULL,PRIMARY KEY(site,ip))`);
 function publishedOffer(row){
   if(!row.offer.enabled)return {cash:row.offer.cash,revision:row.revision};
   return {...row.offer,revision:row.revision};
@@ -99,7 +104,13 @@ createServer(async(req,res)=>{
     const signed=!!process.env.DEALER_PASSWORD && supplied.length===expected.length && timingSafeEqual(supplied,expected);
     const desk=tenant && prefix && /(?:^|; )client_desk=([a-zA-Z0-9_-]{43})(?:;|$)/.exec(req.headers.cookie||"");
     const delegated=desk && (await pool.query("SELECT 1 FROM public.client_desk_sessions s JOIN public.client_sites t USING(slug) LEFT JOIN public.client_engineers e ON e.id=s.engineer WHERE s.token=$1 AND s.slug=$2 AND s.expires>now() AND (s.engineer IS NULL OR (e.active AND t.engineer=s.engineer))",[createHash("sha256").update(desk[1]).digest("hex"),tenant.slug])).rowCount>0;
-    const privateAdmin=tenant ? delegated || (createHash("sha256").update(supplied).digest("hex")===tenant.admin_hash) : signed || ["localhost","127.0.0.1","[::1]"].includes(base.hostname) && !req.headers.forwarded && !req.headers["x-forwarded-for"];
+    const site=tenant?.id||"demo";
+    const currentToken=/(?:^|; )dealer_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie||"")?.[1];
+    const tokenHash=currentToken && createHash("sha256").update(currentToken).digest("hex");
+    const account=tokenHash && (await pool.query("SELECT s.email FROM public.dealer_sessions s LEFT JOIN public.dealer_users u ON u.site=s.site AND u.email=s.email WHERE s.token=$1 AND s.site=$2 AND s.expires>now() AND (s.email='dealer' OR u.active)",[tokenHash,site])).rows[0];
+    const privileged=tenant ? delegated || (createHash("sha256").update(supplied).digest("hex")===tenant.admin_hash) : signed || ["localhost","127.0.0.1","[::1]"].includes(base.hostname) && !req.headers.forwarded && !req.headers["x-forwarded-for"];
+    const privateAdmin=privileged || !!account;
+    const managesUsers=privileged || account?.email==="dealer";
     const headers=new Headers();
     for(const [k,v] of Object.entries(req.headers))if(typeof v==="string"&&!k.startsWith("oai-"))headers.set(k,v);
     let body;
@@ -112,6 +123,51 @@ createServer(async(req,res)=>{
       body=Buffer.concat(chunks);
     }
     const route=new URL(req.url,base);
+    if(route.pathname.startsWith("/api/dealer-auth/")){
+      const op=route.pathname.split("/").pop();
+      const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
+      if(req.method==="GET" && op==="me")return reply(200,{signedIn:!!privateAdmin,managesUsers:!!managesUsers});
+      if(req.method==="GET" && op==="users" && managesUsers)return reply(200,(await pool.query("SELECT email,active FROM public.dealer_users WHERE site=$1 ORDER BY email",[site])).rows);
+      if(req.method!=="POST" || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Sign in required."});
+      let d;try{d=JSON.parse(body);}catch{return reply(400,{error:"Invalid request."});}
+      const email=String(d.email||"").trim().toLowerCase(),pw=String(d.password||"");
+      const cookie=(token,seconds)=>"dealer_session="+token+"; Path="+(prefix||"")+"/; HttpOnly; Secure; SameSite=Strict; Max-Age="+seconds;
+      if(op==="signin"){
+        const ip=req.headers["x-forwarded-for"]||req.socket.remoteAddress;
+        const attempts=await pool.query("INSERT INTO public.dealer_login_attempts VALUES($1,$2,1,now()) ON CONFLICT(site,ip) DO UPDATE SET attempts=CASE WHEN dealer_login_attempts.started<now()-interval '10 minutes' THEN 1 ELSE dealer_login_attempts.attempts+1 END,started=CASE WHEN dealer_login_attempts.started<now()-interval '10 minutes' THEN now() ELSE dealer_login_attempts.started END RETURNING attempts",[site,ip]);
+        if(attempts.rows[0].attempts>20)return reply(429,{error:"Too many attempts. Try again in ten minutes."});
+        if(!pw || pw.length>256 || email.length>254)return reply(403,{error:"Check your login details."});
+        let valid=false;
+        if(email==="dealer"){
+          const basic="Basic "+Buffer.from("dealer:"+pw).toString("base64");
+          const hash=tenant?.admin_hash || createHash("sha256").update(expected).digest("hex");
+          valid=timingSafeEqual(createHash("sha256").update(basic).digest(),Buffer.from(hash,"hex"));
+        }else{
+          const u=(await pool.query("SELECT salt,hash FROM public.dealer_users WHERE site=$1 AND email=$2 AND active",[site,email])).rows[0];
+          const hash=await passwordHash(pw,u?.salt||"unknown-dealer-user",32);
+          valid=u && timingSafeEqual(hash,Buffer.from(u.hash,"hex"));
+        }
+        if(!valid)return reply(403,{error:"Check your login details."});
+        const token=randomBytes(32).toString("hex");
+        await pool.query("INSERT INTO public.dealer_sessions VALUES($1,$2,$3,now()+interval '12 hours')",[createHash("sha256").update(token).digest("hex"),site,email]);
+        res.setHeader("Set-Cookie",cookie(token,43200));return reply(200,{});
+      }
+      if(op==="logout"){
+        if(tokenHash)await pool.query("DELETE FROM public.dealer_sessions WHERE token=$1",[tokenHash]);
+        if(delegated)await pool.query("DELETE FROM public.client_desk_sessions WHERE token=$1",[createHash("sha256").update(desk[1]).digest("hex")]);
+        res.setHeader("Set-Cookie",cookie("",0));return reply(200,{});
+      }
+      if(!managesUsers)return reply(403,{error:"Dealer administrator access required."});
+      if(op==="users"){
+        if(!/^[^ @]+@[^ @]+\.[^ @]+$/.test(email)||email.length>254||pw.length<14||pw.length>128)return reply(400,{error:"Enter a staff email and a password of 14 to 128 characters."});
+        const salt=randomBytes(16).toString("hex"),hash=await passwordHash(pw,salt,32);
+        const r=await pool.query("INSERT INTO public.dealer_users(site,email,salt,hash) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING email",[site,email,salt,hash.toString("hex")]);
+        return r.rowCount?reply(201,{}):reply(409,{error:"This user already exists."});
+      }
+      if(op==="disable"){await pool.query("UPDATE public.dealer_users SET active=false WHERE site=$1 AND email=$2",[site,email]);return reply(200,{});}
+      return reply(404,{});
+    }
+    if(tenant && ["/dealer","/dealer.html"].includes(route.pathname) && !privateAdmin){res.writeHead(302,{Location:prefix+"/dealer-login","Cache-Control":"no-store"}).end();return;}
     if(route.pathname==="/api/bhph"){
       if(tenant && !tenant.bhph){res.writeHead(req.method==="GET"?200:403,{"Content-Type":"application/json"}).end("{}");return;}
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
@@ -190,10 +246,7 @@ createServer(async(req,res)=>{
         await db.query("UPDATE homepage_banners SET config=$1,revision=revision+1 WHERE id=1 AND revision=$2 RETURNING revision",[config,data.revision]);
       return saved.rowCount?reply(200,saved.rows[0]):reply(409,{error:"Another editor saved changes. Reload the dashboard before editing again."});
     }
-    if(route.pathname==="/dealer-login"){
-      if(!privateAdmin){res.writeHead(401,{"WWW-Authenticate":'Basic realm="Dealer dashboard"',"Cache-Control":"no-store"}).end();return;}
-      res.writeHead(302,{Location:prefix+"/dealer","Cache-Control":"no-store"}).end();return;
-    }
+    if(route.pathname==="/dealer-login")req.url="/dealer-signin.html";
     if(route.pathname==="/api/inventory-status"){
       res.setHeader("Cache-Control","no-store");res.setHeader("Content-Type","application/json");
       if(req.method==="GET"){const result=await db.query("SELECT vin,status FROM inventory_status");res.end(JSON.stringify(Object.fromEntries(result.rows.map(r=>[r.vin,r.status]))));return;}

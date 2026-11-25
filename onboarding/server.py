@@ -20,6 +20,7 @@ with connect() as db:
         voice boolean NOT NULL,agent_id text,domain text NOT NULL DEFAULT '',
         verified_domain text UNIQUE,agent_state text NOT NULL DEFAULT 'pending',
         created_at timestamptz NOT NULL DEFAULT now())""")
+    db.execute("CREATE TABLE IF NOT EXISTS public.owner_sessions(token text PRIMARY KEY,expires timestamptz NOT NULL)")
     db.execute("""CREATE TABLE IF NOT EXISTS public.client_engineers (
         id uuid PRIMARY KEY,email text UNIQUE NOT NULL,password text,invite_hash text UNIQUE,invite_expires timestamptz,active boolean NOT NULL DEFAULT true,
         failures integer NOT NULL DEFAULT 0,last_failure timestamptz);
@@ -67,7 +68,7 @@ class Handler(BaseHTTPRequestHandler):
         body=data if html else json.dumps(data,default=str).encode()
         self.send_response(code);self.send_header("Content-Type","text/html; charset=utf-8" if html else "application/json")
         self.send_header("Cache-Control","no-store");self.send_header("X-Frame-Options","DENY")
-        if code==401 and self.path=="/onboarding/owner":self.send_header("WWW-Authenticate",'Basic realm="AutoDealership.SI owner"')
+
         if getattr(self,"session_cookie",None):self.send_header("Set-Cookie",self.session_cookie)
         self.end_headers();self.wfile.write(body)
     def identity(self):
@@ -76,16 +77,19 @@ class Handler(BaseHTTPRequestHandler):
         c=SimpleCookie();c.load(self.headers.get("Cookie",""));v=c.get("onboarding_session")
         if v:
             with connect() as db:
+                if db.execute("SELECT 1 FROM public.owner_sessions WHERE token=%s AND expires>now()",(digest(v.value),)).fetchone():return "owner"
                 row=db.execute("SELECT e.id FROM public.engineer_sessions s JOIN public.client_engineers e ON e.id=s.engineer WHERE token=%s AND expires>now() AND e.active",(digest(v.value),)).fetchone()
             if row:return row["id"]
         return None
     def do_GET(self):
-        if self.path not in ["/onboarding/","/onboarding/owner","/onboarding/sites","/onboarding/team"]:return self.reply(404,{})
+        if self.path not in ["/onboarding/","/onboarding/owner","/onboarding/admin","/onboarding/sites","/onboarding/team"]:return self.reply(404,{})
         who=self.identity()
         if not who:
+            if self.path in ["/onboarding/admin","/onboarding/owner"]:return self.reply(200,(ROOT/"owner.html").read_bytes(),True)
             if self.path=="/onboarding/":return self.reply(200,(ROOT/"signin.html").read_bytes(),True)
             return self.reply(401,{"error":"Sign in required."})
-        if self.path in ("/onboarding/","/onboarding/owner"):return self.reply(200,(ROOT/"wizard.html").read_bytes(),True)
+        if self.path in ("/onboarding/owner","/onboarding/admin") and who!="owner":return self.reply(200,(ROOT/"owner.html").read_bytes(),True)
+        if self.path in ("/onboarding/","/onboarding/owner","/onboarding/admin"):return self.reply(200,(ROOT/"wizard.html").read_bytes(),True)
         if self.path=="/onboarding/team":
             if who!="owner":return self.reply(200,{"owner":False})
             with connect() as db:team=db.execute("SELECT email,id,active,password IS NOT NULL AS joined FROM public.client_engineers ORDER BY email").fetchall()
@@ -100,10 +104,17 @@ class Handler(BaseHTTPRequestHandler):
             size=int(self.headers.get("Content-Length",0))
             if not 0<size<8000:raise ValueError("Invalid request.")
             data=json.loads(self.rfile.read(size))
+            if self.path=="/onboarding/owner-signin":
+                if data.get("username")!="owner" or not hmac.compare_digest(str(data.get("password","")).encode(),os.environ["CLIENT_OWNER_PASSWORD"].encode()):return self.reply(403,{"error":"Check your owner username and password."})
+                token=secrets.token_urlsafe(32)
+                with connect() as db:db.execute("INSERT INTO public.owner_sessions VALUES(%s,now()+interval '8 hours')",(digest(token),))
+                self.session_cookie="onboarding_session="+token+"; Path=/onboarding/; Secure; HttpOnly; SameSite=Strict; Max-Age=28800"
+                return self.reply(200,{})
             if self.path=="/onboarding/logout":
                 c=SimpleCookie();c.load(self.headers.get("Cookie",""))
                 if "onboarding_session" in c:
-                    with connect() as db:db.execute("DELETE FROM public.engineer_sessions WHERE token=%s",(digest(c["onboarding_session"].value),))
+                    with connect() as db:
+                        for table in ("engineer_sessions","owner_sessions"):db.execute("DELETE FROM public."+table+" WHERE token=%s",(digest(c["onboarding_session"].value),))
                 self.session_cookie="onboarding_session=; Path=/onboarding/; Secure; HttpOnly; SameSite=Strict; Max-Age=0"
                 return self.reply(200,{})
             if self.path in ["/onboarding/claim","/onboarding/signin"]:
@@ -137,7 +148,11 @@ class Handler(BaseHTTPRequestHandler):
                         if not row:raise ValueError("This engineer already has an account.")
                         result={"url":ORIGIN+"/onboarding/#invite="+token}
                     elif self.path.endswith("/assign"):
-                        db.execute("UPDATE public.client_sites SET engineer=%s WHERE slug=%s",(data["engineer"] or None,data["slug"]));result={}
+                        engineer=data["engineer"] or None
+                        if engineer and not db.execute("SELECT 1 FROM public.client_engineers WHERE id=%s AND active",(engineer,)).fetchone():raise ValueError("Choose an active engineer.")
+                        if not db.execute("UPDATE public.client_sites SET engineer=%s WHERE slug=%s RETURNING id",(engineer,data["slug"])).fetchone():raise ValueError("Client no longer exists.")
+                        db.execute("DELETE FROM public.client_desk_sessions WHERE slug=%s AND engineer IS NOT NULL AND engineer IS DISTINCT FROM %s",(data["slug"],engineer))
+                        result={}
                     else:
                         db.execute("UPDATE public.client_engineers SET active=false,invite_hash=NULL WHERE id=%s",(data["engineer"],));result={}
                 return self.reply(200,result)
