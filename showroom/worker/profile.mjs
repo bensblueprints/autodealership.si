@@ -43,7 +43,13 @@ function validateProfile(input){
     if("enabled" in page){if(typeof page.enabled!=="boolean")throw Error("Invalid page visibility.");entry.enabled=page.enabled;}
     pages[key]=entry;
   }
-  return {dealerName:input.dealerName.trim(),financingEnabled:input.financingEnabled!==false,profile,pages};
+  const options={};
+  for(const key of "year make model trim features fuel transmission miles engine color body doors location status price cash finance lease compare pricing payment trade availability financingEnabled".split(" ")){
+    if(typeof input.options?.[key]==="boolean")options[key]=input.options[key];
+  }
+  const tradeUrl=input.tradeUrl||"";
+  if(tradeUrl){const u=new URL(tradeUrl);if(u.protocol!=="https:" || u.username || u.password || tradeUrl.length>4096)throw Error("Enter a valid trade provider URL.");}
+  return {options,tradeUrl,dealerName:input.dealerName.trim(),financingEnabled:input.financingEnabled!==false,profile,pages};
 }
 async function dealershipProfile(request,env){
   const bucket=env?.BUCKET;

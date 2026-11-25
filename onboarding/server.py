@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 import psycopg
-from psycopg import sql
+from tenant_database import provision
 from psycopg.rows import dict_row
 
 ROOT=Path(__file__).parent
@@ -20,6 +20,7 @@ with connect() as db:
         voice boolean NOT NULL,agent_id text,domain text NOT NULL DEFAULT '',
         verified_domain text UNIQUE,agent_state text NOT NULL DEFAULT 'pending',
         created_at timestamptz NOT NULL DEFAULT now())""")
+    db.execute("ALTER TABLE public.client_sites ADD COLUMN IF NOT EXISTS database_name text UNIQUE")
     db.execute("CREATE TABLE IF NOT EXISTS public.owner_sessions(token text PRIMARY KEY,expires timestamptz NOT NULL)")
     db.execute("""CREATE TABLE IF NOT EXISTS public.client_engineers (
         id uuid PRIMARY KEY,email text UNIQUE NOT NULL,password text,invite_hash text UNIQUE,invite_expires timestamptz,active boolean NOT NULL DEFAULT true,
@@ -36,18 +37,11 @@ def create(data,engineer=None):
     if not 1<=len(name)<=100 or not 14<=len(password)<=128 or type(rate) is not int or not 0<=rate<=100000:raise ValueError("Check the dealership name, monthly rate and dealer password (14 characters minimum).")
     domain=data.get("domain","").strip().lower()
     if domain and (not re.fullmatch(r"(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}",domain) or domain.endswith(".autodealership.si") or domain=="autodealership.si"):raise ValueError("Enter the future custom hostname without https://.")
-    ident=uuid.uuid4();schema=sql.Identifier("client_"+ident.hex)
+    ident=uuid.uuid4()
     auth="Basic "+base64.b64encode(("dealer:"+password).encode()).decode()
     with connect() as db:
         db.execute("INSERT INTO public.client_sites(id,slug,name,admin_hash,rate,bhph,voice,domain,engineer) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)",(ident,slug,name,hashlib.sha256(auth.encode()).hexdigest(),rate,data["bhph"] is True,data["voice"] is True,domain,engineer))
-        db.execute(sql.SQL("CREATE SCHEMA {}").format(schema))
-        db.execute(sql.SQL("SET LOCAL search_path TO {}").format(schema))
-        for table in ["appointments","inventory_status","bhph_offers","homepage_banners"]:
-            t=sql.Identifier(table)
-            db.execute(sql.SQL("CREATE TABLE {} (LIKE public.{} INCLUDING ALL)").format(t,t))
-        db.execute("CREATE TABLE client_cars(vin text PRIMARY KEY,body jsonb NOT NULL)")
-        db.execute("CREATE TABLE client_profile(id integer PRIMARY KEY,settings jsonb NOT NULL,etag text NOT NULL)")
-        db.execute("INSERT INTO client_profile VALUES(1,%s,%s)",(json.dumps({"dealerName":name,"profile":{"skin":"midnight"},"pages":{}}),uuid.uuid4().hex))
+        provision(db,ident,name)
     return {"slug":slug}
 def provision_agent(slug):
     with connect() as db:
@@ -120,7 +114,11 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=="/onboarding/clerk-exchange":
                 from clerk_auth import verified_identity
                 try:subject,email=verified_identity(data["token"])
-                except Exception:return self.reply(403,{"error":"Please sign in with a verified work email."})
+                except (OSError,HTTPError):
+                    return self.reply(503,{"error":"The identity provider is temporarily unavailable. Please try again."})
+                except Exception as error:
+                    print("Staff sign-in verification:",type(error).__name__,flush=True)
+                    return self.reply(403,{"error":"We could not verify this session. Try again or sign in with your verified work email."})
                 token=secrets.token_urlsafe(32)
                 with connect() as db:
                     sales_admin=email=="sales@autodealership.si" and db.execute("SELECT 1 FROM public.staff_clerk_links WHERE principal=%s AND subject=%s",("owner:"+email,subject)).fetchone()

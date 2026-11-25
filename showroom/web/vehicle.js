@@ -246,7 +246,7 @@
       const response=await fetch(bookingUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
       const result=await response.json();
       if(!response.ok){if(response.status===409)await loadTimes();throw Error(result.error||"Booking unavailable.");}
-      let localLead;try{localLead=await Store.addLead({...data,carId:car.id,source:"Scheduled test drive",message:data.message+" · "+data.slot});}catch{}
+      let localLead;try{if(!window.postgresInventory)localLead=await Store.addLead({...data,carId:car.id,source:"Scheduled test drive",message:data.message+" · "+data.slot});}catch{}
       get("drive-status").textContent="Reserved for "+form.elements.slot.selectedOptions[0].text+" ("+get("drive-timezone").textContent+"). Confirmation "+result.confirmation;
       receipt={leadId:localLead?.id,slot:data.slot,token:result.noteToken};follow.hidden=false;
       form.hidden=true;get("drive-title").textContent="Test drive scheduled";

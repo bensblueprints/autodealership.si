@@ -77,7 +77,7 @@
     view=null;window.dispatchEvent(new Event("showroom:update"));
   }
   const inventoryReady=refreshInventoryStatus().catch(()=>{});
-  if(window.clientSite && document.getElementById("cards")){
+  if(window.postgresInventory && (document.getElementById("cards") || document.getElementById("inventoryList"))){
     let pending=false;
     async function syncCatalog(){
       if(pending || document.hidden)return;
@@ -89,6 +89,7 @@
         catalogById.clear();
         for(const car of records)catalogById.set(car.id,car);
         view=null;
+        window.dispatchEvent(new Event("showroom:update"));
         await refreshInventoryStatus();
       }catch{/* Retry on the next visit or refresh interval. */}
       finally{pending=false;}
@@ -112,14 +113,27 @@
       if(!existing)added.unshift(baseId);
       byId.set(baseId,{...existing,...record,id:baseId});
     }
-    for(const car of userRecordsFromOldLot())merge(car);
-    for(const key of Object.keys(localStorage)){
+    if(!window.postgresInventory)for(const car of userRecordsFromOldLot())merge(car);
+    if(!window.postgresInventory)for(const key of Object.keys(localStorage)){
       if(key.startsWith(prefix+"vehicle:"))merge(JSON.parse(localStorage.getItem(key)));
     }
     view=[...added,...catalogById.keys()].map(id=>{const car=byId.get(id),offer=offers[car.vin||id];return offer?{...car,price:offer.cash/100,bhph:offer.enabled && financingAllowed(car)?offer:null}:car;});
     return view;
   }
-  const leads = () => Object.keys(localStorage).filter(k=>k.startsWith(prefix+"lead:"))
+  let dealerLeads=[];
+  async function inquiryRequest(method,input){
+    const res=await fetch("/api/inquiries",{method,cache:"no-store",headers:{"Content-Type":"application/json"},body:input?JSON.stringify(input):undefined});
+    if(!res.ok)throw Error("Could not "+(method==="GET"?"load":"save")+" the inquiry.");
+    return res.json();
+  }
+  async function loadLeads(){
+    if(window.postgresInventory && document.getElementById("leadList")){
+      dealerLeads=await inquiryRequest("GET");
+      window.dispatchEvent(new Event("showroom:update"));
+    }
+  }
+  loadLeads().catch(()=>{});window.addEventListener("focus",()=>loadLeads().catch(()=>{}));
+  const leads = () => window.postgresInventory ? dealerLeads : Object.keys(localStorage).filter(k=>k.startsWith(prefix+"lead:"))
     .map(k=>JSON.parse(localStorage.getItem(k))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
   function addLead(input) {
     const car = cars().find(c=>c.id===input.carId);
@@ -127,16 +141,18 @@
     const name=String(input.name || "").trim(), email=String(input.email || "").trim(), phone=String(input.phone || "").trim();
     if (!name || !(email || phone)) throw new Error("Please enter a name and an email or phone number.");
     const lead={id:crypto.randomUUID(),createdAt:new Date().toISOString(),status:"New",carId:car.id,car:{id:car.id,vin:car.vin,year:car.year,make:car.make,model:car.model,stock:car.stock,image:car.image?.startsWith("data:")?"":car.image||""},name,email,phone,message:String(input.message || "").trim(),source:String(input.source || "Showroom inquiry")};
+    if(window.postgresInventory)return inquiryRequest("POST",input);
     write("lead:"+lead.id,lead);
     return lead;
   }
-  function setStatus(id,status) {
+  async function setStatus(id,status) {
+    if(window.postgresInventory){await inquiryRequest("PUT",{id,status});await loadLeads();return;}
     if (!["New","Contacted","Appointment set","Closed"].includes(status)) return;
     const lead=read("lead:"+id,null);
     if (lead) write("lead:"+id,{...lead,status});
   }
   async function saveCar(car) {
-    if(window.clientSite){
+    if(window.postgresInventory){
       const res=await fetch("/api/client-inventory",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(car)});
       if(!res.ok){
         const detail=await res.json().catch(()=>({}));
@@ -168,14 +184,14 @@
   function settings() {
     const stored=read("settings",{});
     return {dealerName:window.clientSite?.name||"Capital City CDJR",tradeUrl:"",...stored,...sharedProfile,
-      profile:{...(window.clientSite?{}:defaultProfile),...(sharedProfile?.profile||stored.profile)},options:{...defaultOptions,...stored.options,financingEnabled:financingAllowed()}};
+      profile:{...(window.clientSite?{}:defaultProfile),...(sharedProfile?.profile||stored.profile)},options:{...defaultOptions,...stored.options,...sharedProfile?.options,financingEnabled:financingAllowed()}};
   }
   async function saveSettings(changes) {
     await profileReady;
     const prior=settings();
     if(changes.profile || changes.dealerName || changes.pages){
       const response=await fetch("/api/dealer-profile",{method:"PUT",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({revision:profileRevision,financingEnabled:changes.options?.financingEnabled??financingAllowed(),dealerName:changes.dealerName||prior.dealerName,profile:{...prior.profile,...changes.profile},pages:changes.pages??prior.pages??{}})});
+        body:JSON.stringify({tradeUrl:changes.tradeUrl??prior.tradeUrl,options:changes.options??prior.options,revision:profileRevision,financingEnabled:changes.options?.financingEnabled??financingAllowed(),dealerName:changes.dealerName||prior.dealerName,profile:{...prior.profile,...changes.profile},pages:changes.pages??prior.pages??{}})});
       const result=await response.json();
       if(!response.ok){if(response.status===409)await loadProfile();throw Error(result.error||"Could not save profile.");}
       profileRead++;view=null;sharedProfile=result.settings;profileRevision=result.revision;

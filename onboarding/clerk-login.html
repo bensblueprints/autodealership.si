@@ -1,30 +1,35 @@
 <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff sign-in · AutoDealership.SI</title>
 <style>body{background:#121620;color:#f5f6fa;font:16px system-ui;margin:8vh auto;padding:24px;max-width:480px}button,input{font:inherit;padding:12px;border-radius:8px}button{cursor:pointer}a{color:#95c9ff}</style>
-<a href="https://autodealership.si/" aria-label="AutoDealership.SI home"><img src="https://autodealership.si/brand/logo-dark.webp" alt="AutoDealership.SI" width="186" height="62" style="display:block;width:min(186px,39vw);height:auto"></a><h1>Staff sign-in</h1><p id="status">Connecting to Clerk…</p><div id="auth"></div>
+<a href="https://autodealership.si/" aria-label="AutoDealership.SI home"><img src="https://autodealership.si/brand/logo-dark.webp" alt="AutoDealership.SI" width="186" height="62" style="display:block;width:min(186px,39vw);height:auto"></a><h1>Staff sign-in</h1><p id="status" role="status">Connecting to Clerk…</p><div id="auth"></div><div id="recovery" hidden><button id="retry" type="button">Try again</button> <button id="switch" type="button">Sign in with another account</button></div>
+<p><a id="hosted" href="https://accounts.autodealership.si/sign-in?redirect_url=https%3A%2F%2Fautodealership.si%2Fadmin">Open secure sign-in in a full page</a></p>
 <script>
 const params=new URLSearchParams(location.search);
 const site=params.get("site");
 const role=site?"platform":params.get("role")==="owner"?"owner":"engineer";
 const statusText=document.querySelector("#status");
-function failed(){statusText.textContent="Could not connect to Clerk. Please reload to try again."}
+const recovery=document.querySelector("#recovery");
+function problem(message){statusText.textContent=message;recovery.hidden=false;document.querySelector("#switch").hidden=!window.Clerk?.session;}
+function failed(){problem("Could not connect to Clerk. Try again to reconnect.");}
+const returnUrl=new URL(location.pathname+location.search,location.origin).href;
+document.querySelector("#hosted").href="https://accounts.autodealership.si/sign-in?redirect_url="+encodeURIComponent(returnUrl);
+document.querySelector("#retry").onclick=()=>location.reload();
+document.querySelector("#switch").onclick=async()=>{try{await Clerk.signOut({redirectUrl:returnUrl});}catch{failed();}};
 async function enter(){
- const response=await fetch("/onboarding/clerk-exchange",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:await Clerk.session.getToken(),role})});
+ const response=await fetch("/onboarding/clerk-exchange",{method:"POST",signal:AbortSignal.timeout(20000),headers:{"Content-Type":"application/json"},body:JSON.stringify({token:await Clerk.session.getToken({skipCache:true}),role})});
  const result=await response.json();
- if(!response.ok){statusText.textContent=result.error||"Access denied.";return}
+ if(!response.ok){problem(result.error||"Access denied.");return}
  if(site){
-   const desk=await fetch("/onboarding/open-desk",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug:site})});
+   const desk=await fetch("/onboarding/open-desk",{method:"POST",signal:AbortSignal.timeout(20000),headers:{"Content-Type":"application/json"},body:JSON.stringify({slug:site})});
    const target=await desk.json();
-   if(!desk.ok){statusText.textContent=target.error||"This dealership is unavailable.";return}
+   if(!desk.ok){problem(target.error||"This dealership is unavailable.");return}
    location.replace(target.url);return
  }
  location.replace(role==="owner"?"/onboarding/admin":"/onboarding/");
 }
 async function start(){try{await Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});if(Clerk.session){if(location.pathname.endsWith("/clerk-team")){
- const memberships=await Clerk.user.getOrganizationMemberships();
- const match=memberships.data.find(m=>m.organization.id==="org_3MbiCG7rWv2mpK2XJJX7FGnqZxg");
- if(!match){statusText.textContent="Accept your Southern Ohio invitation to access this team.";return}
- await Clerk.setActive({organization:match.organization.id});
- statusText.textContent="Southern Ohio Auto Sales";Clerk.mountOrganizationProfile(document.querySelector("#auth"),{routing:"hash"});return
+ const organization=params.get("org")||"org_3MbiCG7rWv2mpK2XJJX7FGnqZxg";
+ try{await Clerk.setActive({organization});}catch{problem("Use the account invited to this dealership, or accept its invitation first.");return}
+ statusText.textContent="Dealership staff";Clerk.mountOrganizationProfile(document.querySelector("#auth"),{routing:"hash"});return
  }await enter();return}statusText.textContent="Use your work email.";Clerk.mountSignIn(document.querySelector("#auth"),{appearance:{options:{logoImageUrl:"https://autodealership.si/brand/logo-white.webp"}},routing:"hash",forceRedirectUrl:location.href,signUpForceRedirectUrl:location.href})}catch(e){failed()}}
 </script>
 

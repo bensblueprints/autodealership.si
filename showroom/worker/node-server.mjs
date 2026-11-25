@@ -1,3 +1,6 @@
+import vm from "node:vm";
+import {gzip} from "node:zlib";
+import pg from "pg";
 import {AsyncLocalStorage} from "node:async_hooks";
 import {promisify} from "node:util";
 import {scrypt,randomBytes,createHash,createPublicKey,verify} from "node:crypto";
@@ -5,7 +8,7 @@ import {bookingDatabase} from "./booking-database.mjs";
 import {timingSafeEqual} from "node:crypto";
 import {createServer} from "node:http";
 import {Readable} from "node:stream";
-import {readFileSync,writeFileSync,renameSync,mkdirSync} from "node:fs";
+import {readFileSync,mkdirSync} from "node:fs";
 import {join} from "node:path";
 import {randomUUID} from "node:crypto";
 const worker=await import(process.env.SHOWROOM_MODULE || "../dist/server/index.js");
@@ -16,15 +19,56 @@ function stored(){
   try{return JSON.parse(readFileSync(path,"utf8"));}catch(e){if(e.code==="ENOENT")return null;throw e;}
 }
 const pool=await bookingDatabase(),scope=new AsyncLocalStorage();
+const dealerPools=new Map();
+function dealerPool(name){
+  if(!dealerPools.has(name)){
+    const pool=new pg.Pool({host:"database",database:name,user:"showroom",password:process.env.POSTGRES_PASSWORD,max:3,idleTimeoutMillis:5000});
+    pool.on("error",()=>console.error("Idle dealer database connection closed"));
+    pool.on("remove",()=>{if(pool.totalCount===0 && dealerPools.get(name)===pool){dealerPools.delete(name);pool.end().catch(()=>{});}});
+    dealerPools.set(name,pool);
+  }
+  return dealerPools.get(name);
+}
+await pool.query("ALTER TABLE public.client_sites ADD COLUMN IF NOT EXISTS database_name text UNIQUE");
 const db={async query(sql,args){
   const tenant=scope.getStore();if(!tenant)return pool.query(sql,args);
   const conn=await pool.connect();
-  try{await conn.query("BEGIN");await conn.query("SET LOCAL search_path TO "+tenant.schema);const result=await conn.query(sql,args);await conn.query("COMMIT");return result;}
+  try{await conn.query("BEGIN");const route=(await conn.query("SELECT database_name FROM public.client_sites WHERE id=$1 FOR SHARE",[tenant.id])).rows[0];
+    if(!route || (route.database_name && route.database_name!==tenant.schema))throw Error("Invalid dealership database route");
+    let result;
+    if(route.database_name)result=await dealerPool(route.database_name).query(sql,args);
+    else{await conn.query("SET LOCAL search_path TO "+tenant.schema);result=await conn.query(sql,args);}
+    await conn.query("COMMIT");return result;}
   catch(e){await conn.query("ROLLBACK");throw e;}finally{conn.release();}
 }};
 await db.query("CREATE TABLE IF NOT EXISTS homepage_banners (id integer PRIMARY KEY, revision integer NOT NULL, config jsonb NOT NULL)");
 await db.query("CREATE TABLE IF NOT EXISTS bhph_offers(vehicle text PRIMARY KEY, revision integer NOT NULL, offer jsonb NOT NULL)");
 await pool.query("CREATE TABLE IF NOT EXISTS public.vehicle_photo_assets(site text NOT NULL, digest text NOT NULL, jpeg bytea NOT NULL, PRIMARY KEY(site,digest))");
+await pool.query("CREATE TABLE IF NOT EXISTS client_cars(vin text PRIMARY KEY,body jsonb NOT NULL, position bigserial);CREATE TABLE IF NOT EXISTS client_profile(id integer PRIMARY KEY,settings jsonb NOT NULL,etag text NOT NULL);CREATE TABLE IF NOT EXISTS shopper_leads(id uuid PRIMARY KEY,body jsonb NOT NULL)");
+const seed=await pool.connect();
+try{
+  await seed.query("BEGIN");
+  const first=await seed.query("INSERT INTO showroom_migrations VALUES('persist-demo-catalog-v1') ON CONFLICT DO NOTHING RETURNING name");
+  if(first.rowCount){
+    const context={window:{}};
+    for(const asset of ["cdjr-inventory.js","cdjr-covers.js"]){
+      const response=await worker.default.fetch(new Request("http://localhost/assets/"+asset),{});
+      if(!response.ok)throw Error("Missing demo inventory asset");
+      vm.runInNewContext(await response.text(),context);
+    }
+    const rows=context.window.CdjrInventory;
+    for(const car of rows){
+      const cover=context.window.CdjrCovers?.[car.vin];
+      if(cover){[car.image,car.imageType]=cover;car.galleryPath="assets/galleries/"+car.vin.slice(-2)+".json";}
+    }
+    if(!rows.length)throw Error("Demo inventory is empty");
+    await seed.query("INSERT INTO client_cars(vin,body) SELECT item->>'vin',item FROM jsonb_array_elements($1) item ON CONFLICT DO NOTHING",[JSON.stringify(rows)]);
+    const profile=stored();
+    if(profile)await seed.query("INSERT INTO client_profile VALUES(1,$1,$2) ON CONFLICT DO NOTHING",[profile.settings,profile.etag]);
+  }
+  await seed.query("COMMIT");
+}catch(error){await seed.query("ROLLBACK");throw error;}finally{seed.release();}
+const zipInventory=promisify(gzip);
 const passwordHash=promisify(scrypt);
 await pool.query(`CREATE TABLE IF NOT EXISTS public.dealer_users(site text NOT NULL,email text NOT NULL,salt text NOT NULL,hash text NOT NULL,active boolean NOT NULL DEFAULT true,PRIMARY KEY(site,email));
 CREATE TABLE IF NOT EXISTS public.dealer_sessions(token text PRIMARY KEY,site text NOT NULL,email text NOT NULL,expires timestamptz NOT NULL);
@@ -55,11 +99,8 @@ const bucket={
       const row=(await db.query("SELECT notes->>$2 AS answer FROM appointments WHERE confirmation=$1",[id,field])).rows[0];
       return row?.answer?{json:async()=>row.answer}:null;
     }
-    if(scope.getStore()){
-      const row=(await db.query("SELECT settings,etag FROM client_profile WHERE id=1")).rows[0];
-      return {etag:row.etag,json:async()=>row.settings};
-    }
-    const value=stored();return value?{etag:value.etag,json:async()=>value.settings}:null;
+    const row=(await db.query("SELECT settings,etag FROM client_profile WHERE id=1")).rows[0];
+    return row?{etag:row.etag,json:async()=>row.settings}:null;
   },
   async put(key,body,options){
     if(key.startsWith("drive-notes/")){
@@ -73,17 +114,11 @@ const bucket={
       const result=await db.query("INSERT INTO appointments(key,confirmation,body) SELECT $1,$2,$3 WHERE NOT EXISTS (SELECT 1 FROM inventory_status WHERE vin=$4) ON CONFLICT DO NOTHING",[key,record.confirmation,body,record.vin]);
       return result.rowCount?{}:null;
     }
-    if(scope.getStore()){
-      const etag=randomUUID(),r=await db.query("UPDATE client_profile SET settings=$1,etag=$2 WHERE id=1 AND etag=$3",[body,etag,options.onlyIf.etagMatches]);
-      return r.rowCount?{etag}:null;
-    }
-    const prior=stored(),condition=options.onlyIf;
-    if(condition.etagMatches && condition.etagMatches!==prior?.etag)return null;
-    if(condition.etagDoesNotMatch==="*" && prior)return null;
     const etag=randomUUID();
-    writeFileSync(path+".next",JSON.stringify({etag,settings:JSON.parse(body)}),{mode:0o600});
-    renameSync(path+".next",path);
-    return {etag};
+    const r=options.onlyIf.etagDoesNotMatch==="*" ?
+      await db.query("INSERT INTO client_profile VALUES(1,$1,$2) ON CONFLICT DO NOTHING",[body,etag]) :
+      await db.query("UPDATE client_profile SET settings=$1,etag=$2 WHERE id=1 AND etag=$3",[body,etag,options.onlyIf.etagMatches]);
+    return r.rowCount?{etag}:null;
   }
 };
 const elApi="https://api.elevenlabs.io/v1/convai/";
@@ -155,14 +190,14 @@ function platformSignIn(slug){
   return '<p><a style="color:#95c9ff" href="https://autodealership.si/onboarding/clerk-login?site='+encodeURIComponent(slug)+'">Platform admin or engineer sign-in</a></p>';
 }
 function clerkDealerPage(org,slug){
-  return `<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dealer sign-in</title><style>body{background:#131721;color:white;font:16px system-ui;margin:8vh auto;padding:24px;max-width:460px}button{padding:10px}</style><a href="https://autodealership.si/" aria-label="AutoDealership.SI home"><img src="https://autodealership.si/brand/logo-dark.webp" alt="AutoDealership.SI" width="186" height="62" style="display:block;width:min(186px,39vw);height:auto"></a><h1>Dealer sign-in</h1><p id="message">Connecting to Clerk…</p>${platformSignIn(slug)}<div id="signin"></div><button hidden id="change">Switch account</button>${clerkScript}<script>
+  return `<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dealer sign-in</title><style>body{background:#131721;color:white;font:16px system-ui;margin:8vh auto;padding:24px;max-width:460px}button{padding:10px}</style><a href="https://autodealership.si/" aria-label="AutoDealership.SI home"><img src="https://autodealership.si/brand/logo-dark.webp" alt="AutoDealership.SI" width="186" height="62" style="display:block;width:min(186px,39vw);height:auto"></a><h1>Dealer sign-in</h1><p id="message">Connecting to Clerk…</p>${platformSignIn(slug)}<div id="signin"></div><button hidden id="change">Sign in with another account</button> <button hidden id="retry" onclick="location.reload()">Try again</button><p><a style="color:#95c9ff" href="https://accounts.autodealership.si/sign-in?redirect_url=https%3A%2F%2F${encodeURIComponent(slug)}.autodealership.si%2Fdealer-login">Open secure sign-in in a full page</a></p>${clerkScript}<script>
   (async()=>{await Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});if(!Clerk.session){message.textContent="Sign in with your invited work email.";Clerk.mountSignIn(signin,{appearance:{options:{logoImageUrl:"https://autodealership.si/brand/logo-white.webp"}},routing:"hash",forceRedirectUrl:location.href,signUpForceRedirectUrl:location.href});return}
   change.hidden=false;change.onclick=()=>Clerk.signOut({redirectUrl:location.pathname});
   await Clerk.setActive({organization:${JSON.stringify(org)}});
   await Clerk.session.getToken({skipCache:true});
   const me=await fetch("api/dealer-auth/me",{cache:"no-store"}).then(r=>r.json());
   if(me.signedIn){location.replace("dealer");return}throw Error()
-  })().catch(()=>{message.textContent="Could not open this dealership. Check that you accepted the invitation with this email, then try again.";});</script></html>`;
+  })().catch(()=>{retry.hidden=false;message.textContent="Could not open this dealership. Check that you accepted the invitation with this email, then try again.";});</script></html>`;
 }
 createServer(async(req,res)=>{
   try{
@@ -212,12 +247,12 @@ createServer(async(req,res)=>{
       if(!privateAdmin || req.headers.origin!==base.origin){res.writeHead(403).end();return;}
       if(req.headers["content-type"]!=="image/jpeg" || body.length<4 || body.readUInt16BE(0)!==0xffd8 || body.readUInt16BE(body.length-2)!==0xffd9){res.writeHead(400).end();return;}
       const hash=createHash("sha256").update(body).digest("hex");
-      await pool.query("INSERT INTO public.vehicle_photo_assets(site,digest,jpeg) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",[site,hash,body]);
+      await db.query("INSERT INTO public.vehicle_photo_assets(site,digest,jpeg) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",[site,hash,body]);
       res.writeHead(200,{"Content-Type":"application/json"}).end(JSON.stringify({url:"assets/vehicle-photos/"+hash+".jpg"}));return;
     }
     const photo=/^\/assets\/vehicle-photos\/([a-f0-9]{64})\.jpg$/.exec(route.pathname);
     if(photo && ["GET","HEAD"].includes(req.method)){
-      const {rows}=await pool.query("SELECT jpeg FROM public.vehicle_photo_assets WHERE site=$1 AND digest=$2",[site,photo[1]]);
+      const {rows}=await db.query("SELECT jpeg FROM public.vehicle_photo_assets WHERE site=$1 AND digest=$2",[site,photo[1]]);
       if(!rows.length){res.writeHead(404).end();return;}
       res.writeHead(200,{"Content-Type":"image/jpeg","X-Content-Type-Options":"nosniff","Cache-Control":"public,max-age=31536000,immutable"}).end(req.method==="HEAD"?undefined:rows[0].jpeg);return;
     }
@@ -265,13 +300,14 @@ createServer(async(req,res)=>{
       return send(403,{});
     }
     if(clerkOrg && ["/dealer-login","/dealer-signin.html"].includes(route.pathname)){
-      if(prefix || base.hostname!==tenant.slug+".autodealership.si"){res.writeHead(302,{Location:"https://"+tenant.slug+".autodealership.si/dealer-login"}).end();return}
+      if(prefix){res.writeHead(302,{Location:"/onboarding/clerk-login?site="+encodeURIComponent(tenant.slug),"Cache-Control":"no-store"}).end();return}
+      if(base.hostname!==tenant.slug+".autodealership.si"){res.writeHead(302,{Location:"https://"+tenant.slug+".autodealership.si/dealer-login"}).end();return}
       res.writeHead(200,{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store","X-Frame-Options":"DENY"}).end(clerkDealerPage(clerkOrg,tenant.slug));return;
     }
     if(route.pathname.startsWith("/api/dealer-auth/")){
       const op=route.pathname.split("/").pop();
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
-      if(req.method==="GET" && op==="me")return reply(200,{signedIn:!!privateAdmin,managesUsers:clerkOrg?clerkRole==="org:admin":!!managesUsers,clerk:!!clerkRole,teamUrl:clerkRole==="org:admin"?"https://autodealership.si/onboarding/clerk-team":null});
+      if(req.method==="GET" && op==="me")return reply(200,{signedIn:!!privateAdmin,managesUsers:clerkOrg?clerkRole==="org:admin":!!managesUsers,clerk:!!clerkRole,teamUrl:clerkRole==="org:admin"?"https://autodealership.si/onboarding/clerk-team?org="+encodeURIComponent(clerkOrg):null});
       if(clerkOrg && op!=="logout")return reply(403,{error:"Use your Clerk dealership account."});
       if(req.method==="GET" && op==="users" && managesUsers)return reply(200,(await pool.query("SELECT email,active FROM public.dealer_users WHERE site=$1 ORDER BY email",[site])).rows);
       if(req.method!=="POST" || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Sign in required."});
@@ -313,7 +349,7 @@ createServer(async(req,res)=>{
       if(op==="disable"){await pool.query("UPDATE public.dealer_users SET active=false WHERE site=$1 AND email=$2",[site,email]);return reply(200,{});}
       return reply(404,{});
     }
-    if(["/dealer","/dealer.html"].includes(route.pathname) && !privateAdmin){res.writeHead(302,{Location:prefix+"/dealer-login","Cache-Control":"no-store"}).end();return;}
+    if(["/dealer","/dealer.html"].includes(route.pathname) && !privateAdmin){res.writeHead(302,{Location:prefix?"/onboarding/clerk-login?site="+encodeURIComponent(tenant.slug):"/dealer-login","Cache-Control":"no-store"}).end();return;}
     if(route.pathname==="/api/bhph"){
       if(tenant && !tenant.bhph){res.writeHead(req.method==="GET"?200:403,{"Content-Type":"application/json"}).end("{}");return;}
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
@@ -350,23 +386,47 @@ createServer(async(req,res)=>{
         await db.query("UPDATE bhph_offers SET offer=$2,revision=revision+1 WHERE vehicle=$1 AND revision=$3 RETURNING revision",[vehicle,offer,data.revision]);
       return result.rowCount?reply(200,result.rows[0]):reply(409,{error:"Pricing changed in another session. Reopen the editor."});
     }
-    if(tenant && route.pathname==="/api/client-inventory" && req.method==="PUT"){
+    if(route.pathname==="/api/inquiries"){
+      const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
+      if(req.method==="GET")return privateAdmin?reply(200,(await db.query("SELECT body FROM shopper_leads ORDER BY body->>'createdAt' DESC")).rows.map(r=>r.body)):reply(403,{});
+      if(req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{});
+      let input;try{input=JSON.parse(body)}catch{return reply(400,{})}
+      if(req.method==="PUT"){
+        if(!privateAdmin)return reply(403,{});
+        if(!["New","Contacted","Appointment set","Closed"].includes(input.status)|| !/^[0-9a-f-]{36}$/i.test(input.id))return reply(400,{});
+        const result=await db.query("UPDATE shopper_leads SET body=jsonb_set(body,'{status}',to_jsonb($2::text)) WHERE id=$1",[input.id,input.status]);
+        return reply(result.rowCount?200:404,{});
+      }
+      if(req.method!=="POST")return reply(405,{});
+      if(!input?.name?.trim()||!(input.email||input.phone)||body.length>8000)return reply(400,{error:"Enter your name and contact details."});
+      const car=(await db.query("SELECT body FROM client_cars WHERE vin=$1 AND NOT EXISTS (SELECT 1 FROM inventory_status WHERE vin=$1)",[input.carId])).rows[0]?.body;
+      if(!car)return reply(404,{error:"Vehicle unavailable"});
+      const lead={id:randomUUID(),createdAt:new Date().toISOString(),status:"New",carId:car.id,
+        car:Object.fromEntries(["id","vin","year","make","model","stock","image"].map(k=>[k,car[k]]))};
+      for(const k of ["name","email","phone","message","source"])lead[k]=String(input[k]||"").slice(0,2000);
+      await db.query("INSERT INTO shopper_leads VALUES($1,$2)",[lead.id,lead]);
+      return reply(201,{id:lead.id});
+    }
+    if(route.pathname==="/api/client-inventory" && req.method==="PUT"){
       if(!privateAdmin || req.headers.origin!==base.origin){res.writeHead(403).end();return;}
       let car;try{car=JSON.parse(body);}catch{}
       const field=!car || !/^[A-HJ-NPR-Z0-9]{17}$/.test(car.vin)?"Enter a valid 17-character VIN (letters I, O and Q are excluded).":!car.stock?"Enter the stock number.":!car.make?"Enter the make.":!car.model?"Enter the model.":null;
       if(field){res.writeHead(400,{"Content-Type":"application/json"}).end(JSON.stringify({error:field}));return;}
       car.id=car.vin;
-      await db.query("INSERT INTO client_cars(vin,body) VALUES($1,$2) ON CONFLICT(vin) DO UPDATE SET body=excluded.body",[car.vin,JSON.stringify(car)]);
+      await db.query("INSERT INTO client_cars(vin,body) VALUES($1,$2) ON CONFLICT(vin) DO UPDATE SET body=client_cars.body || excluded.body",[car.vin,JSON.stringify(car)]);
       res.writeHead(200,{"Content-Type":"application/json"}).end("{}");return;
     }
-    if(tenant && (route.pathname==="/assets/cdjr-inventory.js" || route.pathname==="/api/showroom-inventory") && req.method==="GET"){
-      const cars=(await db.query("SELECT body FROM client_cars ORDER BY vin")).rows.map(r=>r.body);
-      if(route.pathname==="/api/showroom-inventory"){
-        res.writeHead(200,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(cars));return;
-      }
-      res.writeHead(200,{"Content-Type":"application/javascript","Cache-Control":"no-store"}).end("window.clientSite="+JSON.stringify({slug:tenant.slug,name:tenant.name,agent:tenant.agent_id,bhph:tenant.bhph})+";window.CdjrInventory="+JSON.stringify(cars)+";");return;
+    if((route.pathname==="/assets/cdjr-inventory.js" || route.pathname==="/api/showroom-inventory") && req.method==="GET"){
+      const cars=(await db.query("SELECT body FROM client_cars ORDER BY "+(tenant?"vin":"position"))).rows.map(r=>r.body);
+      const json=route.pathname==="/api/showroom-inventory";
+      const siteMeta=tenant?{slug:tenant.slug,name:tenant.name,agent:tenant.agent_id,bhph:tenant.bhph}:null;
+      const payload=json?JSON.stringify(cars):"window.postgresInventory=true;window.clientSite="+JSON.stringify(siteMeta)+";window.CdjrInventory="+JSON.stringify(cars)+";";
+      const compress=payload.length>65536 && /\bgzip\b/.test(req.headers["accept-encoding"]||"");
+      res.writeHead(200,{"Content-Type":json?"application/json":"application/javascript","Cache-Control":"no-store","Vary":"Accept-Encoding",...(compress?{"Content-Encoding":"gzip"}:{})});
+      if(compress)res.end(await zipInventory(payload));else res.end(payload);
+      return;
     }
-    if(tenant && route.pathname==="/assets/cdjr-covers.js"){res.writeHead(200,{"Content-Type":"application/javascript"}).end("window.CdjrCovers={};");return;}
+    if(route.pathname==="/assets/cdjr-covers.js"){res.writeHead(200,{"Content-Type":"application/javascript"}).end("window.CdjrCovers={};");return;}
     if(["/api/banners","/api/banner-editor"].includes(route.pathname)){
       const editor=route.pathname.endsWith("editor");
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
@@ -434,13 +494,22 @@ createServer(async(req,res)=>{
       }
     }
     if(!seo)res.setHeader("X-Robots-Tag","noindex");
-    const response=await worker.default.fetch(new Request(new URL(req.url,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,offerSnapshot,clientHasVin:tenant?async vin=>(await db.query("SELECT 1 FROM client_cars WHERE vin=$1",[vin])).rowCount>0:null});
+    const response=await worker.default.fetch(new Request(new URL(req.url,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,offerSnapshot,clientHasVin:async vin=>(await db.query("SELECT 1 FROM client_cars WHERE vin=$1",[vin])).rowCount>0});
     if(tenant && /html|javascript/.test(response.headers.get("content-type")||"") && req.method==="GET"){
       let content=await response.text();
       if(!clerkOrg && ["/dealer-login","/dealer-signin.html"].includes(route.pathname))content=content.replace("</main>",platformSignIn(tenant.slug)+"</main>");
       if(clerkRole && response.headers.get("content-type").includes("html") && ["/dealer","/dealer.html"].includes(route.pathname))content=content.replace("</head>",clerkScript+'<script>window.dealerClerkReady=Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}})</script></head>');
       if(prefix)content=content.replace(/(["'`])\/(?!\/)(?=(?:api\/|dealer-login|bhph\.|banner|inventory|index\.html))/g,"$1"+prefix+"/");
       if(response.headers.get("content-type").includes("html"))content=content.replaceAll("Capital City CDJR",tenant.name.replace(/[&<>"]/g,x=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[x])));
+      if(seo?.path==="/" && req.method==="GET"){
+        const cars=(await db.query("SELECT vin,body->>'year' AS year,body->>'make' AS make,body->>'model' AS model,body->>'stock' AS stock,body->>'image' AS image"+available+" ORDER BY vin LIMIT 24")).rows;
+        const cards=cars.map(car=>{
+          const title=[car.year,car.make,car.model].filter(Boolean).join(" ");
+          const photo=/^(https:\/\/|assets\/)/i.test(car.image||"")?'<img loading="lazy" src="'+esc(car.image)+'" alt="">':"";
+          return '<article class="card"><a class="carlink" href="vehicle.html?stock='+encodeURIComponent(car.vin)+'">'+photo+'<div class="cardinfo"><h4>'+esc(title)+'</h4><div class="card-identifiers">Stock # '+esc(car.stock||"Unavailable")+' &middot; VIN '+esc(car.vin)+'</div></div></a></article>';
+        }).join("");
+        content=content.replace('<div class="cards" id="cards"></div>',()=>'<div class="cards" id="cards">'+(cards||'<p>No vehicles currently listed.</p>')+'</div>');
+      }
       if(seo)content=content.replace(/<title>.*?<[/]title>/i,()=>"<title>"+esc(seo.title)+"</title>").replace("</head>",()=>'<meta name="description" content="'+esc(seo.description)+'"><link rel="canonical" href="'+esc(origin+seo.path)+'"></head>');
       res.writeHead(response.status,{"Content-Type":response.headers.get("content-type"),"Cache-Control":"no-store"}).end(content);return;
     }
