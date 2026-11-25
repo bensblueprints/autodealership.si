@@ -23,6 +23,7 @@ async function render(){
  if(!account.receipts.length)by("receipts").textContent="No payments received.";
 }
 const requested=new URLSearchParams(location.search).get("plan");if(Object.hasOwn(names,requested))join.elements.plan.value=requested;
+if(new URLSearchParams(location.search).get("marketing")==="1")join.elements.marketing.checked=true;
 join.onchange=price;
 join.onsubmit=guarded(async()=>{await api("signup",{...Object.fromEntries(new FormData(join)),...settings(join),marketing:join.elements.marketing.checked});join.reset();await render();});
 login.onsubmit=guarded(async()=>{await api("login",Object.fromEntries(new FormData(login)));login.reset();await render();});
