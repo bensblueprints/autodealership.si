@@ -56,13 +56,24 @@ async function refreshDrives(){
     document.querySelector("#countDrives").textContent=appointments.length;
     if(!appointments.length)out.textContent="No test drives scheduled.";
     const format=new Intl.DateTimeFormat("en-US",{timeZone:timezone,dateStyle:"full",timeStyle:"short"});
+    const inventory=new Map((window.Store?.cars(true)||[]).map(car=>[car.vin,car]));
     for(const row of appointments){
       const card=document.createElement("article");card.className="drive-record";
-      const add=(tag,text)=>{const el=document.createElement(tag);el.textContent=text;card.append(el)};
+      const car=inventory.get(row.vin);
+      const label=car && [car.year,car.make,car.model].filter(Boolean).join(" ");
+      const photos=[...new Set([car?.image,...(Array.isArray(car?.photos)?car.photos:[])].filter(Boolean))];
+      if(photos.length){
+        const photo=document.createElement("img");
+        photo.className="drive-photo";photo.alt=label||"Vehicle for this test drive";photo.loading="lazy";
+        let index=0;
+        photo.onerror=()=>{if(++index<photos.length)photo.src=photos[index];else photo.remove();};
+        photo.src=photos[0];card.append(photo);
+      }
+      const details=document.createElement("div");card.append(details);
+      const add=(tag,text)=>{const el=document.createElement(tag);el.textContent=text;details.append(el)};
       add("h3",format.format(new Date(row.slot))+" · "+timezone.replaceAll("_"," "));
       add("p",[row.name,row.phone,row.email].filter(Boolean).join(" · "));
-      const car=window.Store?.cars(true).find(c=>c.vin===row.vin);
-      add("p",[car && [car.year,car.make,car.model].join(" "),car?.stock && "Stock #"+car.stock,row.vin].filter(Boolean).join(" · "));
+      add("p",[label,car?.stock && "Stock #"+car.stock,row.vin].filter(Boolean).join(" · "));
       if(row.message)add("p",row.message);
       if(row.bhph)add("p",BHPH.summary(row.bhph,row.bhph));
       for(const [key,label] of [["tradeIn","Trade-in"],["preferences","Looking for"]])if(row.notes?.[key])add("p",label+": "+row.notes[key]);

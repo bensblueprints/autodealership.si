@@ -44,3 +44,9 @@ button:hover:not(:disabled) { filter:brightness(1.12); }
 
 #desk-logo{width:auto;height:auto;max-height:56px;max-width:min(165px,22vw);object-fit:contain}
 #desk-logo.light-logo{background:#fff;border-radius:6px;padding:4px 7px}
+
+.drive-record{display:flex;align-items:flex-start;gap:1rem}
+.drive-record>div{min-width:0}
+.drive-record h3{margin-top:0}
+.drive-photo{width:clamp(100px,18vw,210px);aspect-ratio:4/3;object-fit:cover;border-radius:8px}
+@media(max-width:560px){.drive-record{flex-direction:column}.drive-photo{width:min(100%,300px)}}
