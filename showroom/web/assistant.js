@@ -78,13 +78,32 @@
   window.addEventListener("open-assistant",open);
   panel.querySelector(".ac-close").addEventListener("click", close);
   panel.addEventListener("keydown", event => { if (event.key === "Escape") close(); });
-  function identifiers(car){
-    return [...new Set([car.id,car.stock,car.vin].filter(Boolean).map(normalize))];
+  const digitWords="zero one two three four five six seven eight nine".split(" ");
+  const alphabet="alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu".split(" ");
+  const spoken=new Map([...digitWords.map((word,i)=>[word,String(i)]),...alphabet.map((word,i)=>[word,String.fromCharCode(97+i)]),["alpha","a"],["juliet","j"],["oh","0"],["ess","s"],["tee","t"],["vee","v"],["zed","z"],["zee","z"]]);
+  function exactVehicles(cars,input){
+    const cleaned=normalize(input).replace(/\bdouble\s+(?:u|you)\b/g,"w").replace(/\bx[ -]ray\b/g,"xray");
+    const phrase=cleaned.replace(/^.*?\b(?:stock\s*(?:number|no\.?|#|code|id)?|vin)\s*(?:is\s+)?/,"");
+    const tokens=phrase.match(/[a-z0-9]+/g)||[];
+    const codes=new Set();
+    let group="";
+    const finish=()=>{if(group)codes.add(group);group="";};
+    for(const [index,token] of tokens.entries()){
+      if(token==="dash" || token==="hyphen")continue;
+      if(spoken.has(token))group+=spoken.get(token);
+      else if(/\d/.test(token) || (/^[a-z]{3,5}$/.test(token) && /^\d/.test(tokens[index+1]||"") && index===0) || /^[a-z]{1,2}$/.test(token) && !["is","at","it","to","my","in","on","of","me","an"].includes(token))group+=token;
+      else{finish();codes.add(token);}
+    }
+    finish();
+    const compact=value=>String(value??"").toLowerCase().replace(/[^a-z0-9]/g,"");
+    const literal=compact(input);
+    return cars.filter(car=>[car.stock,car.vin,car.id].some(value=>value && (codes.has(compact(value)) || literal===compact(value))));
   }
+  const explicitIdentifier=q=>/\bstock\s*(?:number|no\b|#|code|id)|\bvin\b|\bstock\s+[a-z]*\d/i.test(q);
   function referencedCars(cars,query,allowMake=false){
     const words=normalize(query);
-    const exact=cars.filter(car=>identifiers(car).some(id=>words.includes(id)));
-    if(exact.length)return exact;
+    const exact=exactVehicles(cars,query);
+    if(exact.length || explicitIdentifier(query))return exact;
     const models=cars.filter(car=>car.model && words.includes(normalize(car.model)));
     if(models.length)return models;
     if(allowMake)return cars.filter(car=>car.make && words.includes(normalize(car.make)));
@@ -100,6 +119,8 @@
   }
   function inventorySearch(input) {
     const cars = window.Store.cars();
+    const exact=exactVehicles(cars,input);
+    if(exact.length || explicitIdentifier(input))return exact;
     let words = normalize(input).replace(/\$/g,"").replace(/,/g,"").replace(/\b(suv|truck|sedan|coupe|wagon|convertible|van|hatchback)s\b/g,"$1");
     const limits = [];
     const conditions=/\b(certified(?: used| pre owned)?|new|used|pre owned)\b/.exec(words);
@@ -278,7 +299,7 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "ac-car";
-      button.textContent = title(car) + " · " + money(car.price) + (car.stock ? " · "+car.stock : "");
+      button.textContent = title(car) + " · " + money(car.price) + (car.stock ? " · Stock # "+car.stock : "");
       button.addEventListener("click", () => openCar(car,book));
       entry.append(button);
     }
@@ -288,6 +309,12 @@
     const query = input.trim();
     if(!query) return;
     addLine(query,"user");
+    if(explicitIdentifier(query)){
+      const matches=exactVehicles(Store.cars(),query);
+      if(!matches.length){addLine("I couldn’t match that identifier. Could you repeat the full stock number or VIN shown on the card?");return;}
+      if(matches.length>1){list("Several listings share that identifier. Which vehicle do you mean?",matches);return;}
+      last=matches;
+    }
     if (/test[ -]?drive|book an appointment|schedule a drive/i.test(query)){
       const named=referencedCars(Store.cars(),query);
       const car=named.length===1?named[0]:currentCar() || (last.length===1?last[0]:null);
@@ -383,7 +410,9 @@
             });
           },
           async open_vehicle({car_id}) {
-            const car = window.Store.cars().find(item => identifiers(item).includes(normalize(car_id)));
+            const matches=exactVehicles(Store.cars(),car_id);
+            if(matches.length>1)return "Multiple vehicles match. Ask for the full VIN before opening one.";
+            const car=matches[0];
             if (!car) return "Vehicle is no longer available.";
             if(currentCar()?.id!==car.id || !vehicleDoc()?.getElementById("request-drive")){
               openCar(car,false,true,false);

@@ -64,9 +64,14 @@
         }else a.append(missing());
         const copy=el("div",undefined,"copy");copy.append(el("h2",[c.year,c.make,c.model].filter(Boolean).join(" ")));
         if(c.imageType==="stock")copy.append(el("p","Representative image"));
-        copy.append(el("p",[c.trim,Number.isFinite(c.miles)?c.miles.toLocaleString()+" mi":"",c.stock?"Stock "+c.stock:""].filter(Boolean).join(" · ")),
+        copy.append(el("p",[c.trim,Number.isFinite(c.miles)?c.miles.toLocaleString()+" mi":""].filter(Boolean).join(" · ")),
           el("strong",typeof c.price==="number"&&c.price>0?usd.format(c.price):"Ask for price"));
-        a.append(copy);grid.append(a);
+                  const ids=el("div",undefined,"card-identifiers");
+          for(const [label,value] of [["Stock #",c.stock],["VIN",c.vin]]){
+            const line=el("span",label+" ");line.append(el("b",value||"Unavailable"));ids.append(line);
+          }
+          copy.insertBefore(ids,copy.lastElementChild);
+          a.append(copy);grid.append(a);
       }
       if(!matches.length)grid.append(el("p","No matching vehicles. Try another search."));
       function pager(label,number) {

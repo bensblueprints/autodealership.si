@@ -14,3 +14,4 @@
 [data-skin] #photo-view,[data-skin] .photo-controls,[data-skin] .photo-missing{color-scheme:dark;color:#fff}
 [data-skin] :is(button,input,select,textarea):focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 [data-skin] .hero :focus-visible{outline-color:white}
+.card-identifiers{display:grid;gap:2px;margin:8px 0;font-size:12px;line-height:1.4;color:var(--ink);font-variant-numeric:tabular-nums}.card-identifiers b{font-weight:600;overflow-wrap:anywhere}
