@@ -1,6 +1,6 @@
 import {AsyncLocalStorage} from "node:async_hooks";
 import {promisify} from "node:util";
-import {scrypt,randomBytes,createHash} from "node:crypto";
+import {scrypt,randomBytes,createHash,createPublicKey,verify} from "node:crypto";
 import {bookingDatabase} from "./booking-database.mjs";
 import {timingSafeEqual} from "node:crypto";
 import {createServer} from "node:http";
@@ -81,6 +81,81 @@ const bucket={
     return {etag};
   }
 };
+const elApi="https://api.elevenlabs.io/v1/convai/";
+async function voiceProvider(path){
+  const response=await fetch(elApi+path,{headers:{"xi-api-key":process.env.ELEVENLABS_API_KEY},signal:AbortSignal.timeout(9000)});
+  if(!response.ok)throw Object.assign(Error("Voice provider unavailable"),{status:response.status});
+  return response.json();
+}
+await pool.query(`CREATE TABLE IF NOT EXISTS public.web_voice_calls(
+  conversation text PRIMARY KEY,site uuid NOT NULL,agent text NOT NULL,issued timestamptz NOT NULL DEFAULT now(),
+  started timestamptz,duration integer CHECK(duration>=0),state text NOT NULL DEFAULT 'pending',
+  next_check timestamptz NOT NULL DEFAULT now()+interval '2 minutes');
+  CREATE INDEX IF NOT EXISTS web_voice_due ON public.web_voice_calls(next_check) WHERE state='pending';
+  CREATE TABLE IF NOT EXISTS public.web_voice_terms(site uuid NOT NULL,month date NOT NULL,minutes integer NOT NULL,cents integer NOT NULL,PRIMARY KEY(site,month))`);
+let syncing=false;
+async function reconcileWebVoice(){
+  if(syncing)return;
+  syncing=true;
+  try{
+    const {rows}=await pool.query("UPDATE public.web_voice_calls SET next_check=now()+interval '5 minutes' WHERE conversation IN (SELECT conversation FROM public.web_voice_calls WHERE state='pending' AND next_check<=now() ORDER BY next_check LIMIT 30 FOR UPDATE SKIP LOCKED) RETURNING *");
+    for(const call of rows){
+      try{
+        const detail=await voiceProvider("conversations/"+encodeURIComponent(call.conversation));
+        if(detail.agent_id!==call.agent || detail.conversation_id!==call.conversation)continue;
+        const seconds=detail.metadata?.call_duration_secs,start=detail.metadata?.start_time_unix_secs;
+        if(["done","failed"].includes(detail.status) && Number.isInteger(seconds) && seconds>=0 && Number.isInteger(start)){
+          await pool.query("UPDATE public.web_voice_calls SET duration=$2,started=to_timestamp($3),state='verified' WHERE conversation=$1",[call.conversation,seconds,start]);
+        }
+      }catch(e){
+        if(e.status===404 && Date.now()-new Date(call.issued).getTime()>86400000)
+          await pool.query("UPDATE public.web_voice_calls SET state='unused' WHERE conversation=$1",[call.conversation]);
+      }
+    }
+  }catch(e){console.error("Web voice reconciliation unavailable")}finally{syncing=false}
+}
+setInterval(reconcileWebVoice,60000).unref();
+async function voiceReport(site,month){
+ const {rows:[totals]}=await pool.query("SELECT count(*)::int AS calls, coalesce(sum(duration),0)::int AS seconds FROM public.web_voice_calls WHERE site=$1 AND state='verified' AND date_trunc('month',started AT TIME ZONE 'UTC')=$2::date",[site,month]);
+ const {rows:[terms]}=await pool.query("SELECT minutes,cents FROM public.web_voice_terms WHERE site=$1 AND month<=$2::date ORDER BY month DESC LIMIT 1",[site,month]);
+ return {...totals,terms,overageCents:terms?Math.round(Math.max(0,totals.seconds-terms.minutes*60)*terms.cents/60):null};
+}
+
+const clerkIssuer="https://clerk.autodealership.si";
+const clerkScript='<script crossorigin="anonymous" data-clerk-publishable-key="pk_live_Y2xlcmsuYXV0b2RlYWxlcnNoaXAuc2kk" src="'+clerkIssuer+'/npm/@clerk/clerk-js@5/dist/clerk.browser.js"></script>';
+let clerkKeys;
+async function dealerClaim(cookie, origin, org){
+  const token=/(?:^|; *)__session=([^; ]+)/.exec(cookie||"")?.[1];
+  if(!token || token.length>12000)return null;
+  try{
+    const parts=token.split(".");
+    if(parts.length!==3)return null;
+    const header=JSON.parse(Buffer.from(parts[0],"base64url"));
+    if(header.alg!=="RS256")return null;
+    if(!clerkKeys || clerkKeys.expires<Date.now()){
+      const r=await fetch(clerkIssuer+"/.well-known/jwks.json",{signal:AbortSignal.timeout(4000)});
+      if(!r.ok)return null;
+      clerkKeys={keys:(await r.json()).keys,expires:Date.now()+300000};
+    }
+    const jwk=clerkKeys.keys.find(k=>k.kid===header.kid && k.kty==="RSA");
+    if(!jwk || !verify("RSA-SHA256",Buffer.from(parts.slice(0,2).join(".")),createPublicKey({key:jwk,format:"jwk"}),Buffer.from(parts[2],"base64url")))return null;
+    const c=JSON.parse(Buffer.from(parts[1],"base64url")), now=Date.now()/1000;
+    if(c.iss!==clerkIssuer || c.azp!==origin || !c.sub || !c.sid || !Number.isFinite(c.exp) || c.exp<=now || c.nbf>now+5 || c.sts==="pending")return null;
+    if((c.o?.id||c.org_id)!==org)return null;
+    const role=c.o?.rol ? "org:"+c.o.rol : c.org_role;
+    return ["org:admin","org:member"].includes(role)?role:null;
+  }catch{return null}
+}
+function clerkDealerPage(org){
+  return `<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dealer sign-in</title><style>body{background:#131721;color:white;font:16px system-ui;margin:8vh auto;padding:24px;max-width:460px}button{padding:10px}</style><h1>Dealer sign-in</h1><p id="message">Connecting to Clerk…</p><div id="signin"></div><button hidden id="change">Switch account</button>${clerkScript}<script>
+  (async()=>{await Clerk.load();if(!Clerk.session){message.textContent="Sign in with your invited work email.";Clerk.mountSignIn(signin,{routing:"hash",forceRedirectUrl:location.href,signUpForceRedirectUrl:location.href});return}
+  change.hidden=false;change.onclick=()=>Clerk.signOut({redirectUrl:location.pathname});
+  await Clerk.setActive({organization:${JSON.stringify(org)}});
+  await Clerk.session.getToken({skipCache:true});
+  const me=await fetch("api/dealer-auth/me",{cache:"no-store"}).then(r=>r.json());
+  if(me.signedIn){location.replace("dealer");return}throw Error()
+  })().catch(()=>{message.textContent="Could not open this dealership. Check that you accepted the invitation with this email, then try again.";});</script></html>`;
+}
 createServer(async(req,res)=>{
   try{
     const base=new URL((req.headers["x-forwarded-proto"]==="https"?"https":"http")+"://"+req.headers.host);
@@ -107,9 +182,11 @@ createServer(async(req,res)=>{
     const site=tenant?.id||"demo";
     const currentToken=/(?:^|; )dealer_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie||"")?.[1];
     const tokenHash=currentToken && createHash("sha256").update(currentToken).digest("hex");
-    const account=tokenHash && (await pool.query("SELECT s.email FROM public.dealer_sessions s LEFT JOIN public.dealer_users u ON u.site=s.site AND u.email=s.email WHERE s.token=$1 AND s.site=$2 AND s.expires>now() AND (s.email='dealer' OR u.active)",[tokenHash,site])).rows[0];
-    const privileged=tenant ? delegated || (createHash("sha256").update(supplied).digest("hex")===tenant.admin_hash) : signed || ["localhost","127.0.0.1","[::1]"].includes(base.hostname) && !req.headers.forwarded && !req.headers["x-forwarded-for"];
-    const privateAdmin=privileged || !!account;
+    const clerkOrg=tenant?.clerk_org_id;
+    const clerkRole=clerkOrg && !prefix && base.hostname===tenant.slug+".autodealership.si" && await dealerClaim(req.headers.cookie,base.origin,clerkOrg);
+    const account=!clerkOrg && tokenHash && (await pool.query("SELECT s.email FROM public.dealer_sessions s LEFT JOIN public.dealer_users u ON u.site=s.site AND u.email=s.email WHERE s.token=$1 AND s.site=$2 AND s.expires>now() AND (s.email='dealer' OR u.active)",[tokenHash,site])).rows[0];
+    const privileged=tenant ? delegated || (!clerkOrg && createHash("sha256").update(supplied).digest("hex")===tenant.admin_hash) : signed || ["localhost","127.0.0.1","[::1]"].includes(base.hostname) && !req.headers.forwarded && !req.headers["x-forwarded-for"];
+    const privateAdmin=privileged || !!account || !!clerkRole;
     const managesUsers=privileged || account?.email==="dealer";
     const headers=new Headers();
     for(const [k,v] of Object.entries(req.headers))if(typeof v==="string"&&!k.startsWith("oai-"))headers.set(k,v);
@@ -123,10 +200,46 @@ createServer(async(req,res)=>{
       body=Buffer.concat(chunks);
     }
     const route=new URL(req.url,base);
+    if(tenant && route.pathname.startsWith("/api/web-voice/")){
+      const op=route.pathname.split("/").pop();
+      const send=(code,obj)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(obj));
+      if(req.method==="POST" && req.headers.origin!==base.origin)return send(403,{});
+      if(op==="start" && req.method==="POST"){
+        if(!tenant.voice || !tenant.agent_id)return send(409,{error:"Voice is unavailable."});
+        const result=await voiceProvider("conversation/get-signed-url?include_conversation_id=true&agent_id="+encodeURIComponent(tenant.agent_id));
+        const conversation=new URL(result.signed_url).searchParams.get("conversation_id");
+        if(!conversation)return send(502,{error:"Voice connection unavailable."});
+        await pool.query("INSERT INTO public.web_voice_calls(conversation,site,agent) VALUES($1,$2,$3)",[conversation,site,tenant.agent_id]);
+        return send(200,{signedUrl:result.signed_url});
+      }
+      if(!privateAdmin)return send(403,{});
+      const month=route.searchParams.get("month")||new Date().toISOString().slice(0,7);
+      if(!/^20[0-9]{2}-(0[1-9]|1[0-2])$/.test(month))return send(400,{});
+      if(op==="settings" && req.method==="GET")return send(200,{agent:tenant.agent_id,editable:!!delegated,...await voiceReport(site,month+"-01")});
+      if(op==="settings" && req.method==="POST" && delegated){
+        let d;try{d=JSON.parse(body)}catch{return send(400,{})}
+        if(!/^agent_[a-zA-Z0-9]+$/.test(d.agent) || d.agent.length>100)return send(400,{error:"Enter a valid agent ID."});
+        const hasTerms=d.minutes!=null || d.cents!=null;
+        if(hasTerms && ![d.minutes,d.cents].every(x=>Number.isSafeInteger(x)&&x>=0&&x<=1000000))return send(400,{error:"Enter both allowance and rate."});
+        try{await voiceProvider("agents/"+d.agent)}catch{return send(422,{error:"The master account could not access that agent."})}
+        const conn=await pool.connect();
+        try{await conn.query("BEGIN");await conn.query("UPDATE public.client_sites SET agent_id=$1,voice=true,agent_state='connected' WHERE id=$2",[d.agent,site]);
+          if(hasTerms)await conn.query("INSERT INTO public.web_voice_terms VALUES($1,date_trunc('month',now() AT TIME ZONE 'UTC')::date,$2,$3) ON CONFLICT(site,month) DO UPDATE SET minutes=excluded.minutes,cents=excluded.cents",[site,d.minutes,d.cents]);
+          await conn.query("COMMIT");
+        }catch(e){await conn.query("ROLLBACK");throw e}finally{conn.release()}
+        return send(200,{saved:true});
+      }
+      return send(403,{});
+    }
+    if(clerkOrg && ["/dealer-login","/dealer-signin.html"].includes(route.pathname)){
+      if(prefix || base.hostname!==tenant.slug+".autodealership.si"){res.writeHead(302,{Location:"https://"+tenant.slug+".autodealership.si/dealer-login"}).end();return}
+      res.writeHead(200,{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store","X-Frame-Options":"DENY"}).end(clerkDealerPage(clerkOrg));return;
+    }
     if(route.pathname.startsWith("/api/dealer-auth/")){
       const op=route.pathname.split("/").pop();
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
-      if(req.method==="GET" && op==="me")return reply(200,{signedIn:!!privateAdmin,managesUsers:!!managesUsers});
+      if(req.method==="GET" && op==="me")return reply(200,{signedIn:!!privateAdmin,managesUsers:clerkOrg?clerkRole==="org:admin":!!managesUsers,clerk:!!clerkRole,teamUrl:clerkRole==="org:admin"?"https://autodealership.si/onboarding/clerk-team":null});
+      if(clerkOrg && op!=="logout")return reply(403,{error:"Use your Clerk dealership account."});
       if(req.method==="GET" && op==="users" && managesUsers)return reply(200,(await pool.query("SELECT email,active FROM public.dealer_users WHERE site=$1 ORDER BY email",[site])).rows);
       if(req.method!=="POST" || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Sign in required."});
       let d;try{d=JSON.parse(body);}catch{return reply(400,{error:"Invalid request."});}
@@ -260,6 +373,7 @@ createServer(async(req,res)=>{
     const response=await worker.default.fetch(new Request(new URL(req.url,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,offerSnapshot,clientHasVin:tenant?async vin=>(await db.query("SELECT 1 FROM client_cars WHERE vin=$1",[vin])).rowCount>0:null});
     if(tenant && /html|javascript/.test(response.headers.get("content-type")||"") && req.method==="GET"){
       let content=await response.text();
+      if(clerkRole && response.headers.get("content-type").includes("html") && ["/dealer","/dealer.html"].includes(route.pathname))content=content.replace("</head>",clerkScript+'<script>window.dealerClerkReady=Clerk.load()</script></head>');
       if(prefix)content=content.replace(/(["'`])\/(?!\/)(?=(?:api\/|dealer-login|bhph\.|banner|inventory|index\.html))/g,"$1"+prefix+"/");
       if(response.headers.get("content-type").includes("html"))content=content.replaceAll("Capital City CDJR",tenant.name.replace(/[&<>"]/g,x=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[x])));
       res.writeHead(response.status,{"Content-Type":response.headers.get("content-type"),"Cache-Control":"no-store","X-Robots-Tag":"noindex"}).end(content);return;

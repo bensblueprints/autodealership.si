@@ -421,8 +421,14 @@
     try {
       const client = await sdk();
       if(canceled) { idle("Voice by ElevenLabs"); return; }
+      let credentials={agentId};
+      if(window.clientSite){
+        const response=await fetch("/api/web-voice/start",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+        if(!response.ok)throw Error("Could not connect voice.");
+        credentials=await response.json();
+      }
       const connection = await client.Conversation.startSession({
-        agentId, connectionType:"websocket", dynamicVariables:{showroom_greeting:vehiclePrompt(currentCar())},
+        ...credentials, connectionType:"websocket", dynamicVariables:{showroom_greeting:vehiclePrompt(currentCar())},
         workletPaths: {
           rawAudioProcessor:"vendor/rawAudioProcessor.js",
           audioConcatProcessor:"vendor/audioConcatProcessor.js"
