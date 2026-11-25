@@ -1,4 +1,6 @@
 """Create the approved Whop catalog for a merchant. Output contains variant IDs only."""
+from urllib.error import HTTPError
+import sys
 import argparse
 import json
 import os
@@ -24,9 +26,17 @@ for key,(amount,minutes) in PLANS.items():
 for amount in (100,500):
     offers["credit_"+str(amount)]={"title":"AutoDealership.SI voice credit $"+str(amount),"billing_type":"one_time","initial_price":amount}
 for key,variant in offers.items():
+    variant["title"]=key.replace("_marketing"," + Ads").replace("_annual_bf26"," Annual").replace("_"," ").title()
     if key in catalog:continue
-    idem=str(uuid.uuid5(uuid.NAMESPACE_URL,MERCHANT+("/autodealership/onboarding997/" if variant["billing_type"]=="renewal" else "/autodealership/v1/")+key))
-    config=provider("/checkout_configurations",{"account_id":MERCHANT,"variant":{**variant,"account_id":MERCHANT,"currency":"usd"}},idem)
+    idem=str(uuid.uuid5(uuid.NAMESPACE_URL,MERCHANT+("/autodealership/onboarding997-product2/" if variant["billing_type"]=="renewal" else "/autodealership/v1-product2/")+key))
+    try:
+        config=provider("/checkout_configurations",{"account_id":MERCHANT,"variant":{**variant,"product":{"title":"AutoDealership.SI","external_identifier":"autodealership-si-dealer-services"},"account_id":MERCHANT,"currency":"usd"}},idem)
+    except HTTPError as error:
+        detail=error.read().decode()
+        if error.code==400 and "Purchases over $2,500 USD are not enabled" in detail:
+            print("Account limit blocks "+key,file=sys.stderr)
+            continue
+        raise RuntimeError(detail) from error
     catalog[key]=config["variant"]["id"]
     temp=catalog_file.with_suffix(".tmp")
     temp.write_text(json.dumps(catalog));temp.replace(catalog_file)
