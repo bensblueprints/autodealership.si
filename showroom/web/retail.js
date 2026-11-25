@@ -13,7 +13,7 @@
     lease:{months:36, rate:6, down:0, residual:55}
   };
   function amount(car, mode="cash", input=terms[mode]) {
-    if (!hasNumber(car.price)) return null;
+    if ((mode!=="cash" && !Store.financingAllowed(car)) || !hasNumber(car.price)) return null;
     const price = Number(car.price);
     if (!Number.isFinite(price) || price < 0) return null;
     if (mode === "cash") return price;
@@ -39,7 +39,7 @@
   function card(car) {
     const id=html(car.id);
     const actions=[];
-    if (amount(car) !== null && enabled("payment") && (enabled("finance") || enabled("lease"))) actions.push(button("payment","Calculate payment"));
+    if (Store.financingAllowed(car) && amount(car) !== null && enabled("payment") && (enabled("finance") || enabled("lease"))) actions.push(button("payment","Calculate payment"));
     if (enabled("trade")) actions.push(button("trade","Value my trade"));
     if (enabled("availability")) actions.push(button("availability","Confirm availability"));
     const showPricing=enabled("pricing"),showCompare=enabled("compare");
@@ -80,6 +80,7 @@
     return '<label>'+label+'<input type="number" name="'+key+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+value+'" required></label>';
   }
   function payment(car,mode=enabled("finance")?"finance":"lease") {
+    if (!Store.financingAllowed(car))return;
     if (amount(car) === null) {
       present("Price available from dealer", "<p>Contact the dealership for the asking price before estimating a monthly payment.</p>"+button("close","Done"));
       return;

@@ -158,6 +158,7 @@
     const stop = new Set("a an all any and are at available browse by can car cars cost currently do find for from get have i in inventory is like list looking lot me my of on only please price priced see show showroom stock that the there to under vehicle vehicles want what which with you your anything something less than".split(" ").concat(["vin","number","here","dealership"]));
     const terms = words.split(/[^a-z0-9]+/).filter(word => word && !stop.has(word));
     return cars.filter(car => {
+      if(monthly && !Store.financingAllowed(car))return false;
       const hay = searchText(car);
       return limits.every(test => test(car)) && terms.every(term => hay.includes(term));
     });
@@ -184,11 +185,12 @@
   function vehiclePrompt(car){
     if(!car)return "Welcome to the showroom. What kind of vehicle are you looking for?";
     const options=["schedule a test drive"];
-    if(Store.settings().options?.payment!==false)options.push("estimate a monthly payment");
+    if(Store.financingAllowed(car) && Store.settings().options?.payment!==false)options.push("estimate a monthly payment");
     if(Store.settings().options?.trade!==false)options.push("request a trade-in appraisal");
     return "You're looking at the "+title(car)+". Would you like to "+new Intl.ListFormat("en",{type:"disjunction"}).format(options)+"?";
   }
   function financingContext(car){
+    if(!Store.financingAllowed(car))return " Cash purchase only. Financing, lease estimates and payment plans are unavailable.";
     const o=car?.bhph;
     if(!o)return "";
     const choice=vehicleDoc()?.defaultView?.bhphChoice;
@@ -236,6 +238,7 @@
       catch{return "Saving the note failed. Retry before saying it was saved.";}
     }
     const booking=kind==="test_drive",finance=kind==="financing";
+    if(finance && !Store.financingAllowed(car))return "This vehicle is cash purchase only.";
     if(!booking && !finance && kind!=="trade_in")return "Unknown workflow.";
     const dialogSelector=booking?"#drive":".retail-dialog";
     const trigger=doc.querySelector(booking?"#request-drive":finance?'#vehicle-actions [data-retail="payment"]':'#vehicle-actions [data-retail="trade"]');
@@ -346,6 +349,7 @@
       return;
     }
     await Store.inventoryReady;
+    if(!Store.financingAllowed(currentCar()) && /financ|lease|payment|buy here|bhph/i.test(query)){addLine("This "+(currentCar()?"vehicle":"dealership")+" offers cash purchases only.");return;}
     if(currentCar()?.bhph && /(?:pay(?:ment|out)?|pay[ -]off) schedule|read.*schedule|selected plan|buy here|bhph|cash down|down payment|weekly|biweekly|monthly payment|cash price/i.test(query) && !/test.drive|book/i.test(query)){
       addLine(financingContext(currentCar()).trim());return;
     }

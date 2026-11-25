@@ -2,10 +2,10 @@
   "use strict";
   const get=id=>document.getElementById(id);
   const id=new URLSearchParams(location.search).get("stock");
-  await Store.inventoryReady;
+  await Promise.all([Store.profileReady,Store.inventoryReady]);
   const car=Store.cars().find(record=>String(record.id)===id);
   const settings=Store.settings();
-  const enabled=key=>settings.options?.[key]!==false;
+  const enabled=key=>settings.options?.[key]!==false && (!["finance","payment","lease"].includes(key)||Store.financingAllowed(car));
   const exists=value=>value!==null && value!==undefined && value!=="";
   const money=value=>!exists(value)?"Contact for price":new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}).format(value);
   const makeNode=(tag,value)=>{

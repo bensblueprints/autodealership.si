@@ -101,7 +101,7 @@
   }
   function openEditor(car=null) {
     $("saveWithBhph").hidden=!!window.clientSite && !clientSite.bhph;
-    editing=car;form.reset();$("formError").textContent="";$("editTitle").textContent=car?"Edit vehicle":"Add vehicle";
+    editing=car;form.reset();form.elements.vehicleFinancing.checked=car?.financingEnabled!==false;$("formError").textContent="";$("editTitle").textContent=car?"Edit vehicle":"Add vehicle";
     form.querySelector(".editor-details").open=false;
     for(const field of ['stock','price','miles'])form.elements[field].required=!car || car[field]!=null && car[field]!=="";
     if(car)for(const key of ['status','condition','body']){
@@ -128,6 +128,7 @@
     try {
       const f=new FormData(form),car={};
       for(const key of textFields) car[key]=String(f.get(key)||"").trim();
+      car.financingEnabled=form.elements.vehicleFinancing.checked;
       car.vin=car.vin.replace(/\s+/g,"").toUpperCase();
       if(window.clientSite && !/^[A-HJ-NPR-Z0-9]{17}$/.test(car.vin))throw Error("Enter a 17-character VIN. VINs use letters and numbers and exclude I, O and Q.");
       car.factorySticker=StickerIntake.recordFor(car.vin);

@@ -33,7 +33,7 @@ function validateProfile(input){
     if("enabled" in page){if(typeof page.enabled!=="boolean")throw Error("Invalid page visibility.");entry.enabled=page.enabled;}
     pages[key]=entry;
   }
-  return {dealerName:input.dealerName.trim(),profile,pages};
+  return {dealerName:input.dealerName.trim(),financingEnabled:input.financingEnabled!==false,profile,pages};
 }
 async function dealershipProfile(request,env){
   const bucket=env?.BUCKET;

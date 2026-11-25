@@ -27,7 +27,7 @@
 <label>Stock number<input name="stock" maxlength="32" required></label><label>Year<input name="year" type="number" min="1885" max="2100" required></label>
 <label>Make<input name="make" maxlength="60" required></label><label>Model<input name="model" maxlength="80" required></label>
 <label>Trim<input name="trim" maxlength="100"></label><label>Body style<select name="body"><option value="">Select body style</option><option>SUV</option><option>Sedan</option><option>Coupe</option><option>Truck</option><option>Wagon</option><option>Convertible</option><option>Hatchback</option><option>Van</option><option>Other</option></select></label>
-<label>Price ($)<input name="price" type="number" min="0" step="1" required></label><label>Mileage<input name="miles" type="number" min="0" step="1" required></label></div>
+<label><input type="checkbox" name="vehicleFinancing" checked> Offer financing on this vehicle (when enabled for the dealership)</label><label>Price ($)<input name="price" type="number" min="0" step="1" required></label><label>Mileage<input name="miles" type="number" min="0" step="1" required></label></div>
 <details class="editor-details"><summary>Specifications and listing details</summary><div class="formgrid">
 <label>Fuel type<input name="fuel" list="fuels" maxlength="40"></label><datalist id="fuels"><option>Gasoline</option><option>Diesel</option><option>Electric</option><option>Hybrid</option><option>Plug-in hybrid</option></datalist>
 <label>Transmission<input name="transmission" list="transmissions" maxlength="60"></label><datalist id="transmissions"><option>Automatic</option><option>Manual</option><option>CVT</option><option>Single-speed</option></datalist>

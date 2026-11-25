@@ -33,6 +33,10 @@ function publishedOffer(row){
   return {...row.offer,revision:row.revision};
 }
 async function offerSnapshot(vin,choice){
+  if(scope.getStore()){
+    const blocked=await db.query("SELECT 1 FROM client_profile WHERE settings->>'financingEnabled'='false' UNION ALL SELECT 1 FROM client_cars WHERE vin=$1 AND body->>'financingEnabled'='false'",[vin]);
+    if(blocked.rowCount)return null;
+  }else if(stored()?.settings?.financingEnabled===false)return null;
   const row=(await db.query("SELECT revision,offer FROM bhph_offers WHERE vehicle=$1",[vin])).rows[0];
   if(!row?.offer.enabled || row.revision!==choice?.revision)return null;
   const schedule=row.offer.schedules.find(s=>s.frequency===choice.frequency && s.months===choice.months);
@@ -283,7 +287,7 @@ createServer(async(req,res)=>{
       if(op==="disable"){await pool.query("UPDATE public.dealer_users SET active=false WHERE site=$1 AND email=$2",[site,email]);return reply(200,{});}
       return reply(404,{});
     }
-    if(tenant && ["/dealer","/dealer.html"].includes(route.pathname) && !privateAdmin){res.writeHead(302,{Location:prefix+"/dealer-login","Cache-Control":"no-store"}).end();return;}
+    if(["/dealer","/dealer.html"].includes(route.pathname) && !privateAdmin){res.writeHead(302,{Location:prefix+"/dealer-login","Cache-Control":"no-store"}).end();return;}
     if(route.pathname==="/api/bhph"){
       if(tenant && !tenant.bhph){res.writeHead(req.method==="GET"?200:403,{"Content-Type":"application/json"}).end("{}");return;}
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));

@@ -30,6 +30,7 @@
     const overrides=window.Store?.settings()?.pages||{};
     const byKey=Array.isArray(overrides) ? Object.fromEntries(overrides.filter(p=>p?.key).map(p=>[p.key,p])) : overrides;
     return defaults.map(base=>{
+      if(!Store.financingAllowed() && ["finance-center","apply-financing","payment-calculator"].includes(base.key))return {...base,enabled:false,url:""};
       const change=byKey[base.key]||{};
       if(window.clientSite && !byKey[base.key])return {...base,enabled:false,url:""};
       return {...base,title:typeof change.title==="string" && change.title.trim()?change.title.trim():base.title,

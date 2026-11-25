@@ -54,7 +54,7 @@
   const optionGroups = {
     "Inventory filters": {year:"Year",make:"Make",model:"Model",trim:"Trim",features:"Vehicle features",fuel:"Fuel type",
       transmission:"Transmission",miles:"Mileage",engine:"Engine",color:"Color",body:"Body style",doors:"Doors",location:"Location",status:"Inventory status",price:"Price or payment range"},
-    "Purchase modes": {cash:"Cash",finance:"Finance",lease:"Lease"},
+    "Purchase modes": {financingEnabled:"Offer financing (turn off for a cash-only dealership)",cash:"Cash",finance:"Finance",lease:"Lease"},
     "Shopping tools": {compare:"Compare vehicles",pricing:"Pricing and details tabs",payment:"Payment calculator",
       trade:"Value a trade",availability:"Confirm availability"}
   };
@@ -116,7 +116,7 @@
     for(const key of Object.keys(localStorage)){
       if(key.startsWith(prefix+"vehicle:"))merge(JSON.parse(localStorage.getItem(key)));
     }
-    view=[...added,...catalogById.keys()].map(id=>{const car=byId.get(id),offer=offers[car.vin||id];return offer?{...car,price:offer.cash/100,bhph:offer.enabled?offer:null}:car;});
+    view=[...added,...catalogById.keys()].map(id=>{const car=byId.get(id),offer=offers[car.vin||id];return offer?{...car,price:offer.cash/100,bhph:offer.enabled && financingAllowed(car)?offer:null}:car;});
     return view;
   }
   const leads = () => Object.keys(localStorage).filter(k=>k.startsWith(prefix+"lead:"))
@@ -160,24 +160,25 @@
     if(!response.ok)throw Error("Shared dealership profile is unavailable.");
     const result=await response.json();
     if(readNumber!==profileRead || result.revision===profileRevision)return;
-    sharedProfile=result.settings;profileRevision=result.revision;
+    sharedProfile=result.settings;profileRevision=result.revision;view=null;
     window.dispatchEvent(new Event("showroom:update"));
   }
   const profileReady=loadProfile().catch(()=>{});
+  function financingAllowed(car){return sharedProfile?.financingEnabled!==false && car?.financingEnabled!==false;}
   function settings() {
     const stored=read("settings",{});
     return {dealerName:window.clientSite?.name||"Capital City CDJR",tradeUrl:"",...stored,...sharedProfile,
-      profile:{...(window.clientSite?{}:defaultProfile),...(sharedProfile?.profile||stored.profile)},options:{...defaultOptions,...stored.options}};
+      profile:{...(window.clientSite?{}:defaultProfile),...(sharedProfile?.profile||stored.profile)},options:{...defaultOptions,...stored.options,financingEnabled:financingAllowed()}};
   }
   async function saveSettings(changes) {
     await profileReady;
     const prior=settings();
     if(changes.profile || changes.dealerName || changes.pages){
       const response=await fetch("/api/dealer-profile",{method:"PUT",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({revision:profileRevision,dealerName:changes.dealerName||prior.dealerName,profile:{...prior.profile,...changes.profile},pages:changes.pages??prior.pages??{}})});
+        body:JSON.stringify({revision:profileRevision,financingEnabled:changes.options?.financingEnabled??financingAllowed(),dealerName:changes.dealerName||prior.dealerName,profile:{...prior.profile,...changes.profile},pages:changes.pages??prior.pages??{}})});
       const result=await response.json();
       if(!response.ok){if(response.status===409)await loadProfile();throw Error(result.error||"Could not save profile.");}
-      profileRead++;sharedProfile=result.settings;profileRevision=result.revision;
+      profileRead++;view=null;sharedProfile=result.settings;profileRevision=result.revision;
     }
     const next={...prior,...changes,options:{...prior.options,...changes.options}};
     delete next.profile;delete next.dealerName;delete next.pages;next.profileRevision=profileRevision;
@@ -188,7 +189,7 @@
     const lead=read("lead:"+id,null);
     if(lead)write("lead:"+id,{...lead,notes:{...lead.notes,[field]:answer}});
   }
-  window.Store = {attachNote, cars,inventoryReady,refreshInventoryStatus,statusFor:vin=>inventoryStatus[vin],leads,addLead,setStatus,saveCar,settings,saveSettings,optionGroups,profileReady };
+  window.Store = {financingAllowed,attachNote, cars,inventoryReady,refreshInventoryStatus,statusFor:vin=>inventoryStatus[vin],leads,addLead,setStatus,saveCar,settings,saveSettings,optionGroups,profileReady };
   window.addEventListener("storage",e=>{if(e.key===prefix+"settings"||e.key===null)loadProfile().catch(()=>{});if (!e.key || e.key.startsWith(prefix)){view=null;window.dispatchEvent(new Event("showroom:update"));}});
 })();
 
