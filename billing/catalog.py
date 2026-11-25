@@ -17,7 +17,7 @@ for key,(amount,minutes) in PLANS.items():
     for marketing in (False,True):
         name=key+("_marketing" if marketing else "")
         cost=amount+(2500 if marketing else 0)
-        offers[name]={"title":"AutoDealership.SI "+key.title()+(" + Managed Marketing" if marketing else ""),"billing_type":"renewal","initial_price":cost,"renewal_price":cost,"billing_period":30}
+        offers[name]={"title":"AutoDealership.SI "+{'chat': 'Dealer Chat', 'web_voice': 'Dealer Chat + Web Voice', 'phone_only': 'AI Phone Receptionist', 'omnichannel': 'Phone + Website Concierge'}.get(key,key.title())+(" + Managed Marketing" if marketing else ""),"billing_type":"renewal","initial_price":cost,"renewal_price":cost,"billing_period":30}
 for amount in (100,500):
     offers["credit_"+str(amount)]={"title":"AutoDealership.SI voice credit $"+str(amount),"billing_type":"one_time","initial_price":amount}
 for key,variant in offers.items():

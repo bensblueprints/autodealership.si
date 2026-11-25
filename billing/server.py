@@ -25,7 +25,7 @@ MERCHANT = os.getenv("WHOP_ACCOUNT_ID", "")
 KEY = os.getenv("WHOP_API_KEY", "")
 SECRET = os.getenv("WHOP_WEBHOOK_SECRET", "")
 API = "https://sandbox-api.whop.com/api/v1" if os.getenv("WHOP_ENV") == "sandbox" else "https://api.whop.com/api/v1"
-PLANS = {"website": (499, 0), "starter": (798, 150), "concierge": (1499, 750), "phone": (2499, 2000)}
+PLANS = {"chat": (299, 0), "web_voice": (499, 150), "phone_only": (799, 500), "omnichannel": (1099, 750), "website": (499, 0), "starter": (798, 150), "concierge": (1499, 750), "phone": (2499, 2000)}
 VARIANTS = json.loads(os.getenv("WHOP_VARIANTS", "{}"))
 AGENTS = json.loads(os.getenv("VOICE_AGENT_ACCOUNTS", "{}"))
 CAP_UNIT = 6000
@@ -101,7 +101,7 @@ def checkout(dealer,kind,amount=0):
             require(d["status"]=="signup","Subscription already started.")
             variant=VARIANTS.get(plan_key(d));amount=price(d)
         else:
-            require(d["status"]=="active" and d["plan"]!="website","An active voice subscription is required.")
+            require(d["status"]=="active" and PLANS[d["plan"]][1]>0,"An active voice subscription is required.")
             variant="setup" if kind=="card" else VARIANTS.get("credit_"+str(amount))
         require(variant,"Checkout for this selection is pending merchant setup.")
         o=start_order(db,d,kind,amount,variant)
@@ -134,7 +134,7 @@ def notify(db,key,dealer,subject,body):
 
 def admit(db,dealer):
     d=one(db,"SELECT * FROM dealers WHERE id=?",dealer)
-    if not d or d["status"]!="active" or d["plan"]=="website":return {"allowed":False}
+    if not d or d["status"]!="active" or PLANS[d["plan"]][1]==0:return {"allowed":False}
     db.execute("DELETE FROM holds WHERE expires<=?",(now(),))
     reserved=one(db,"SELECT COALESCE(SUM(seconds),0) FROM holds WHERE dealer=?",dealer)[0]
     free=max(0,PLANS[d["plan"]][1]*60-d["used"])
