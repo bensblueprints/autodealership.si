@@ -95,7 +95,7 @@
   function refresh() {
     const cars=Store.cars(),leads=Store.leads(),name=Store.settings().dealerName;
     $("brand").textContent=name;document.title="Sales desk · "+name;
-    $("countCars").textContent=cars.length;$("countLeads").textContent=leads.length;
+    $("countCars").textContent=cars.length;
     $("countNew").textContent=leads.filter(l=>l.status==="New").length;
     renderLeads(leads);renderInventory(Store.cars(true));
   }
@@ -270,6 +270,17 @@
     fields.name.value=settings.dealerName;fields.skin.value=settings.profile?.skin || "midnight";
     fields.tradeUrl.value=settings.tradeUrl;
     const profile=settings.profile||{};
+    const zone=$("drive-zone");zone.replaceChildren(...["America/New_York","America/Chicago","America/Denver","America/Phoenix","America/Los_Angeles","America/Anchorage","Pacific/Honolulu"].map(z=>new Option(z.replaceAll("_"," "),z)));zone.value=profile.driveTimezone||"America/Chicago";
+    const hours=$("drive-hours");hours.replaceChildren();
+    for(const day of ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]){
+      const range=profile.driveHours?profile.driveHours[day]:["Sat","Sun"].includes(day)?null:["10:00","17:00"];
+      const row=node("div");row.dataset.day=day;
+      const label=node("label"),box=node("input");box.type="checkbox";box.checked=!!range;label.append(box,day);row.append(label);
+      for(const [index,title] of ["Opens","Closes"].entries()){
+        const time=node("input");time.type="time";time.required=true;time.disabled=!range;time.value=(range||["10:00","17:00"])[index];time.setAttribute("aria-label",day+" "+title);row.append(time);
+      }
+      box.onchange=()=>row.querySelectorAll("input[type=time]").forEach(t=>t.disabled=!box.checked);hours.append(row);
+    }
     for(const key of [...profileFields,...socialFields])fields[key].value=profile[key]||"";
     darkLogo.load(profile.logo);lightLogo.load(profile.logoLightBackground);
     const groups=$("shopOptions");
@@ -300,6 +311,8 @@
       const options={};
       for(const input of e.target.querySelectorAll('[name^="option-"]')) options[input.name.slice(7)]=input.checked;
       const profile={...Store.settings().profile,skin:fields.skin.value,logo:darkLogo.value(),logoLightBackground:lightLogo.value()};
+      profile.driveTimezone=$("drive-zone").value;
+      profile.driveHours=Object.fromEntries(Array.from($("drive-hours").children,row=>[row.dataset.day,row.querySelector("input").checked?Array.from(row.querySelectorAll("input[type=time]"),t=>t.value):null]));
       for(const key of profileFields)profile[key]=fields[key].value.trim();
       for(const key of socialFields)profile[key]=httpsUrl(fields[key].value.trim(),key);
       await Store.saveSettings({dealerName,tradeUrl,options,profile});

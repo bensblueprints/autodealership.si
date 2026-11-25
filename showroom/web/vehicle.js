@@ -195,8 +195,9 @@
     try{
       const response=await fetch(bookingUrl);
       if(!response.ok)throw Error();
-      const {slots}=await response.json();
-      const format=new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
+      const {slots,timezone}=await response.json();
+      select.dataset.timezone=timezone;get("drive-timezone").textContent=timezone.replaceAll("_"," ");
+      const format=new Intl.DateTimeFormat("en-US",{timeZone:timezone,weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
       for(const slot of slots)select.add(new Option(format.format(new Date(slot)),slot));
       if(!slots.length)get("drive-status").textContent="No appointments are available in the next two weeks.";
     }catch{get("drive-status").textContent="Times are unavailable. Contact sales to schedule.";}
@@ -246,7 +247,7 @@
       const result=await response.json();
       if(!response.ok){if(response.status===409)await loadTimes();throw Error(result.error||"Booking unavailable.");}
       let localLead;try{localLead=await Store.addLead({...data,carId:car.id,source:"Scheduled test drive",message:data.message+" · "+data.slot});}catch{}
-      get("drive-status").textContent="Reserved for "+form.elements.slot.selectedOptions[0].text+" Central time. Confirmation "+result.confirmation;
+      get("drive-status").textContent="Reserved for "+form.elements.slot.selectedOptions[0].text+" ("+get("drive-timezone").textContent+"). Confirmation "+result.confirmation;
       receipt={leadId:localLead?.id,slot:data.slot,token:result.noteToken};follow.hidden=false;
       form.hidden=true;get("drive-title").textContent="Test drive scheduled";
     }catch(error){get("drive-status").textContent=error.message || "Your reservation could not be saved. Please try again.";button.disabled=false;}

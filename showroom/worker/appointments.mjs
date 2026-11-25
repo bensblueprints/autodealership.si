@@ -1,11 +1,17 @@
 const appointmentPrefix="appointments/";
-function driveSlots(){
+const weekdayKeys=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const defaultDriveHours=Object.fromEntries(weekdayKeys.map(day=>[day,["Sun","Sat"].includes(day)?null:["10:00","17:00"]]));
+function driveSlots(hours=defaultDriveHours,timezone="America/Chicago"){
   const slots=[];
   const now=Date.now();
-  const formatter=new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",weekday:"short",hour:"numeric",hourCycle:"h23"});
-  for(let t=Math.ceil((now+3600000)/3600000)*3600000;t<now+14*86400000;t+=3600000){
+  const formatter=new Intl.DateTimeFormat("en-US",{timeZone:timezone,weekday:"short",minute:"2-digit",hour:"numeric",hourCycle:"h23"});
+  for(let t=Math.floor((now+3600000)/3600000)*3600000;t<now+14*86400000;t+=3600000){
     const parts=Object.fromEntries(formatter.formatToParts(t).map(p=>[p.type,p.value]));
-    if(!["Sat","Sun"].includes(parts.weekday) && +parts.hour>=10 && +parts.hour<=16)slots.push(new Date(t).toISOString());
+    const range=hours[parts.weekday];if(!range)continue;
+    const mins=value=>Number(value.slice(0,2))*60+Number(value.slice(3));
+    const open=mins(range[0]),close=mins(range[1]),local=Number(parts.hour)*60+Number(parts.minute);
+    const offset=((open-local)%60+60)%60,start=t+offset*60000;
+    if(local+offset>=open && local+offset+60<=close && start>=now+3600000 && start<now+14*86400000)slots.push(new Date(start).toISOString());
   }
   return slots;
 }
@@ -13,6 +19,9 @@ async function appointmentApi(request,env){
   const url=new URL(request.url), bucket=env.BUCKET;
   if(!bucket)return profileReply({error:"Booking storage unavailable."},503);
   const admin=env.privateAdmin || request.headers.get("oai-authenticated-user-email")==="benji@benjaminboyce.com";
+  const storedProfile=await bucket.get(profileKey);
+  const profile=(storedProfile && await storedProfile.json())?.profile||{};
+  const timezone=profile.driveTimezone||"America/Chicago";
   if(url.pathname.endsWith("/desk")){
     if(!admin)return profileReply({error:"Dealer sign-in required."},403);
     if(request.method!=="GET")return profileReply({},405);
@@ -31,21 +40,21 @@ async function appointmentApi(request,env){
       }}
       cursor=page.truncated?page.cursor:undefined;
     }while(cursor);
-    return profileReply({appointments:rows.sort((a,b)=>a.slot.localeCompare(b.slot))});
+    return profileReply({timezone,appointments:rows.sort((a,b)=>a.slot.localeCompare(b.slot))});
   }
   const vin=url.searchParams.get("vin")||"";
   if(!(env.clientHasVin?await env.clientHasVin(vin):bookingVins.has(vin)))return profileReply({error:"Select a vehicle from the dealer inventory."},400);
-  const prefix=appointmentPrefix+vin+"/",slots=driveSlots();
+  const prefix=appointmentPrefix+vin+"/",slots=driveSlots(profile.driveHours,timezone);
   if(request.method==="GET" && !url.pathname.endsWith("/notes")){
     const occupied=await bucket.list({prefix});
     const taken=new Set(occupied.objects.map(o=>o.key.slice(prefix.length)));
-    return profileReply({slots:slots.filter(s=>!taken.has(s))});
+    return profileReply({timezone,slots:slots.filter(s=>!taken.has(s))});
   }
   if(request.method!=="POST" || request.headers.get("origin")!==url.origin || !request.headers.get("content-type")?.startsWith("application/json"))return profileReply({},403);
   let data;
   try{const raw=await request.text();if(raw.length>5000)throw Error();data=JSON.parse(raw);}catch{return profileReply({error:"Invalid booking."},400);}
   if(url.pathname.endsWith("/notes")){
-    if(!data || typeof data.slot!=="string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:00:00\.000Z$/.test(data.slot) || !["tradeIn","preferences"].includes(data.field) || typeof data.answer!=="string" || !data.answer.trim() || data.answer.length>1000)return profileReply({error:"Enter a customer answer."},400);
+    if(!data || typeof data.slot!=="string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:[0-5]\d:00\.000Z$/.test(data.slot) || !["tradeIn","preferences"].includes(data.field) || typeof data.answer!=="string" || !data.answer.trim() || data.answer.length>1000)return profileReply({error:"Enter a customer answer."},400);
     const saved=await bucket.get(prefix+data.slot);
     const record=saved && await saved.json();
     if(!record?.noteToken || data.token!==record.noteToken)return profileReply({error:"Booking access required."},403);

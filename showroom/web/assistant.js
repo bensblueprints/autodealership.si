@@ -280,7 +280,7 @@
     }
     review=missing.length?null:signature;
     const result={vehicle:title(car),details,missing,readyForConfirmation:!missing.length};
-    if(booking){result.timezone="America/Chicago";result.times=Array.from(form.elements.slot.options).filter(o=>o.value).map(o=>[o.value,o.text]);}
+    if(booking){result.timezone=form.elements.slot.dataset.timezone||"America/Chicago";result.times=Array.from(form.elements.slot.options).filter(o=>o.value).map(o=>[o.value,o.text]);}
     return JSON.stringify(result);
   }
 
