@@ -6,7 +6,7 @@ by("joinPrefs").innerHTML=prefMarkup;by("accountPrefs").innerHTML=prefMarkup;
 let account;
 async function api(path,body){const res=await fetch("/billing/"+path,body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await res.json();if(!res.ok)throw Error(data.error||"Please try again.");return data;}
 function settings(form){return {refill:Number(form.elements.refill.value),cap:Number(form.elements.cap.value),auto:form.elements.auto.checked};}
-function price(){const voice=!["website","chat"].includes(join.elements.plan.value);by("joinPrefs").hidden=!voice;if(!voice)join.elements.auto.checked=false;const monthly=prices[join.elements.plan.value]+(join.elements.marketing.checked?2500:0);by("total").textContent="First payment "+usd(monthly+997)+" (includes $997 one-time onboarding). Then "+usd(monthly)+" per month, before tax.";}
+function price(){const voice=!["website","chat"].includes(join.elements.plan.value);by("joinPrefs").hidden=!voice;if(!voice)join.elements.auto.checked=false;const monthly=prices[join.elements.plan.value]+(join.elements.marketing.checked?2500:0);if(join.elements.term.value==="annual_bf26"){by("total").textContent=usd(prices[join.elements.plan.value]*10+(join.elements.marketing.checked?30000:0))+" billed annually before tax. Includes 12 months of the plan and $0 onboarding. Managed marketing, if selected, is billed for all 12 months.";return;}by("total").textContent="First payment "+usd(monthly+997)+" (includes $997 one-time onboarding). Then "+usd(monthly)+" per month, before tax.";}
 function guarded(fn){return async event=>{event.preventDefault();const btn=event.submitter||event.currentTarget;btn.disabled=true;by("status").textContent="";try{await fn();}catch(err){by("status").textContent=err.message;}finally{btn.disabled=false;}};}
 function action(label,route,body){const btn=document.createElement("button");btn.className="primary";btn.textContent=label;btn.onclick=guarded(async()=>{const {url}=await api(route,body);location.assign(url);});by("accountButtons").append(btn);}
 async function render(){
@@ -15,6 +15,7 @@ async function render(){
  by("availability").textContent=account.checkoutAvailable?"":"Enrollment is open. Payment activation is pending. You can register without a charge.";
  if(!signed){by("title").textContent="Set up your showroom.";price();return;}
  by("title").textContent=account.name;by("summary").textContent=names[account.plan]+" · "+usd(prices[account.plan]+2500*account.marketing)+"/month · "+(account.status==="signup"?"Awaiting checkout · first payment "+usd(prices[account.plan]+2500*account.marketing+997)+" including $997 onboarding, before tax":account.status)+". Voice usage: "+(account.used/60).toFixed(1)+" minutes. Included: "+account.included+". Purchased balance: "+usd(account.balance/6000)+".";
+ if(account.term==="annual_bf26")by("summary").textContent=names[account.plan]+" · "+usd(prices[account.plan]*10+30000*account.marketing)+" annually · $0 onboarding · "+account.status+" · "+account.included+" included voice minutes per month · purchased balance "+usd(account.balance/6000);
  by("accountButtons").replaceChildren();
  if(account.checkoutAvailable && account.status==="signup")action("Continue to Whop checkout","checkout",{});
  if(account.status==="active" && !["website","chat"].includes(account.plan)){action(account.cardSaved?"Update saved card":"Save card with Whop","save-card",{});action("Buy $100 credit","buy",{amount:100});action("Buy $500 credit","buy",{amount:500});}
@@ -24,6 +25,9 @@ async function render(){
 }
 const requested=new URLSearchParams(location.search).get("plan");if(Object.hasOwn(names,requested))join.elements.plan.value=requested;
 if(new URLSearchParams(location.search).get("marketing")==="1")join.elements.marketing.checked=true;
+if(Date.now()<Date.parse("2026-12-15T06:00:00Z")){
+ if(new URLSearchParams(location.search).get("term")==="annual_bf26")join.elements.term.value="annual_bf26";
+}else{join.elements.term.querySelector('[value="annual_bf26"]').remove();}
 join.onchange=price;
 join.onsubmit=guarded(async()=>{await api("signup",{...Object.fromEntries(new FormData(join)),...settings(join),marketing:join.elements.marketing.checked});join.reset();await render();});
 login.onsubmit=guarded(async()=>{await api("login",Object.fromEntries(new FormData(login)));login.reset();await render();});

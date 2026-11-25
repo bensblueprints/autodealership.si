@@ -34,17 +34,22 @@ CAP_UNIT = 6000
 now = lambda: int(time.time())
 
 @contextmanager
-def transaction():
+def transaction(initialize=False):
     with psycopg.connect(os.environ["BILLING_DATABASE_URL"],row_factory=dict_row) as db:
         # Serialize ledger changes, including duplicate webhook and refill checks.
         db.execute("SELECT pg_advisory_xact_lock(193746820)")
+        if not initialize:
+            db.execute("""UPDATE dealers d SET cycle=c.start,used=c.used FROM cycles c
+                WHERE d.term='annual_bf26' AND d.status='active' AND c.dealer=d.id AND c.start>d.cycle
+                AND c.start=(SELECT max(start) FROM cycles WHERE dealer=d.id AND start<=%s)""",(now(),))
         yield db
 
-with transaction() as db:
+with transaction(initialize=True) as db:
     db.execute("""
     CREATE TABLE IF NOT EXISTS dealers(id TEXT PRIMARY KEY,email TEXT UNIQUE,name TEXT,password TEXT,plan TEXT,marketing BIGINT,
       status TEXT DEFAULT 'signup',cycle BIGINT DEFAULT 0,used BIGINT DEFAULT 0,balance BIGINT DEFAULT 0,
       refill BIGINT DEFAULT 100,cap BIGINT DEFAULT 300,auto BIGINT DEFAULT 0,member TEXT,method TEXT,membership TEXT UNIQUE);
+    ALTER TABLE dealers ADD COLUMN IF NOT EXISTS term TEXT NOT NULL DEFAULT 'monthly';
     CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,dealer TEXT,expires BIGINT);
     CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY,dealer TEXT,kind TEXT,amount BIGINT,variant TEXT,
       cycle BIGINT,state TEXT DEFAULT 'pending',payment TEXT UNIQUE,checkout TEXT,url TEXT,created BIGINT);
@@ -67,9 +72,10 @@ def passwd(password, salt):
     return hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt), n=16384, r=8, p=1).hex()
 
 def plan_key(d):
-    return d["plan"] + ("_marketing" if d["marketing"] else "")
+    return d["plan"] + ("_marketing" if d["marketing"] else "") + ("_annual_bf26" if d["term"]=="annual_bf26" else "")
 
 def price(d):
+    if d["term"]=="annual_bf26":return PLANS[d["plan"]][0]*10+30000*d["marketing"]
     return PLANS[d["plan"]][0]+2500*d["marketing"]
 
 def ready():
@@ -97,7 +103,7 @@ def checkout(dealer,kind,amount=0):
         d=one(db,"SELECT * FROM dealers WHERE id=%s",dealer)
         if kind=="subscription":
             require(d["status"]=="signup","Subscription already started.")
-            variant=VARIANTS.get(plan_key(d));amount=price(d)+ONBOARDING_FEE
+            variant=VARIANTS.get(plan_key(d));amount=price(d)+(0 if d["term"]=="annual_bf26" else ONBOARDING_FEE)
         else:
             require(d["status"]=="active" and PLANS[d["plan"]][1]>0,"An active voice subscription is required.")
             variant="setup" if kind=="card" else VARIANTS.get("credit_"+str(amount))
@@ -201,6 +207,8 @@ def whop_event(db,event):
         if d["membership"] and d["membership"]!=membership:return
         stamp=int(datetime.fromisoformat(v["paid_at"].replace("Z","+00:00")).timestamp())
         db.execute("INSERT INTO cycles(dealer,start) VALUES(%s,%s) ON CONFLICT DO NOTHING",(d["id"],stamp))
+        if d["term"]=="annual_bf26":
+            db.execute("INSERT INTO cycles(dealer,start) SELECT %s,extract(epoch from (to_timestamp(%s) AT TIME ZONE 'UTC')+n*interval '1 month')::bigint FROM generate_series(1,11) n ON CONFLICT DO NOTHING",(d["id"],stamp))
         if stamp>=d["cycle"]:
             db.execute("UPDATE dealers SET status='active',membership=%s,member=%s,cycle=%s,used=0 WHERE id=%s",(membership,v["member_id"],stamp,d["id"]))
         amount=int(received)
@@ -252,7 +260,7 @@ class Handler(BaseHTTPRequestHandler):
         with transaction() as db:
             d=self.dealer(db)
             if not d:return self.reply(200,{"signedIn":False,"checkoutAvailable":ready()})
-            public={k:d[k] for k in ("name","email","plan","marketing","status","cycle","used","balance","refill","cap","auto")}
+            public={k:d[k] for k in ("name","email","plan","term","marketing","status","cycle","used","balance","refill","cap","auto")}
             public.update(signedIn=True,cardSaved=bool(d["method"]),checkoutAvailable=ready() and bool(VARIANTS.get(plan_key(d))),included=PLANS[d["plan"]][1],
                 notices=[dict(x) for x in db.execute("SELECT subject,created FROM notices WHERE dealer=%s ORDER BY created DESC LIMIT 5",(d["id"],))],
                 receipts=[dict(x) for x in db.execute("SELECT kind,amount,received,id FROM payments WHERE dealer=%s ORDER BY received DESC LIMIT 25",(d["id"],))])
@@ -287,7 +295,9 @@ class Handler(BaseHTTPRequestHandler):
                 if self.path.endswith("signup"):
                     require(data["plan"] in PLANS and data["plan"] not in ("web_voice","omnichannel") and type(data.get("marketing",False)) is bool and 0<len(data["name"].strip())<=150,"Choose a package and enter your dealership name.")
                     salt=secrets.token_hex(16);dealer=uuid.uuid4().hex;refill,cap,auto=preferences(data)
-                    try:db.execute("INSERT INTO dealers(id,email,name,password,plan,marketing,refill,cap,auto) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)",(dealer,email,data["name"].strip(),salt+":"+passwd(password,salt),data["plan"],int(data.get("marketing",False)),refill,cap,auto))
+                    term=data.get("term","monthly")
+                    require(term=="monthly" or (term=="annual_bf26" and now()<datetime.fromisoformat("2026-12-15T00:00:00-06:00").timestamp()),"The Black Friday enrollment period has ended. Choose monthly billing.")
+                    try:db.execute("INSERT INTO dealers(id,email,name,password,plan,marketing,refill,cap,auto,term) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",(dealer,email,data["name"].strip(),salt+":"+passwd(password,salt),data["plan"],int(data.get("marketing",False)),refill,cap,auto,term))
                     except psycopg.IntegrityError:raise ValueError("Use sign in if a billing account already exists.")
                     db.execute("INSERT INTO consent VALUES(%s,%s,%s)",(dealer,now(),json.dumps({"version":1,"refill":refill,"threshold":refill//5,"cap":cap,"auto":auto})))
                 else:

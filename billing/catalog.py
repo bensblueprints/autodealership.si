@@ -20,6 +20,7 @@ for key,(amount,minutes) in PLANS.items():
         name=key+("_marketing" if marketing else "")
         cost=amount+(2500 if marketing else 0)
         offers[name]={"title":"AutoDealership.SI "+{'phone_widget': 'Phone Voice + Web Chat Widget', 'chat': 'Web Chat Widget', 'web_voice': 'Dealer Chat + Web Voice', 'phone_only': 'Phone Voice Receptionist', 'omnichannel': 'Phone + Website Concierge'}.get(key,key.title())+(" + Managed Marketing" if marketing else ""),"billing_type":"renewal","initial_price":ONBOARDING_FEE,"renewal_price":cost,"billing_period":30}
+        offers[name+"_annual_bf26"]={**offers[name],"title":offers[name]["title"]+" Annual","initial_price":0,"renewal_price":amount*10+(30000 if marketing else 0),"billing_period":365}
 for amount in (100,500):
     offers["credit_"+str(amount)]={"title":"AutoDealership.SI voice credit $"+str(amount),"billing_type":"one_time","initial_price":amount}
 for key,variant in offers.items():
