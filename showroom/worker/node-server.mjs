@@ -73,17 +73,17 @@ const passwordHash=promisify(scrypt);
 await pool.query(`CREATE TABLE IF NOT EXISTS public.dealer_users(site text NOT NULL,email text NOT NULL,salt text NOT NULL,hash text NOT NULL,active boolean NOT NULL DEFAULT true,PRIMARY KEY(site,email));
 CREATE TABLE IF NOT EXISTS public.dealer_sessions(token text PRIMARY KEY,site text NOT NULL,email text NOT NULL,expires timestamptz NOT NULL);
 CREATE TABLE IF NOT EXISTS public.dealer_login_attempts(site text NOT NULL,ip text NOT NULL,attempts integer NOT NULL,started timestamptz NOT NULL,PRIMARY KEY(site,ip))`);
+const showroomOffersQuery=`SELECT b.vehicle,b.revision,b.offer,
+  (p.settings->>'financingEnabled'='false' OR c.body->>'financingEnabled'='false') AS cash_only
+  FROM bhph_offers b LEFT JOIN client_cars c ON c.vin=b.vehicle LEFT JOIN client_profile p ON p.id=1`;
 function publishedOffer(row){
-  if(!row.offer.enabled)return {cash:row.offer.cash,revision:row.revision};
+  if(row.cash_only || !row.offer.enabled)return {cash:row.offer.cash,revision:row.revision};
   return {...row.offer,revision:row.revision};
 }
 async function offerSnapshot(vin,choice){
-  if(scope.getStore()){
-    const blocked=await db.query("SELECT 1 FROM client_profile WHERE settings->>'financingEnabled'='false' UNION ALL SELECT 1 FROM client_cars WHERE vin=$1 AND body->>'financingEnabled'='false'",[vin]);
-    if(blocked.rowCount)return null;
-  }else if(stored()?.settings?.financingEnabled===false)return null;
-  const row=(await db.query("SELECT revision,offer FROM bhph_offers WHERE vehicle=$1",[vin])).rows[0];
-  if(!row?.offer.enabled || row.revision!==choice?.revision)return null;
+  if(scope.getStore()?.bhph===false)return null;
+  const row=(await db.query(showroomOffersQuery+" WHERE b.vehicle=$1",[vin])).rows[0];
+  if(!row?.offer.enabled || row.cash_only || row.revision!==choice?.revision)return null;
   const schedule=row.offer.schedules.find(s=>s.frequency===choice.frequency && s.months===choice.months);
   return schedule?{cash:row.offer.cash,price:row.offer.price,down:row.offer.down,balance:row.offer.balance,...schedule}:null;
 }
@@ -392,7 +392,7 @@ createServer(async(req,res)=>{
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
       const vehicle=route.searchParams.get("vehicle");
       if(req.method==="GET" && !vehicle){
-        const {rows}=await db.query("SELECT vehicle,revision,offer FROM bhph_offers");
+        const {rows}=await db.query(showroomOffersQuery);
         return reply(200,Object.fromEntries(rows.map(row=>[row.vehicle,publishedOffer(row)])));
       }
       if(!privateAdmin)return reply(403,{error:"Use Dealer sign in first."});

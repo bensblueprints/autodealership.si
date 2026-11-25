@@ -168,9 +168,16 @@
     renderLeads(leads,$("leadList"),$("statusFilter").value);
     renderLeads(leads.filter(l=>l.status==="New").sort((a,b)=>a.createdAt.localeCompare(b.createdAt)),$("pending-inquiries"),"");renderInventory(Store.cars(true));
   }
+  function paymentMode(settings){
+    if(settings?.financingEnabled===false)return "cash";
+    return settings?.aprFinancingEnabled===false?"bhph":"apr";
+  }
+  function paymentFlags(mode){
+    return {financingEnabled:mode!=="cash",aprFinancingEnabled:mode==="apr"};
+  }
   function openEditor(car=null) {
     $("saveWithBhph").hidden=!!window.clientSite && !clientSite.bhph;
-    editing=car;form.reset();form.elements.vehicleFinancing.checked=car?.financingEnabled!==false;$("formError").textContent="";$("editTitle").textContent=car?"Edit vehicle":"Add vehicle";
+    editing=car;form.reset();form.elements.vehicleFinancing.value=paymentMode(car);$("formError").textContent="";$("editTitle").textContent=car?"Edit vehicle":"Add vehicle";
     form.querySelector(".editor-details").open=false;
     for(const field of ['stock','price','miles'])form.elements[field].required=!car || car[field]!=null && car[field]!=="";
     if(car)for(const key of ['status','condition','body']){
@@ -244,7 +251,7 @@
     try {
       const f=new FormData(form),car={};
       for(const key of textFields) car[key]=String(f.get(key)||"").trim();
-      car.financingEnabled=form.elements.vehicleFinancing.checked;
+      Object.assign(car,paymentFlags(form.elements.vehicleFinancing.value));
       car.vin=car.vin.replace(/\s+/g,"").toUpperCase();
       if(window.clientSite && !/^[A-HJ-NPR-Z0-9]{17}$/.test(car.vin))throw Error("Enter a 17-character VIN. VINs use letters and numbers and exclude I, O and Q.");
       car.vpicDetails=window.vpicDetailsFor?.(car.vin)??(editing?.vin===car.vin?editing.vpicDetails:undefined);
@@ -368,6 +375,7 @@
     const settings=Store.settings(), fields=$("settingsForm").elements;
     fields.name.value=settings.dealerName;fields.skin.value=settings.profile?.skin || "midnight";
     fields.tradeUrl.value=settings.tradeUrl;
+    fields.storeFinancing.value=paymentMode(settings.options);
     const profile=settings.profile||{};
     const zone=$("drive-zone");zone.replaceChildren(...["America/New_York","America/Chicago","America/Denver","America/Phoenix","America/Los_Angeles","America/Anchorage","Pacific/Honolulu"].map(z=>new Option(z.replaceAll("_"," "),z)));zone.value=profile.driveTimezone||"America/Chicago";
     fillHours($("drive-hours"),profile.driveHours);
@@ -389,6 +397,11 @@
       }
       groups.append(section);
     }
+    function syncAprTools(){
+      for(const key of ["finance","lease","payment"])fields.namedItem("option-"+key).disabled=fields.storeFinancing.value!=="apr";
+    }
+    fields.storeFinancing.onchange=syncAprTools;
+    syncAprTools();
     $("settingsError").textContent="";$("settings").showModal();
     $("settings").scrollTop=0;
   }
@@ -402,7 +415,7 @@
         const parsed=new URL(tradeUrl);
         if(parsed.protocol!=="https:" || parsed.username || parsed.password) throw Error("Enter an HTTPS provider URL without embedded credentials.");
       }
-      const options={};
+      const options=paymentFlags(fields.storeFinancing.value);
       for(const input of e.target.querySelectorAll('[name^="option-"]')) options[input.name.slice(7)]=input.checked;
       const profile={...Store.settings().profile,skin:fields.skin.value,logo:darkLogo.value(),logoLightBackground:lightLogo.value()};
       profile.driveTimezone=$("drive-zone").value;

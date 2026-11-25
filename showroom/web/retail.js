@@ -13,7 +13,7 @@
     lease:{months:36, rate:6, down:0, residual:55}
   };
   function amount(car, mode="cash", input=terms[mode]) {
-    if ((mode!=="cash" && !Store.financingAllowed(car)) || !hasNumber(car.price)) return null;
+    if ((mode!=="cash" && !Store.aprAllowed(car)) || !hasNumber(car.price)) return null;
     const price = Number(car.price);
     if (!Number.isFinite(price) || price < 0) return null;
     if (mode === "cash") return price;
@@ -43,7 +43,7 @@
     const schedules=offer?.schedules||[];
     const plan=offer?'<div class="bhph-card-terms">'+
       (schedules.length?'<details><summary>Payment schedules</summary>'+schedules.map(s=>'<p>'+html(s.months)+' months · '+html(s.frequency)+' · '+html(s.count-1)+' payments of '+html(BHPH.money(s.payment))+', final '+html(BHPH.money(s.final))+'</p>').join("")+'</details>':'')+'</div>':'';
-    if (Store.financingAllowed(car) && amount(car) !== null && enabled("payment") && (enabled("finance") || enabled("lease"))) actions.push(button("payment","Calculate payment"));
+    if (Store.aprAllowed(car) && amount(car) !== null && enabled("payment") && (enabled("finance") || enabled("lease"))) actions.push(button("payment","Calculate payment"));
     if (enabled("trade")) actions.push(button("trade","Value my trade"));
     if (enabled("availability")) actions.push(button("availability","Confirm availability"));
     const showPricing=enabled("pricing"),showCompare=enabled("compare");
@@ -84,7 +84,7 @@
     return '<label>'+label+'<input type="number" name="'+key+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+value+'" required></label>';
   }
   function payment(car,mode=enabled("finance")?"finance":"lease") {
-    if (!Store.financingAllowed(car))return;
+    if (!Store.aprAllowed(car))return;
     if (amount(car) === null) {
       present("Price available from dealer", "<p>Contact the dealership for the asking price before estimating a monthly payment.</p>"+button("close","Done"));
       return;

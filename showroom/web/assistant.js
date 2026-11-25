@@ -143,22 +143,31 @@
     }
     const monthly = /(?:per month|a month|monthly|\/mo\b)/.test(words);
     const mode = /\blease\b/.test(words) ? "lease" : "finance";
-    if (monthly && (Store.settings().options?.[mode] === false || Store.settings().options?.payment === false)) return [];
+    function monthlyPayments(car){
+      const payments=mode==="lease"?[]:(car.bhph?.schedules||[]).filter(s=>s.frequency==="Monthly").map(s=>s.payment/100);
+      if(Store.aprAllowed(car) && Store.settings().options?.[mode]!==false && Store.settings().options?.payment!==false){
+        const estimate=window.Retail?.amount(car,mode);
+        if(estimate!=null)payments.push(estimate);
+      }
+      return payments;
+    }
     words = words.replace(/(?:per month|a month|monthly|\/mo\b|\bfinance\b|\blease\b|\bpayments?\b)/g, " ");
     words = words.replace(/\b(under|below|less than|up to|at most|over|above|more than)\s*(\d+(?:\.\d+)?)\s*(k|thousand)?\s*(miles?|mi\b)?/g, (_, op, amount, scale, unit) => {
       const value = Number(amount) * (scale ? 1000 : 1);
       limits.push(car => {
-        const valueForCar = !unit && monthly ? window.Retail?.amount(car, mode) : car[unit ? "miles" : "price"];
-        if (valueForCar == null || String(valueForCar).trim()==="" || !Number.isFinite(Number(valueForCar))) return false;
-        const n = Number(valueForCar);
-        return ["over","above","more than"].includes(op) ? n>value : ["up to","at most"].includes(op) ? n<=value : n<value;
+        const values = !unit && monthly ? monthlyPayments(car) : [car[unit ? "miles" : "price"]];
+        return values.some(raw=>{
+          if(raw==null || String(raw).trim()==="" || !Number.isFinite(Number(raw)))return false;
+          const n=Number(raw);
+          return ["over","above","more than"].includes(op) ? n>value : ["up to","at most"].includes(op) ? n<=value : n<value;
+        });
       });
       return " ";
     });
     const stop = new Set("a an all any and are at available browse by can car cars cost currently do find for from get have i in inventory is like list looking lot me my of on only please price priced see show showroom stock that the there to under vehicle vehicles want what which with you your anything something less than".split(" ").concat(["vin","number","here","dealership"]));
     const terms = words.split(/[^a-z0-9]+/).filter(word => word && !stop.has(word));
     return cars.filter(car => {
-      if(monthly && !Store.financingAllowed(car))return false;
+      if(monthly && !monthlyPayments(car).length)return false;
       const hay = searchText(car);
       return limits.every(test => test(car)) && terms.every(term => hay.includes(term));
     });
@@ -185,17 +194,18 @@
   function vehiclePrompt(car){
     if(!car)return "Welcome to the showroom. What kind of vehicle are you looking for?";
     const options=["schedule a test drive"];
-    if(Store.financingAllowed(car) && Store.settings().options?.payment!==false)options.push("estimate a monthly payment");
+    if(car.bhph)options.push("review the Buy Here Pay Here payments");
+    if(Store.aprAllowed(car) && Store.settings().options?.payment!==false)options.push("estimate a monthly payment");
     if(Store.settings().options?.trade!==false)options.push("request a trade-in appraisal");
     return "You're looking at the "+title(car)+". Would you like to "+new Intl.ListFormat("en",{type:"disjunction"}).format(options)+"?";
   }
   function financingContext(car){
-    if(!Store.financingAllowed(car))return " Cash purchase only. Financing, lease estimates and payment plans are unavailable.";
     const o=car?.bhph;
-    if(!o)return "";
+    const aprAvailable=Store.aprAllowed(car);
+    if(!o)return aprAvailable?"":" Only the cash price is listed for this vehicle.";
     const choice=vehicleDoc()?.defaultView?.bhphChoice;
-    const selected=choice?.revision===o.revision && o.schedules.find(s=>s.frequency===choice.frequency && s.months===choice.months);
-    const intro="Stock "+(car.stock||car.id)+". Cash price "+BHPH.money(o.cash)+". ";
+    const selected=currentCar()?.id===car.id && choice?.revision===o.revision && o.schedules.find(s=>s.frequency===choice.frequency && s.months===choice.months);
+    const intro="Stock "+(car.stock||car.id)+". Cash price "+BHPH.money(o.cash)+". "+(aprAvailable?"":"This listing offers Buy Here Pay Here. APR estimates are turned off. ");
     if(selected)return intro+"Selected schedule: "+BHPH.summary(o,selected);
     return intro+"BHPH price "+BHPH.money(o.price)+", cash down "+BHPH.money(o.down)+", remaining "+BHPH.money(o.balance)+". Available schedules: "+o.schedules.map(s=>s.months+" months "+s.frequency.toLowerCase()+" ("+(s.count-1)+" payments of "+BHPH.money(s.payment)+", final payment "+BHPH.money(s.final)+")").join("; ")+".";
   }
@@ -268,7 +278,7 @@
       catch{return "Saving the note failed. Retry before saying it was saved.";}
     }
     const booking=kind==="test_drive",finance=kind==="financing";
-    if(finance && !Store.financingAllowed(car))return "This vehicle is cash purchase only.";
+    if(finance && !Store.aprAllowed(car))return financingContext(car).trim();
     if(!booking && !finance && kind!=="trade_in")return "Unknown workflow.";
     const dialogSelector=booking?"#drive":".retail-dialog";
     const trigger=doc.querySelector(booking?"#request-drive":finance?'#vehicle-actions [data-retail="payment"]':'#vehicle-actions [data-retail="trade"]');
@@ -378,10 +388,20 @@
       listingWindow.saveBookedCustomerNote(field,query).then(()=>addLine(field==="tradeIn"?"Trade-in saved. Is there anything specific you want the salesperson to know?":"Your requests are attached to your test drive.")).catch(()=>addLine("Your answer could not be saved. Please try again."));
       return;
     }
-    await Store.inventoryReady;
-    if(!Store.financingAllowed(currentCar()) && /financ|lease|payment|buy here|bhph/i.test(query)){addLine("This "+(currentCar()?"vehicle":"dealership")+" offers cash purchases only.");return;}
-    if(currentCar()?.bhph && /(?:pay(?:ment|out)?|pay[ -]off) schedule|read.*schedule|selected plan|buy here|bhph|cash down|down payment|weekly|biweekly|monthly payment|cash price/i.test(query) && !/test.drive|book/i.test(query)){
-      addLine(financingContext(currentCar()).trim());return;
+    await Promise.all([Store.inventoryReady,Store.profileReady]);
+    const shown=currentCar();
+    if(!/test.drive|book/i.test(query)){
+      const asksAboutPlan=/(?:pay(?:ment|out)?|pay[ -]off) schedule|read.*schedule|selected plan|buy here|bhph|cash down|down payment|weekly|biweekly|monthly payment|cash price/i.test(query);
+      const asksAboutFinance=/financ|lease|payments?|\bapr\b/i.test(query);
+      if(shown && ((shown.bhph && asksAboutPlan) || (!Store.aprAllowed(shown) && (asksAboutPlan || asksAboutFinance)))){
+        addLine(financingContext(shown).trim());return;
+      }
+      if(!shown && !Store.aprAllowed() && (asksAboutPlan || asksAboutFinance) && !/\d/.test(query)){
+        const offers=Store.cars().filter(car=>car.bhph);
+        if(offers.length)list("These vehicles have published Buy Here Pay Here payments. Choose one to see its schedule.",offers);
+        else addLine("The dealership lists cash prices only.");
+        return;
+      }
     }
     if(explicitIdentifier(query)){
       const matches=exactVehicles(Store.cars(),query);
@@ -487,6 +507,7 @@
               count:matches.length,
               vehicles:matches.slice(0,8).map(car=>({
                 id:car.id,stock:car.stock,vin:car.vin,year:car.year,make:car.make,model:car.model,trim:car.trim,
+                aprEstimates:Store.aprAllowed(car),buyHerePayHere:car.bhph?financingContext(car).trim():null,
                 body:car.body,price:car.price??null,miles:car.miles??null,location:car.location,condition:car.condition,
                 availability:car.availability || "Confirm with dealer",observedAt:car.observedAt,
                 features:relevant(car.features||[],query,12),packages:relevant(car.packages||[],query,6)

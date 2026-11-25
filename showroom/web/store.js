@@ -54,7 +54,7 @@
   const optionGroups = {
     "Inventory filters": {year:"Year",make:"Make",model:"Model",trim:"Trim",features:"Vehicle features",fuel:"Fuel type",
       transmission:"Transmission",miles:"Mileage",engine:"Engine",color:"Color",body:"Body style",doors:"Doors",location:"Location",status:"Inventory status",price:"Price or payment range"},
-    "Purchase modes": {financingEnabled:"Offer financing (turn off for a cash-only dealership)",cash:"Cash",finance:"Finance",lease:"Lease"},
+    "Price and payment tabs": {cash:"Cash price",finance:"Finance estimate",lease:"Lease estimate"},
     "Shopping tools": {compare:"Compare vehicles",pricing:"Pricing and details tabs",payment:"Payment calculator",
       trade:"Value a trade",availability:"Confirm availability"}
   };
@@ -117,7 +117,7 @@
     if(!window.postgresInventory)for(const key of Object.keys(localStorage)){
       if(key.startsWith(prefix+"vehicle:"))merge(JSON.parse(localStorage.getItem(key)));
     }
-    view=[...added,...catalogById.keys()].map(id=>{const car=byId.get(id),offer=offers[car.vin||id];return offer?{...car,price:offer.cash/100,bhph:offer.enabled && financingAllowed(car)?offer:null}:car;});
+    view=[...added,...catalogById.keys()].map(id=>{const car=byId.get(id),offer=offers[car.vin||id];return offer?{...car,price:offer.cash/100,bhph:offer.enabled && paymentPlansAllowed(car)?offer:null}:car;});
     return view;
   }
   let dealerLeads=[],inquiryState=window.postgresInventory?"Loading inquiries…":"";
@@ -159,7 +159,11 @@
         if(detail.identity)throw Object.assign(Error(detail.error),{identity:detail.identity});
         throw Error(detail.error || (res.status===403?"Your dashboard session expired. Reopen this dealership from your client list.":res.status===413?"The vehicle photo is too large. Choose a smaller photo or use an HTTPS photo URL.":"Could not save this vehicle. Please try again."));
       }
-      car.id=car.vin;catalogById.set(car.id,car);view=null;try{localStorage.setItem(prefix+"inventory-saved",String(Date.now()))}catch{}window.dispatchEvent(new Event("showroom:update"));return;
+      car.id=car.vin;
+      const unblocked=catalogById.get(car.id)?.financingEnabled===false && car.financingEnabled!==false;
+      catalogById.set(car.id,car);view=null;
+      if(unblocked)await refreshInventoryStatus().catch(()=>{});
+      try{localStorage.setItem(prefix+"inventory-saved",String(Date.now()))}catch{}window.dispatchEvent(new Event("showroom:update"));return;
     }
     const original=catalogById.get(car.id);
     const patch={...read("vehicle:"+car.id,{}),...car};
@@ -170,32 +174,40 @@
     write("vehicle:"+car.id,patch);
   }
   const defaultProfile={salesPhone:"573-691-4287",partsPhone:"573-691-5263",servicePhone:"573-691-5912",street:"3201 Missouri Blvd",city:"Jefferson City",region:"MO",postal:"65109",country:"USA"};
-  let sharedProfile=null,profileRevision="0",profileRead=0;
+  let sharedProfile=null,profileRevision="0",profileRead=0,profileLoaded=false;
   async function loadProfile(){
     const readNumber=++profileRead;
     const response=await fetch("/api/dealer-profile",{cache:"no-store"});
     if(!response.ok)throw Error("Shared dealership profile is unavailable.");
     const result=await response.json();
-    if(readNumber!==profileRead || result.revision===profileRevision)return;
+    if(readNumber!==profileRead)return;
+    if(profileLoaded && result.revision===profileRevision)return;
+    const unblocked=sharedProfile?.financingEnabled===false && result.settings?.financingEnabled!==false;
+    profileLoaded=true;
     sharedProfile=result.settings;profileRevision=result.revision;view=null;
+    if(unblocked)await refreshInventoryStatus().catch(()=>{});
     window.dispatchEvent(new Event("showroom:update"));
   }
   const profileReady=loadProfile().catch(()=>{});
-  function financingAllowed(car){return sharedProfile?.financingEnabled!==false && car?.financingEnabled!==false;}
+  function paymentPlansAllowed(car){return (!window.postgresInventory || profileLoaded) && sharedProfile?.financingEnabled!==false && car?.financingEnabled!==false;}
+  function aprAllowed(car){
+    return paymentPlansAllowed(car) && sharedProfile?.options?.aprFinancingEnabled!==false && car?.aprFinancingEnabled!==false;
+  }
   function settings() {
     const stored=read("settings",{});
     return {dealerName:window.clientSite?.name||"Capital City CDJR",tradeUrl:"",...stored,...sharedProfile,
-      profile:{...(window.clientSite?{}:defaultProfile),...(sharedProfile?.profile||stored.profile)},options:{...defaultOptions,...stored.options,...sharedProfile?.options,financingEnabled:financingAllowed()}};
+      profile:{...(window.clientSite?{}:defaultProfile),...(sharedProfile?.profile||stored.profile)},options:{...defaultOptions,...stored.options,...sharedProfile?.options,financingEnabled:sharedProfile?.financingEnabled!==false,aprFinancingEnabled:sharedProfile?.options?.aprFinancingEnabled!==false}};
   }
   async function saveSettings(changes) {
     await profileReady;
     const prior=settings();
-    if(changes.profile || changes.dealerName || changes.pages){
+    if(changes.profile || changes.dealerName || changes.pages || changes.options){
       const response=await fetch("/api/dealer-profile",{method:"PUT",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({tradeUrl:changes.tradeUrl??prior.tradeUrl,options:changes.options??prior.options,revision:profileRevision,financingEnabled:changes.options?.financingEnabled??financingAllowed(),dealerName:changes.dealerName||prior.dealerName,profile:{...prior.profile,...changes.profile},pages:changes.pages??prior.pages??{}})});
+        body:JSON.stringify({tradeUrl:changes.tradeUrl??prior.tradeUrl,options:{...prior.options,...changes.options},revision:profileRevision,financingEnabled:changes.options?.financingEnabled??prior.options.financingEnabled,dealerName:changes.dealerName||prior.dealerName,profile:{...prior.profile,...changes.profile},pages:changes.pages??prior.pages??{}})});
       const result=await response.json();
       if(!response.ok){if(response.status===409)await loadProfile();throw Error(result.error||"Could not save profile.");}
-      profileRead++;view=null;sharedProfile=result.settings;profileRevision=result.revision;
+      profileRead++;profileLoaded=true;view=null;sharedProfile=result.settings;profileRevision=result.revision;
+      if(prior.options.financingEnabled===false && sharedProfile.financingEnabled!==false)await refreshInventoryStatus().catch(()=>{});
     }
     const next={...prior,...changes,options:{...prior.options,...changes.options}};
     delete next.profile;delete next.dealerName;delete next.pages;next.profileRevision=profileRevision;
@@ -206,7 +218,7 @@
     const lead=read("lead:"+id,null);
     if(lead)write("lead:"+id,{...lead,notes:{...lead.notes,[field]:answer}});
   }
-  window.Store = {loadLeads,inquiryState:()=>inquiryState,showroomSkin:()=>sharedProfile?.profile?.skin||"midnight",financingAllowed,attachNote, cars,inventoryReady,refreshInventoryStatus,statusFor:vin=>inventoryStatus[vin],leads,addLead,setStatus,saveCar,settings,saveSettings,optionGroups,profileReady };
+  window.Store = {loadLeads,inquiryState:()=>inquiryState,showroomSkin:()=>sharedProfile?.profile?.skin||"midnight",aprAllowed,financingAllowed:aprAllowed,attachNote, cars,inventoryReady,refreshInventoryStatus,statusFor:vin=>inventoryStatus[vin],leads,addLead,setStatus,saveCar,settings,saveSettings,optionGroups,profileReady };
   window.addEventListener("storage",e=>{if(e.key===prefix+"settings"||e.key===null)loadProfile().catch(()=>{});if (!e.key || e.key.startsWith(prefix)){view=null;window.dispatchEvent(new Event("showroom:update"));}});
 })();
 
