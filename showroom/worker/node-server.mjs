@@ -398,13 +398,28 @@ createServer(async(req,res)=>{
         return reply(result.rowCount?200:404,{});
       }
       if(req.method!=="POST")return reply(405,{});
+      const voiceInquiry=input?.source==="Voice concierge";
+      if(voiceInquiry){
+        const {name,phone,message,requestId}=input;
+        if(typeof name!=="string" || !name.trim() || name.length>100 ||
+           typeof phone!=="string" || !/^\+?[0-9(). -]{7,40}$/.test(phone) || !/^\d{7,15}$/.test(phone.replace(/\D/g,"")) ||
+           typeof message!=="string" || !message.trim() || message.length>2000 ||
+           !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)){
+          return reply(400,{error:"A name, callback number and vehicle question are required."});
+        }
+      }
       if(!input?.name?.trim()||!(input.email||input.phone)||body.length>8000)return reply(400,{error:"Enter your name and contact details."});
       const car=(await db.query("SELECT body FROM client_cars WHERE vin=$1 AND NOT EXISTS (SELECT 1 FROM inventory_status WHERE vin=$1)",[input.carId])).rows[0]?.body;
       if(!car)return reply(404,{error:"Vehicle unavailable"});
-      const lead={id:randomUUID(),createdAt:new Date().toISOString(),status:"New",carId:car.id,
+      const lead={id:voiceInquiry?input.requestId:randomUUID(),createdAt:new Date().toISOString(),status:"New",carId:car.id,
         car:Object.fromEntries(["id","vin","year","make","model","stock","image"].map(k=>[k,car[k]]))};
       for(const k of ["name","email","phone","message","source"])lead[k]=String(input[k]||"").slice(0,2000);
-      await db.query("INSERT INTO shopper_leads VALUES($1,$2)",[lead.id,lead]);
+      const saved=await db.query("INSERT INTO shopper_leads VALUES($1,$2) ON CONFLICT(id) DO NOTHING",[lead.id,lead]);
+      if(!saved.rowCount){
+        const prior=(await db.query("SELECT body FROM shopper_leads WHERE id=$1",[lead.id])).rows[0]?.body;
+        if(!voiceInquiry || !prior || !["source","name","phone","message","carId"].every(key=>prior[key]===lead[key]))return reply(409,{error:"Inquiry reference already in use."});
+        return reply(200,{id:lead.id});
+      }
       return reply(201,{id:lead.id});
     }
     if(route.pathname==="/api/client-inventory" && req.method==="PUT"){

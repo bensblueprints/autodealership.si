@@ -93,8 +93,27 @@
   $("inventorySearch").oninput=()=>{inventoryPage=0;renderInventory(Store.cars(true));};
   $("invNext").onclick=()=>{inventoryPage++;renderInventory(Store.cars(true));};
   $("invPrevious").onclick=()=>{inventoryPage--;renderInventory(Store.cars(true));};
+  let logoSignature="";
+  function refreshLogo(profile){
+    const sources=[profile.logo,profile.logoLightBackground].filter(Boolean);
+    const signature=JSON.stringify(sources);
+    if(logoSignature===signature)return;
+    logoSignature=signature;
+    const img=$("desk-logo");
+    img.hidden=true;
+    function load(index){
+      if(signature!==logoSignature)return;
+      if(!sources[index]){img.hidden=true;img.removeAttribute("src");return;}
+      img.classList.toggle("light-logo",sources[index]!==profile.logo);
+      img.onload=()=>{if(signature===logoSignature)img.hidden=false;};
+      img.onerror=()=>load(index+1);
+      img.src=sources[index];
+    }
+    load(0);
+  }
   function refresh() {
     const cars=Store.cars(),leads=Store.leads(),name=Store.settings().dealerName;
+    refreshLogo(Store.settings().profile||{});
     $("brand").textContent=name;document.title="Sales desk · "+name;
     $("countCars").textContent=cars.length;
     $("countNew").textContent=leads.filter(l=>l.status==="New").length;

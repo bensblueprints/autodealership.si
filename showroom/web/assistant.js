@@ -222,15 +222,45 @@
     doc.addEventListener("click",event=>{
       const btn=event.target.closest?.("#request-drive,#vehicle-actions [data-retail]");
       if(!btn)return;
-      const kind=btn.id==="request-drive"?"test_drive":({payment:"financing",trade:"trade_in"})[btn.dataset.retail];
+      const kind=btn.id==="request-drive"?"test_drive":({payment:"financing",trade:"trade_in",question:"vehicle_inquiry",availability:"vehicle_inquiry"})[btn.dataset.retail];
       if(!kind)return;
       activeWorkflow=kind;review=null;
       if(session && event.isTrusted)session.sendUserMessage("Website action: shopper chose "+kind+" for "+title(currentCar())+". Help fill the form by voice. Read it first with shopper_action.");
     },true);
   }
   watchActions(document);
+  let inquiryDraft=null;
+  const inquiryRequests=new Map();
+  async function voiceInquiry(car,args){
+    if(!car)return "Identify the vehicle with search_inventory and open_vehicle first. Ask which vehicle if ambiguous.";
+    if(args.car_id && ![car.id,car.vin,car.stock].some(id=>id && String(id).toUpperCase()===String(args.car_id).trim().toUpperCase())){
+      return "The selected vehicle changed. Verify the shopper's vehicle and open the correct listing before sending.";
+    }
+    if(inquiryDraft?.vin!==car.vin)inquiryDraft={vin:car.vin,name:"",phone:"",message:""};
+    for(const field of ["name","phone","message"]){
+      if(typeof args[field]==="string" && args[field].trim())inquiryDraft[field]=args[field].trim();
+    }
+    const {name,phone,message}=inquiryDraft;
+    const missing=[];
+    if(!name || name.length>100)missing.push("name");
+    if(!/^\+?[0-9(). -]+$/.test(phone) || !/^\d{7,15}$/.test(phone.replace(/\D/g,"")))missing.push("phone");
+    if(!message || message.length>2000)missing.push("message");
+    if(!args.submit || missing.length || !args.car_id)return JSON.stringify({submitted:false,vehicle:title(car),car_id:car.vin,stock:car.stock,missing,instruction:missing.length?"Ask for the missing details only.":"If the shopper agreed to send the inquiry, call again with this car_id and submit true."});
+    const signature=JSON.stringify([car.vin,name,phone.replace(/\D/g,""),message]);
+    if(!inquiryRequests.has(signature))inquiryRequests.set(signature,crypto.randomUUID());
+    try{
+      const response=await fetch("/api/inquiries",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        source:"Voice concierge",requestId:inquiryRequests.get(signature),carId:car.vin,name,phone,message
+      })});
+      if(!response.ok)return response.status===404?"The vehicle is no longer available. The inquiry was not saved.":"Could not confirm the inquiry was saved. Retry with the same details.";
+      const result=await response.json();
+      if(!result.id)throw Error();
+      return JSON.stringify({submitted:true,stock:car.stock,vehicle:title(car),receipt:result.id});
+    }catch{return "Could not confirm delivery. Retry with the same details before reporting success.";}
+  }
   async function shopperAction(args){
     const car=currentCar(),doc=vehicleDoc(),kind=args.workflow;
+    if(kind==="vehicle_inquiry")return voiceInquiry(car,args);
     if(!car || !doc || !doc.getElementById("request-drive"))return "Open the selected listing first, then retry.";
     if(kind==="customer_notes"){
       if(!["tradeIn","preferences"].includes(args.note_field) || typeof args.answer!=="string")return "Choose tradeIn or preferences and provide the shopper’s answer.";
@@ -418,6 +448,7 @@
     return sdkLoad;
   }
   function idle(label) {
+    inquiryDraft=null;inquiryRequests.clear();
     launcher.textContent="Dealer Concierge";session = undefined;
     connecting = false;
     voice.disabled = false;
@@ -493,6 +524,7 @@
       session = connection;
       await Store.inventoryReady;
       if(session!==connection)return;
+      session.sendContextualUpdate?.("For a question about a car, offer to send the question to the dealer. Collect the shopper’s name and callback number. Use shopper_action with workflow vehicle_inquiry, the selected VIN as car_id, their question as message and submit true when they agree. Email is optional. Only report success after submitted:true.");
       if(currentCar())session.sendContextualUpdate?.("Currently selected vehicle: "+title(currentCar())+", ID "+currentCar().id+". Use shopper_action directly for this listing."+financingContext(currentCar()));
       launcher.textContent="Voice concierge · Open";
       connecting = false;
