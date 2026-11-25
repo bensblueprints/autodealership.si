@@ -184,6 +184,8 @@
     const key=btn.dataset.retail;
     btn.hidden=!enabled(key)||(key==="payment"&&!modes.some(mode=>mode!=="cash"));
   }
+  const driveThumb=get("drive-thumb");
+  if(car.image){driveThumb.onload=()=>{driveThumb.hidden=false;};driveThumb.src=car.image;}
   get("drive-car").textContent=title+(car.stock?" · Stock "+car.stock:" · VIN "+car.vin);
   if(car.bhph)BHPH.show(car);
   const bookingUrl="/api/test-drives?vin="+encodeURIComponent(car.vin);

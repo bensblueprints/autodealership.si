@@ -23,3 +23,24 @@
 #photoMissing{height:100%;min-height:280px;aspect-ratio:auto}#photoMissing svg{width:80px;height:80px}#photoMissing[hidden],#vehicle-photo[hidden],#enlarge[hidden]{display:none}#listing-source p,#vehicle-description{color:var(--muted);line-height:1.65;overflow-wrap:anywhere}#source-link{color:var(--acid)}#vehicle-description{white-space:pre-line}#price-detail[hidden]{display:none}
 
 .photo-controls{position:absolute;right:14px;bottom:14px;display:flex;align-items:center;gap:6px;padding:4px;border-radius:8px;background:#101210e6;color:#f5f6ed;font-size:12px}.photo-controls[hidden]{display:none}.photo-controls button{min-height:34px;min-width:34px;background:#2d342a;border:1px solid #657060;color:inherit;border-radius:6px}.photo-controls span{min-width:38px;text-align:center}#photo-view .close{z-index:1}#vehicle-photo,#lightbox-photo{touch-action:pan-y pinch-zoom}
+
+#drive{box-sizing:border-box;width:min(550px,calc(100vw - 24px));max-height:min(92dvh,850px);padding:0;background:var(--surface);color:var(--ink);border:1px solid var(--hair);border-radius:18px;box-shadow:0 24px 80px #0005;overscroll-behavior:contain}
+#drive::backdrop{background:rgba(11,15,20,.66)}
+#drive .drive-heading{position:relative;padding:24px 28px 18px;background:var(--card);border-bottom:1px solid var(--hair)}
+#drive .close{right:14px;top:14px;display:grid;place-items:center;width:40px;height:40px;color:var(--ink);background:var(--surface);border:1px solid var(--hair);line-height:1}
+#drive h2{margin:0 40px 14px 0;font-size:clamp(24px,4vw,32px);letter-spacing:-.035em;line-height:1.15}
+.drive-vehicle{display:flex;align-items:center;gap:12px}.drive-vehicle img{width:72px;height:46px;object-fit:cover;border-radius:6px}
+#drive-car{margin:0;font-size:14px;font-weight:600;line-height:1.4}
+#drive #leadform,#drive #follow-up{display:grid;gap:18px;padding:22px 28px 26px}
+#drive [hidden],#drive #leadform[hidden],#drive #follow-up[hidden]{display:none}
+#drive fieldset{padding:0;margin:0;min-width:0;border:0}
+#drive legend{margin-bottom:9px;padding:0;font-size:16px;font-weight:700}
+.drive-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.drive-wide{grid-column:1/-1}
+#drive label{display:block;min-width:0;color:var(--ink);font-size:13px;font-weight:600}
+#drive label small{float:right;color:var(--muted);font-size:12px;font-weight:500}
+#drive :is(input,textarea),#drive #leadform select{box-sizing:border-box;display:block;width:100%;min-width:0;min-height:44px;margin:5px 0 0;padding:10px 12px;background:var(--card);border:1px solid color-mix(in srgb,var(--ink) 42%,var(--card));border-radius:7px;color:var(--ink);font:inherit;font-size:16px;font-weight:400}
+#drive :is(input,textarea,select,button):focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+#drive .primary{justify-content:center;width:100%;min-height:46px;border-radius:8px;background:var(--acid);color:var(--on-accent);font-size:16px;font-weight:700}
+#drive-status:empty,#follow-up [role=status]:empty{display:none}
+#drive-status:not(:empty){margin:0;padding:16px 28px;color:var(--ink);background:var(--card)}
+@media(max-width:520px){#drive .drive-heading{padding:20px}#drive #leadform,#drive #follow-up{padding:18px 20px 20px;gap:15px}.drive-fields{grid-template-columns:1fr;gap:10px}}
