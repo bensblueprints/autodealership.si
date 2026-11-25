@@ -123,13 +123,14 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:return self.reply(403,{"error":"Please sign in with a verified work email."})
                 token=secrets.token_urlsafe(32)
                 with connect() as db:
-                    if data.get("role")=="owner" or (data.get("role")=="platform" and email=="benji@benjaminboyce.com"):
-                        row=db.execute("SELECT subject FROM public.staff_clerk_links WHERE principal='owner'").fetchone()
-                        if not row:
-                            if email!="benji@benjaminboyce.com":return self.reply(403,{"error":"Owner access required."})
-
-                            db.execute("INSERT INTO public.staff_clerk_links VALUES ('owner',%s)",(subject,))
-                        elif row["subject"]!=subject:return self.reply(403,{"error":"Owner access required."})
+                    sales_admin=email=="sales@autodealership.si" and db.execute("SELECT 1 FROM public.staff_clerk_links WHERE principal=%s AND subject=%s",("owner:"+email,subject)).fetchone()
+                    if data.get("role")=="owner" or (data.get("role")=="platform" and (sales_admin or email=="benji@benjaminboyce.com")):
+                        if not sales_admin:
+                            row=db.execute("SELECT subject FROM public.staff_clerk_links WHERE principal='owner'").fetchone()
+                            if not row:
+                                if email!="benji@benjaminboyce.com":return self.reply(403,{"error":"Owner access required."})
+                                db.execute("INSERT INTO public.staff_clerk_links VALUES ('owner',%s)",(subject,))
+                            elif row["subject"]!=subject:return self.reply(403,{"error":"Owner access required."})
                         db.execute("INSERT INTO public.owner_sessions VALUES(%s,now()+interval '1 hour')",(digest(token),))
                     else:
                         eng=db.execute("SELECT id FROM public.client_engineers WHERE email=%s AND active FOR UPDATE",(email,)).fetchone()
