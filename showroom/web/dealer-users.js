@@ -1,6 +1,6 @@
 (async()=>{
   const id=s=>document.getElementById(s);
-  async function api(op,data){const r=await fetch("/api/dealer-auth/"+op,data?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)}:{});const result=await r.json();if(!r.ok)throw Error(result.error);return result;}
+  async function api(op,data){const r=await (op==="me"?readDealerDesk:fetch)("/api/dealer-auth/"+op,data?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)}:{});const result=await r.json();if(!r.ok)throw Error(result.error);return result;}
   const me=await api("me");
   id("desk-login").hidden=me.signedIn;id("desk-logout").hidden=!me.signedIn;id("desk-users").hidden=!me.managesUsers;
   id("desk-logout").onclick=async()=>{await api("logout",{});if(me.clerk){await window.dealerClerkReady;await Clerk.signOut({redirectUrl:location.origin+"/dealer-login"});return}location.assign("dealer-login");};
@@ -20,7 +20,7 @@
   if(loading)return;
   loading=true;
   try{
-  const response=await fetch("/api/web-voice/settings");
+  const response=await readDealerDesk("/api/web-voice/settings");
   if(!response.ok)throw Error();
   const config=await response.json();
   panel.innerHTML='<h2>Website voice usage</h2><label>Usage month (UTC) <input type="month"></label><p role="status"></p>';
@@ -29,7 +29,7 @@
   month.value=new Date().toISOString().slice(0,7);
   function display(d){status.textContent=d.calls+" verified calls · "+(d.seconds/60).toFixed(2)+" minutes · "+(d.terms?d.terms.minutes+" included · $"+(d.overageCents/100).toFixed(2)+" overage":"Billing terms pending");}
   display(config);
-  month.onchange=async()=>{const value=month.value;try{const r=await fetch("/api/web-voice/settings?month="+encodeURIComponent(value));if(!r.ok)throw Error();const report=await r.json();if(month.value===value)display(report);}catch{if(month.value===value)status.textContent="Could not load usage for this month.";}};
+  month.onchange=async()=>{const value=month.value;try{const r=await readDealerDesk("/api/web-voice/settings?month="+encodeURIComponent(value));if(!r.ok)throw Error();const report=await r.json();if(month.value===value)display(report);}catch{if(month.value===value)status.textContent="Could not load usage for this month.";}};
   if(!config.editable)return;
   const form=document.createElement("form");
   form.innerHTML='<h3>Connect ElevenLabs agent</h3><label>Agent ID <input name="agent" required></label> <label>Included monthly minutes <input name="minutes" type="number" min="0"></label> <label>Overage cents per minute <input name="cents" type="number" min="0"></label> <button>Save voice settings</button><p>Terms apply from the current UTC calendar month.</p>';

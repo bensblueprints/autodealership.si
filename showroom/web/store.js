@@ -122,7 +122,7 @@
   }
   let dealerLeads=[],inquiryState=window.postgresInventory?"Loading inquiries…":"";
   async function inquiryRequest(method,input){
-    const res=await fetch("/api/inquiries",{method,cache:"no-store",headers:{"Content-Type":"application/json"},body:input?JSON.stringify(input):undefined});
+    const res=await (method==="GET" && window.readDealerDesk?window.readDealerDesk:fetch)("/api/inquiries",{method,cache:"no-store",headers:{"Content-Type":"application/json"},body:input?JSON.stringify(input):undefined});
     if(!res.ok)throw Error("Could not "+(method==="GET"?"load":"save")+" the inquiry.");
     return res.json();
   }

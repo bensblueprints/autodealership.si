@@ -14,19 +14,21 @@ const returnUrl=new URL(location.pathname+location.search,location.origin).href;
 document.querySelector("#hosted").href="https://accounts.autodealership.si/sign-in?redirect_url="+encodeURIComponent(returnUrl);
 document.querySelector("#retry").onclick=()=>location.reload();
 document.querySelector("#switch").onclick=async()=>{try{await Clerk.signOut({redirectUrl:returnUrl});}catch{failed();}};
+async function openDesk(){
+ const desk=await fetch("/onboarding/open-desk",{method:"POST",signal:AbortSignal.timeout(15000),headers:{"Content-Type":"application/json"},body:JSON.stringify({slug:site})});
+ if(desk.status===401)return false;
+ const target=await desk.json();
+ if(!desk.ok){problem(target.error||"This dealership is unavailable.");return true}
+ location.replace(target.url);return true;
+}
 async function enter(){
  const response=await fetch("/onboarding/clerk-exchange",{method:"POST",signal:AbortSignal.timeout(20000),headers:{"Content-Type":"application/json"},body:JSON.stringify({token:await Clerk.session.getToken({skipCache:true}),role})});
  const result=await response.json();
  if(!response.ok){problem(result.error||"Access denied.");return}
- if(site){
-   const desk=await fetch("/onboarding/open-desk",{method:"POST",signal:AbortSignal.timeout(20000),headers:{"Content-Type":"application/json"},body:JSON.stringify({slug:site})});
-   const target=await desk.json();
-   if(!desk.ok){problem(target.error||"This dealership is unavailable.");return}
-   location.replace(target.url);return
- }
+ if(site){if(!await openDesk())problem("Please reconnect your staff account.");return}
  location.replace(role==="owner"?"/onboarding/admin":"/onboarding/");
 }
-async function start(){try{await Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});if(Clerk.session){if(location.pathname.endsWith("/clerk-team")){
+async function start(){try{if(site && await openDesk())return;await Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});if(Clerk.session){if(location.pathname.endsWith("/clerk-team")){
  const organization=params.get("org")||"org_3MbiCG7rWv2mpK2XJJX7FGnqZxg";
  try{await Clerk.setActive({organization});}catch{problem("Use the account invited to this dealership, or accept its invitation first.");return}
  statusText.textContent="Dealership staff";Clerk.mountOrganizationProfile(document.querySelector("#auth"),{routing:"hash"});return

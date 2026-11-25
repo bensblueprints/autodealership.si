@@ -164,7 +164,7 @@ async function voiceReport(site,month){
 const clerkIssuer="https://clerk.autodealership.si";
 const clerkScript='<script crossorigin="anonymous" src="https://clerk.autodealership.si/npm/@clerk/ui@1/dist/ui.browser.js"></script><script crossorigin="anonymous" data-clerk-publishable-key="pk_live_Y2xlcmsuYXV0b2RlYWxlcnNoaXAuc2kk" src="'+clerkIssuer+'/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>';
 let clerkKeys;
-async function dealerClaim(cookie, origin, org){
+async function dealerClaim(cookie, origin){
   const token=/(?:^|; *)__session=([^; ]+)/.exec(cookie||"")?.[1];
   if(!token || token.length>12000)return null;
   try{
@@ -181,9 +181,8 @@ async function dealerClaim(cookie, origin, org){
     if(!jwk || !verify("RSA-SHA256",Buffer.from(parts.slice(0,2).join(".")),createPublicKey({key:jwk,format:"jwk"}),Buffer.from(parts[2],"base64url")))return null;
     const c=JSON.parse(Buffer.from(parts[1],"base64url")), now=Date.now()/1000;
     if(c.iss!==clerkIssuer || c.azp!==origin || !c.sub || !c.sid || !Number.isFinite(c.exp) || c.exp<=now || c.nbf>now+5 || c.sts==="pending")return null;
-    if((c.o?.id||c.org_id)!==org)return null;
     const role=c.o?.rol ? "org:"+c.o.rol : c.org_role;
-    return ["org:admin","org:member"].includes(role)?role:null;
+    return {subject:c.sub,organization:c.o?.id||c.org_id,role:["org:admin","org:member"].includes(role)?role:null};
   }catch{return null}
 }
 function platformSignIn(slug){
@@ -193,6 +192,8 @@ function clerkDealerPage(org,slug){
   return `<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dealer sign-in</title><style>body{background:#131721;color:white;font:16px system-ui;margin:8vh auto;padding:24px;max-width:460px}button{padding:10px}</style><a href="https://autodealership.si/" aria-label="AutoDealership.SI home"><img src="https://autodealership.si/brand/logo-dark.webp" alt="AutoDealership.SI" width="186" height="62" style="display:block;width:min(186px,39vw);height:auto"></a><h1>Dealer sign-in</h1><p id="message">Connecting to Clerk…</p>${platformSignIn(slug)}<div id="signin"></div><button hidden id="change">Sign in with another account</button> <button hidden id="retry" onclick="location.reload()">Try again</button><p><a style="color:#95c9ff" href="https://accounts.autodealership.si/sign-in?redirect_url=https%3A%2F%2F${encodeURIComponent(slug)}.autodealership.si%2Fdealer-login">Open secure sign-in in a full page</a></p>${clerkScript}<script>
   (async()=>{await Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});if(!Clerk.session){message.textContent="Sign in with your invited work email.";Clerk.mountSignIn(signin,{appearance:{options:{logoImageUrl:"https://autodealership.si/brand/logo-white.webp"}},routing:"hash",forceRedirectUrl:location.href,signUpForceRedirectUrl:location.href});return}
   change.hidden=false;change.onclick=()=>Clerk.signOut({redirectUrl:location.pathname});
+  await Clerk.session.getToken({skipCache:true});
+  if((await fetch("api/dealer-auth/me",{cache:"no-store"}).then(r=>r.json())).signedIn){location.replace("dealer");return}
   await Clerk.setActive({organization:${JSON.stringify(org)}});
   await Clerk.session.getToken({skipCache:true});
   const me=await fetch("api/dealer-auth/me",{cache:"no-store"}).then(r=>r.json());
@@ -220,13 +221,18 @@ createServer(async(req,res)=>{
     const supplied=Buffer.from(req.headers.authorization||"");
     const expected=Buffer.from("Basic "+Buffer.from("dealer:"+process.env.DEALER_PASSWORD).toString("base64"));
     const signed=!!process.env.DEALER_PASSWORD && supplied.length===expected.length && timingSafeEqual(supplied,expected);
-    const desk=tenant && prefix && /(?:^|; )client_desk=([a-zA-Z0-9_-]{43})(?:;|$)/.exec(req.headers.cookie||"");
-    const delegated=desk && (await pool.query("SELECT 1 FROM public.client_desk_sessions s JOIN public.client_sites t USING(slug) LEFT JOIN public.client_engineers e ON e.id=s.engineer WHERE s.token=$1 AND s.slug=$2 AND s.expires>now() AND (s.engineer IS NULL OR (e.active AND t.engineer=s.engineer))",[createHash("sha256").update(desk[1]).digest("hex"),tenant.slug])).rowCount>0;
+    const dealerHost=tenant && !prefix && base.hostname===tenant.slug+".autodealership.si";
+    const tenantDesk=dealerHost && /(?:^|; *)__Host-client_desk=([a-zA-Z0-9_-]{43})(?:;|$)/.exec(req.headers.cookie||"");
+    const desk=tenantDesk || (tenant && prefix && /(?:^|; *)client_desk=([a-zA-Z0-9_-]{43})(?:;|$)/.exec(req.headers.cookie||""));
+    const grant=desk && (await pool.query("SELECT 1 FROM public.client_desk_sessions s JOIN public.client_sites t USING(slug) LEFT JOIN public.client_engineers e ON e.id=s.engineer WHERE s.token=$1 AND s.slug=$2 AND s.expires>now() AND (s.engineer IS NULL OR (e.active AND t.engineer=s.engineer))",[createHash("sha256").update(desk[1]).digest("hex"),tenant.slug])).rowCount>0;
     const site=tenant?.id||"demo";
     const currentToken=/(?:^|; )dealer_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie||"")?.[1];
     const tokenHash=currentToken && createHash("sha256").update(currentToken).digest("hex");
     const clerkOrg=tenant?.clerk_org_id;
-    const clerkRole=clerkOrg && !prefix && base.hostname===tenant.slug+".autodealership.si" && await dealerClaim(req.headers.cookie,base.origin,clerkOrg);
+    const claims=dealerHost && await dealerClaim(req.headers.cookie,base.origin);
+    const clerkRole=clerkOrg && claims?.organization===clerkOrg && claims.role;
+    const platformStaff=claims && (await pool.query("SELECT 1 FROM public.staff_clerk_links l WHERE l.subject=$1 AND (l.principal IN ('owner','owner:sales@autodealership.si') OR EXISTS(SELECT 1 FROM public.client_engineers e JOIN public.client_sites t ON t.engineer=e.id WHERE t.id=$2 AND e.active AND e.id::text=l.principal))",[claims.subject,tenant.id])).rowCount>0;
+    const delegated=grant || platformStaff;
     const account=!clerkOrg && tokenHash && (await pool.query("SELECT s.email FROM public.dealer_sessions s LEFT JOIN public.dealer_users u ON u.site=s.site AND u.email=s.email WHERE s.token=$1 AND s.site=$2 AND s.expires>now() AND (s.email='dealer' OR u.active)",[tokenHash,site])).rows[0];
     const privileged=tenant ? delegated || (!clerkOrg && createHash("sha256").update(supplied).digest("hex")===tenant.admin_hash) : signed || ["localhost","127.0.0.1","[::1]"].includes(base.hostname) && !req.headers.forwarded && !req.headers["x-forwarded-for"];
     const privateAdmin=privileged || !!account || !!clerkRole;
@@ -243,6 +249,30 @@ createServer(async(req,res)=>{
       body=Buffer.concat(chunks);
     }
     const route=new URL(req.url,base);
+    if(prefix && ["/dealer","/dealer.html","/dealer-login"].includes(route.pathname) && req.method==="GET"){
+      res.writeHead(302,{Location:"/onboarding/clerk-login?site="+encodeURIComponent(tenant.slug),"Cache-Control":"no-store"}).end();return;
+    }
+    if(dealerHost && route.pathname==="/dealer-team" && req.method==="GET"){
+      if(!clerkOrg || clerkRole!=="org:admin"){res.writeHead(302,{Location:"/dealer","Cache-Control":"no-store"}).end();return;}
+      res.writeHead(200,{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store","X-Robots-Tag":"noindex"}).end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dealership staff</title><link rel="stylesheet" href="/dealer.css"><main><a class="quiet" href="/dealer">Back to dashboard</a><h1>Dealership staff</h1><div id="team"></div><p id="team-status" role="status">Loading staff accounts...</p></main>${clerkScript}<script>(async()=>{await Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});await Clerk.setActive({organization:${JSON.stringify(clerkOrg)}});Clerk.mountOrganizationProfile(document.querySelector("#team"),{routing:"hash"});document.querySelector("#team-status").textContent=""})().catch(()=>document.querySelector("#team-status").textContent="Could not load staff accounts. Return to the dashboard and try again.");</script>`);return;
+    }
+    if(dealerHost && route.pathname==="/dealer-connect" && req.method==="GET"){
+      res.writeHead(200,{"Content-Type":"text/html; charset=utf-8","Referrer-Policy":"no-referrer","Cache-Control":"no-store","X-Robots-Tag":"noindex"}).end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open dealer workspace</title><link rel="stylesheet" href="/dealer.css"><main><h1>Dealer workspace</h1><p id="state" role="status">Opening your dealership...</p><a hidden id="again" href="/dealer-login">Continue to sign-in</a></main><script>
+      const ticket=location.hash.slice(1);history.replaceState(null,"","/dealer-connect");
+      (async()=>{const r=await fetch("/api/desk-connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket})});if(!r.ok)throw Error();location.replace("/dealer");})().catch(()=>{document.querySelector("#state").textContent="This sign-in link has expired or was already used.";document.querySelector("#again").hidden=false;});
+      </script>`);return;
+    }
+    if(dealerHost && route.pathname==="/api/desk-connect" && req.method==="POST"){
+      let ticket;try{ticket=JSON.parse(body).ticket}catch{}
+      if(req.headers.origin!==base.origin || !/^[a-zA-Z0-9_-]{43}$/.test(ticket||"")){res.writeHead(403).end();return;}
+      const session=randomBytes(32).toString("base64url");
+      const hash=value=>createHash("sha256").update(value).digest("hex");
+      const created=await pool.query(`WITH used AS (DELETE FROM public.client_desk_sessions WHERE token=$1 AND slug=$2 AND expires>now() RETURNING slug,engineer)
+        INSERT INTO public.client_desk_sessions(token,slug,engineer,expires)
+        SELECT $3,u.slug,u.engineer,now()+interval '1 hour' FROM used u JOIN public.client_sites t USING(slug) LEFT JOIN public.client_engineers e ON e.id=u.engineer WHERE u.engineer IS NULL OR (t.engineer=u.engineer AND e.active)`,[hash("handoff:"+ticket),tenant.slug,hash(session)]);
+      if(!created.rowCount){res.writeHead(403).end();return;}
+      res.writeHead(204,{"Cache-Control":"no-store","Set-Cookie":"__Host-client_desk="+session+"; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=3600"}).end();return;
+    }
     if(route.pathname==="/api/vehicle-photos" && req.method==="POST"){
       if(!privateAdmin || req.headers.origin!==base.origin){res.writeHead(403).end();return;}
       if(req.headers["content-type"]!=="image/jpeg" || body.length<4 || body.readUInt16BE(0)!==0xffd8 || body.readUInt16BE(body.length-2)!==0xffd9){res.writeHead(400).end();return;}
@@ -307,7 +337,7 @@ createServer(async(req,res)=>{
     if(route.pathname.startsWith("/api/dealer-auth/")){
       const op=route.pathname.split("/").pop();
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
-      if(req.method==="GET" && op==="me")return reply(200,{signedIn:!!privateAdmin,managesUsers:clerkOrg?clerkRole==="org:admin":!!managesUsers,clerk:!!clerkRole,teamUrl:clerkRole==="org:admin"?"https://autodealership.si/onboarding/clerk-team?org="+encodeURIComponent(clerkOrg):null});
+      if(req.method==="GET" && op==="me")return reply(200,{signedIn:!!privateAdmin,managesUsers:clerkOrg?clerkRole==="org:admin":!!managesUsers,clerk:!!(clerkRole||platformStaff),teamUrl:clerkRole==="org:admin"?"/dealer-team":null});
       if(clerkOrg && op!=="logout")return reply(403,{error:"Use your Clerk dealership account."});
       if(req.method==="GET" && op==="users" && managesUsers)return reply(200,(await pool.query("SELECT email,active FROM public.dealer_users WHERE site=$1 ORDER BY email",[site])).rows);
       if(req.method!=="POST" || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Sign in required."});
@@ -336,8 +366,8 @@ createServer(async(req,res)=>{
       }
       if(op==="logout"){
         if(tokenHash)await pool.query("DELETE FROM public.dealer_sessions WHERE token=$1",[tokenHash]);
-        if(delegated)await pool.query("DELETE FROM public.client_desk_sessions WHERE token=$1",[createHash("sha256").update(desk[1]).digest("hex")]);
-        res.setHeader("Set-Cookie",cookie("",0));return reply(200,{});
+        if(desk)await pool.query("DELETE FROM public.client_desk_sessions WHERE token=$1",[createHash("sha256").update(desk[1]).digest("hex")]);
+        res.setHeader("Set-Cookie",tenantDesk?[cookie("",0),"__Host-client_desk=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0"]:cookie("",0));return reply(200,{});
       }
       if(!managesUsers)return reply(403,{error:"Dealer administrator access required."});
       if(op==="users"){
@@ -513,7 +543,7 @@ createServer(async(req,res)=>{
     if(tenant && /html|javascript/.test(response.headers.get("content-type")||"") && req.method==="GET"){
       let content=await response.text();
       if(!clerkOrg && ["/dealer-login","/dealer-signin.html"].includes(route.pathname))content=content.replace("</main>",platformSignIn(tenant.slug)+"</main>");
-      if(clerkRole && response.headers.get("content-type").includes("html") && ["/dealer","/dealer.html"].includes(route.pathname))content=content.replace("</head>",clerkScript+'<script>window.dealerClerkReady=Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}})</script></head>');
+      if((clerkRole || platformStaff || tenantDesk) && response.headers.get("content-type").includes("html") && ["/dealer","/dealer.html"].includes(route.pathname))content=content.replace("</head>",clerkScript+'<script>window.dealerClerkReady=Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});window.dealerClerkReady.catch(()=>{});</script></head>');
       if(prefix)content=content.replace(/(["'`])\/(?!\/)(?=(?:api\/|dealer-login|bhph\.|banner|inventory|index\.html))/g,"$1"+prefix+"/");
       if(response.headers.get("content-type").includes("html"))content=content.replaceAll("Capital City CDJR",tenant.name.replace(/[&<>"]/g,x=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[x])));
       if(seo?.path==="/" && req.method==="GET"){

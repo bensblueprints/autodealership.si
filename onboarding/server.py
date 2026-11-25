@@ -220,9 +220,8 @@ class Handler(BaseHTTPRequestHandler):
                 with connect() as db:
                     if not db.execute("SELECT 1 FROM public.client_sites WHERE slug=%s",(slug,)).fetchone():return self.reply(404,{})
                     db.execute("DELETE FROM public.client_desk_sessions WHERE expires<=now()")
-                    db.execute("INSERT INTO public.client_desk_sessions VALUES(%s,%s,%s,now()+interval '1 hour')",(digest(token),slug,None if who=="owner" else who))
-                self.session_cookie="client_desk="+token+"; Path=/clients/"+slug+"/; Secure; HttpOnly; SameSite=Strict; Max-Age=3600"
-                return self.reply(200,{"url":"/clients/"+slug+"/dealer"})
+                    db.execute("INSERT INTO public.client_desk_sessions VALUES(%s,%s,%s,now()+interval '90 seconds')",(digest("handoff:"+token),slug,None if who=="owner" else who))
+                return self.reply(200,{"url":"https://"+slug+".autodealership.si/dealer-connect#"+token})
             if self.path=="/onboarding/sites":result=create(data,None if who=="owner" else who)
             elif self.path=="/onboarding/domain":
                 host=data["domain"].strip().lower()
