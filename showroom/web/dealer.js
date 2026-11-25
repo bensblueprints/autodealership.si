@@ -31,8 +31,9 @@
   function renderLeads(leads) {
     const list=$("leadList"),filter=$("statusFilter").value;
     list.replaceChildren();
+    if(Store.inquiryState()){list.textContent=Store.inquiryState();return;}
     const filtered=leads.filter(l=>!filter || l.status===filter);
-    if(!filtered.length) {list.append(filter ? empty("No matching inquiries","Choose another status to see more leads.") : empty("Your first inquiry will appear here","Open a car in the showroom and send an inquiry to try the shopper-to-lead flow.",true));return;}
+    if(!filtered.length) {list.append(filter ? empty("No matching inquiries","Choose another status to see more leads.") : empty("No shopper inquiries yet","Questions about vehicles, availability requests and trade appraisals appear here."));return;}
     for(const lead of filtered) {
       const row=node("article",null,"lead"),details=node("div",null,"grow");
       const car=lead.car || Store.cars().find(c=>c.id===lead.carId);
@@ -193,10 +194,23 @@
     }catch(err){$("formError").textContent=err.name==="QuotaExceededError"?"Photo storage is full. Try a hosted photo URL.":err.message;}
     finally{delete form.dataset.saving;save.disabled=false;}
   });
-  document.querySelectorAll("[data-view]").forEach(btn=>btn.addEventListener("click",()=>{
-    for(const section of ["leads","inventory","pages","banners"])$(section).hidden=section!==btn.dataset.view;
-    document.querySelectorAll("[data-view]").forEach(b=>{const active=b===btn;b.classList.toggle("active",active);b.setAttribute("aria-pressed",String(active));});
+  const tabs=Array.from(document.querySelectorAll("nav [data-view]"));
+  function selectTab(key){
+    if(!tabs.some(btn=>btn.dataset.view===key))key="leads";
+    for(const btn of tabs){
+      const active=btn.dataset.view===key;
+      $(btn.dataset.view).hidden=!active;
+      btn.classList.toggle("active",active);
+      btn.setAttribute("aria-pressed",String(active));
+    }
+    if(key==="inquiries")Store.loadLeads();
+  }
+  tabs.forEach(btn=>btn.addEventListener("click",()=>{
+    selectTab(btn.dataset.view);
+    history.replaceState(null,"","#"+btn.dataset.view);
   }));
+  // Trigger the normal loaders for bookmarked workspace tabs after their scripts initialize.
+  window.addEventListener("DOMContentLoaded",()=>tabs.find(btn=>"#"+btn.dataset.view===location.hash)?.click());
   $("statusFilter").addEventListener("change",()=>renderLeads(Store.leads()));
   $("addCar").addEventListener("click",()=>openEditor());
   const profileFields=["salesPhone","partsPhone","servicePhone","street","city","region","postal","country"];

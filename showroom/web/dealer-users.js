@@ -13,17 +13,23 @@
   };
 })().catch(()=>{});
 (async()=>{
-  if(!window.clientSite)return;
+  const panel=document.querySelector("#voice"),state=document.querySelector("#voice-state");
+  if(!window.clientSite){state.textContent="Usage reporting is available in each client dealership’s dashboard.";return;}
+  let loading=false;
+  async function openVoice(){
+  if(loading)return;
+  loading=true;
+  try{
   const response=await fetch("/api/web-voice/settings");
-  if(!response.ok)return;
-  const config=await response.json(), panel=document.createElement("section");
+  if(!response.ok)throw Error();
+  const config=await response.json();
   panel.innerHTML='<h2>Website voice usage</h2><label>Usage month (UTC) <input type="month"></label><p role="status"></p>';
-  document.querySelector("main").append(panel);
+
   const month=panel.querySelector("input"),status=panel.querySelector("p");
   month.value=new Date().toISOString().slice(0,7);
   function display(d){status.textContent=d.calls+" verified calls · "+(d.seconds/60).toFixed(2)+" minutes · "+(d.terms?d.terms.minutes+" included · $"+(d.overageCents/100).toFixed(2)+" overage":"Billing terms pending");}
   display(config);
-  month.onchange=async()=>{const r=await fetch("/api/web-voice/settings?month="+encodeURIComponent(month.value));if(r.ok)display(await r.json())};
+  month.onchange=async()=>{const value=month.value;try{const r=await fetch("/api/web-voice/settings?month="+encodeURIComponent(value));if(!r.ok)throw Error();const report=await r.json();if(month.value===value)display(report);}catch{if(month.value===value)status.textContent="Could not load usage for this month.";}};
   if(!config.editable)return;
   const form=document.createElement("form");
   form.innerHTML='<h3>Connect ElevenLabs agent</h3><label>Agent ID <input name="agent" required></label> <label>Included monthly minutes <input name="minutes" type="number" min="0"></label> <label>Overage cents per minute <input name="cents" type="number" min="0"></label> <button>Save voice settings</button><p>Terms apply from the current UTC calendar month.</p>';
@@ -31,4 +37,7 @@
   for(const field of ["minutes","cents"])form.elements[field].value=config.terms?.[field]??"";
   form.onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(form));for(const field of ["minutes","cents"])data[field]=data[field]===""?null:Number(data[field]);
     try{const r=await fetch("/api/web-voice/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});if(!r.ok)throw Error((await r.json()).error||"Save failed.");location.reload()}catch(err){status.textContent=err.message}};
+  }catch{loading=false;state.textContent="Could not load voice usage. Select Website Voice Usage to retry.";}
+  }
+  document.querySelector('[data-view="voice"]').addEventListener("click",openVoice);
 })().catch(()=>{});

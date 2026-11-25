@@ -120,7 +120,7 @@
     view=[...added,...catalogById.keys()].map(id=>{const car=byId.get(id),offer=offers[car.vin||id];return offer?{...car,price:offer.cash/100,bhph:offer.enabled && financingAllowed(car)?offer:null}:car;});
     return view;
   }
-  let dealerLeads=[];
+  let dealerLeads=[],inquiryState=window.postgresInventory?"Loading inquiries…":"";
   async function inquiryRequest(method,input){
     const res=await fetch("/api/inquiries",{method,cache:"no-store",headers:{"Content-Type":"application/json"},body:input?JSON.stringify(input):undefined});
     if(!res.ok)throw Error("Could not "+(method==="GET"?"load":"save")+" the inquiry.");
@@ -128,7 +128,7 @@
   }
   async function loadLeads(){
     if(window.postgresInventory && document.getElementById("leadList")){
-      dealerLeads=await inquiryRequest("GET");
+      try{dealerLeads=await inquiryRequest("GET");inquiryState="";}catch{inquiryState="Inquiries could not be loaded. Reopen this tab to retry.";}
       window.dispatchEvent(new Event("showroom:update"));
     }
   }
@@ -205,7 +205,7 @@
     const lead=read("lead:"+id,null);
     if(lead)write("lead:"+id,{...lead,notes:{...lead.notes,[field]:answer}});
   }
-  window.Store = {showroomSkin:()=>sharedProfile?.profile?.skin||"midnight",financingAllowed,attachNote, cars,inventoryReady,refreshInventoryStatus,statusFor:vin=>inventoryStatus[vin],leads,addLead,setStatus,saveCar,settings,saveSettings,optionGroups,profileReady };
+  window.Store = {loadLeads,inquiryState:()=>inquiryState,showroomSkin:()=>sharedProfile?.profile?.skin||"midnight",financingAllowed,attachNote, cars,inventoryReady,refreshInventoryStatus,statusFor:vin=>inventoryStatus[vin],leads,addLead,setStatus,saveCar,settings,saveSettings,optionGroups,profileReady };
   window.addEventListener("storage",e=>{if(e.key===prefix+"settings"||e.key===null)loadProfile().catch(()=>{});if (!e.key || e.key.startsWith(prefix)){view=null;window.dispatchEvent(new Event("showroom:update"));}});
 })();
 

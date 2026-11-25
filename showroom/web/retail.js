@@ -38,7 +38,7 @@
   const button = (action, label, extra="") => '<button type="button" data-retail="'+action+'" '+extra+'>'+html(label)+'</button>';
   function card(car) {
     const id=html(car.id);
-    const actions=[];
+    const actions=[button("question","Ask about this vehicle")];
     if (Store.financingAllowed(car) && amount(car) !== null && enabled("payment") && (enabled("finance") || enabled("lease"))) actions.push(button("payment","Calculate payment"));
     if (enabled("trade")) actions.push(button("trade","Value my trade"));
     if (enabled("availability")) actions.push(button("availability","Confirm availability"));
@@ -100,19 +100,20 @@
     try {const url=new URL(Store.settings().tradeUrl);return url.protocol==="https:" ? url.href : "";}catch{return "";}
   }
   function inquiry(car,kind) {
-    const trade=kind==="trade",source=trade?"Trade-in appraisal":"Availability request",url=trade&&providerUrl();
-    present(trade?"Value your trade":"Confirm availability",'<p class="retail-model">'+html(name(car))+' · Stock '+html(car.stock||car.id)+'</p>'+(url?'<a class="retail-provider" href="'+html(url)+'" target="_blank" rel="noopener noreferrer">Open dealer valuation tool ↗</a>':'')+'<form class="retail-form">'+(trade?'<label>Your trade vehicle<input name="tradeCar" placeholder="Year, make and model" maxlength="160" required></label>'+num("Trade mileage","tradeMiles","",9999999)+'<label>Condition and equipment<textarea name="condition" maxlength="800" placeholder="Tell the appraiser about your car"></textarea></label>':'')+'<div class="retail-fields"><label>Your name<input name="name" autocomplete="name" maxlength="100" required></label><label>Email<input type="email" name="email" maxlength="200" autocomplete="email" required></label></div><label>Phone (optional)<input type="tel" name="phone" maxlength="40" autocomplete="tel"></label><button class="primary">'+(trade?"Request dealer appraisal":"Request availability check")+'</button><p class="retail-note" role="status"></p></form>');
+    const question=kind==="question",trade=kind==="trade",source=question?"Vehicle inquiry":trade?"Trade-in appraisal":"Availability request",url=trade&&providerUrl();
+    present(question?"Ask about this vehicle":trade?"Value your trade":"Confirm availability",'<p class="retail-model">'+html(name(car))+' · Stock '+html(car.stock||car.id)+'</p>'+(url?'<a class="retail-provider" href="'+html(url)+'" target="_blank" rel="noopener noreferrer">Open dealer valuation tool ↗</a>':'')+'<form class="retail-form">'+(question?'<label>Your question<textarea name="question" rows="3" maxlength="2000" required></textarea></label>':'')+(trade?'<label>Your trade vehicle<input name="tradeCar" placeholder="Year, make and model" maxlength="160" required></label>'+num("Trade mileage","tradeMiles","",9999999)+'<label>Condition and equipment<textarea name="condition" maxlength="800" placeholder="Tell the appraiser about your car"></textarea></label>':'')+'<div class="retail-fields"><label>Your name<input name="name" autocomplete="name" maxlength="100" required></label><label>Email<input type="email" name="email" maxlength="200" autocomplete="email" required></label></div><label>Phone (optional)<input type="tel" name="phone" maxlength="40" autocomplete="tel"></label><button class="primary">'+(question?"Send inquiry":trade?"Request dealer appraisal":"Request availability check")+'</button><p class="retail-note" role="status"></p></form>');
     const form=dialog.querySelector("form");
     form.addEventListener("submit",async e=>{
       e.preventDefault();
       const data=Object.fromEntries(new FormData(form)),send=form.querySelector("button");
       if(send.disabled)return;
+      if(question&&!data.question.trim()){form.elements.question.focus();return;}
       if(trade&&!data.tradeCar.trim()){form.elements.tradeCar.focus();return;}
       send.disabled=true;
       try {
         await Store.addLead({name:data.name,email:data.email,phone:data.phone,carId:car.id,source,
-          message:trade?"Please appraise my "+data.tradeCar.trim()+" ("+Number(data.tradeMiles).toLocaleString()+" mi). "+data.condition.trim():"Please confirm availability of "+name(car)+"."});
-        present("Request received",'<p>Your '+(trade?"appraisal":"availability")+' request for '+html(name(car))+' is in the dealer’s inbox.</p>'+button("close","Done"));
+          message:question?data.question.trim():trade?"Please appraise my "+data.tradeCar.trim()+" ("+Number(data.tradeMiles).toLocaleString()+" mi). "+data.condition.trim():"Please confirm availability of "+name(car)+"."});
+        present("Request received",'<p>Your '+(question?"vehicle inquiry":trade?"appraisal request":"availability request")+' for '+html(name(car))+' is in the dealer’s inbox.</p>'+button("close","Done"));
       }catch(err){form.querySelector('[role="status"]').textContent=err.message;send.disabled=false;}
     });
   }
@@ -133,7 +134,7 @@
       refresh();
     }else if(["payment","mode"].includes(action)&&enabled("payment")&&(enabled("finance")||enabled("lease"))){
       payment(car,btn.dataset.mode);
-    }else if(["trade","availability"].includes(action)&&enabled(action)){inquiry(car,action);}
+    }else if(action==="question" || (["trade","availability"].includes(action)&&enabled(action))){inquiry(car,action);}
   },true);
   window.Retail={amount,assumptions,card,sync};
 })();
