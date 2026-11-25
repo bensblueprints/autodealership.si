@@ -29,6 +29,7 @@ API = "https://sandbox-api.whop.com/api/v1" if os.getenv("WHOP_ENV") == "sandbox
 PLANS = {"phone_widget": (1099, 750), "chat": (299, 0), "web_voice": (499, 150), "phone_only": (799, 500), "omnichannel": (1099, 750), "website": (499, 0), "starter": (798, 150), "concierge": (1499, 750), "phone": (2499, 2000)}
 VARIANTS = json.loads(os.getenv("WHOP_VARIANTS", "{}"))
 AGENTS = json.loads(os.getenv("VOICE_AGENT_ACCOUNTS", "{}"))
+ONBOARDING_FEE = 997
 CAP_UNIT = 6000
 now = lambda: int(time.time())
 
@@ -96,7 +97,7 @@ def checkout(dealer,kind,amount=0):
         d=one(db,"SELECT * FROM dealers WHERE id=%s",dealer)
         if kind=="subscription":
             require(d["status"]=="signup","Subscription already started.")
-            variant=VARIANTS.get(plan_key(d));amount=price(d)
+            variant=VARIANTS.get(plan_key(d));amount=price(d)+ONBOARDING_FEE
         else:
             require(d["status"]=="active" and PLANS[d["plan"]][1]>0,"An active voice subscription is required.")
             variant="setup" if kind=="card" else VARIANTS.get("credit_"+str(amount))
@@ -194,14 +195,15 @@ def whop_event(db,event):
     if not d:return
     kind=order["kind"] if order else "subscription"
     if kind=="subscription":
-        if received!=price(d):return
+        expected=price(d) if d['membership'] else (order['amount'] if order else None)
+        if received!=expected:return
         if not membership or not v.get("member_id") or v.get("variant_id")!=VARIANTS.get(plan_key(d)):return
         if d["membership"] and d["membership"]!=membership:return
         stamp=int(datetime.fromisoformat(v["paid_at"].replace("Z","+00:00")).timestamp())
         db.execute("INSERT INTO cycles(dealer,start) VALUES(%s,%s) ON CONFLICT DO NOTHING",(d["id"],stamp))
         if stamp>=d["cycle"]:
             db.execute("UPDATE dealers SET status='active',membership=%s,member=%s,cycle=%s,used=0 WHERE id=%s",(membership,v["member_id"],stamp,d["id"]))
-        amount=price(d)
+        amount=int(received)
     elif kind in ("auto","manual"):
         if not order or order["state"]=="paid" or d["member"]!=v.get("member_id"):return
         amount=order["amount"]

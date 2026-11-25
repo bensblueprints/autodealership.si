@@ -24,8 +24,8 @@ class Billing(unittest.TestCase):
     with app.transaction() as db:
       db.execute("INSERT INTO dealers(id,email,name,password,plan,marketing,auto) VALUES('store','qa@example.invalid','Test','unused','starter',0,1)")
       dealer=app.one(db,"SELECT * FROM dealers")
-      order=app.start_order(db,dealer,"subscription",798,"plan_starter")
-      sub={"type":"payment.succeeded","data":{"id":"pay_sub","account_id":"biz_test","variant_id":"plan_starter","subtotal":{"amount":"798","currency":"usd"},"membership_id":"mem_test","member_id":"mber_test","paid_at":"2026-11-25T00:00:00Z","metadata":{"adsi_order":order["id"]}}}
+      order=app.start_order(db,dealer,"subscription",1795,"plan_starter")
+      sub={"type":"payment.succeeded","data":{"id":"pay_sub","account_id":"biz_test","variant_id":"plan_starter","subtotal":{"amount":"1795","currency":"usd"},"membership_id":"mem_test","member_id":"mber_test","paid_at":"2026-11-25T00:00:00Z","metadata":{"adsi_order":order["id"]}}}
       app.whop_event(db,sub);app.whop_event(db,sub)
       dealer=app.one(db,"SELECT * FROM dealers");self.assertEqual(dealer["status"],"active")
       card=app.start_order(db,dealer,"card",0,"setup")

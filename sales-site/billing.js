@@ -6,7 +6,7 @@ by("joinPrefs").innerHTML=prefMarkup;by("accountPrefs").innerHTML=prefMarkup;
 let account;
 async function api(path,body){const res=await fetch("/billing/"+path,body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await res.json();if(!res.ok)throw Error(data.error||"Please try again.");return data;}
 function settings(form){return {refill:Number(form.elements.refill.value),cap:Number(form.elements.cap.value),auto:form.elements.auto.checked};}
-function price(){const voice=!["website","chat"].includes(join.elements.plan.value);by("joinPrefs").hidden=!voice;if(!voice)join.elements.auto.checked=false;by("total").textContent="Monthly subscription: "+usd(prices[join.elements.plan.value]+(join.elements.marketing.checked?2500:0))+" before tax.";}
+function price(){const voice=!["website","chat"].includes(join.elements.plan.value);by("joinPrefs").hidden=!voice;if(!voice)join.elements.auto.checked=false;const monthly=prices[join.elements.plan.value]+(join.elements.marketing.checked?2500:0);by("total").textContent="First payment "+usd(monthly+997)+" (includes $997 one-time onboarding). Then "+usd(monthly)+" per month, before tax.";}
 function guarded(fn){return async event=>{event.preventDefault();const btn=event.submitter||event.currentTarget;btn.disabled=true;by("status").textContent="";try{await fn();}catch(err){by("status").textContent=err.message;}finally{btn.disabled=false;}};}
 function action(label,route,body){const btn=document.createElement("button");btn.className="primary";btn.textContent=label;btn.onclick=guarded(async()=>{const {url}=await api(route,body);location.assign(url);});by("accountButtons").append(btn);}
 async function render(){
@@ -14,7 +14,7 @@ async function render(){
  by("account").hidden=!signed;join.hidden=signed;login.hidden=true;by("switch").hidden=signed;
  by("availability").textContent=account.checkoutAvailable?"":"Enrollment is open. Payment activation is pending. You can register without a charge.";
  if(!signed){by("title").textContent="Set up your showroom.";price();return;}
- by("title").textContent=account.name;by("summary").textContent=names[account.plan]+" · "+usd(prices[account.plan]+2500*account.marketing)+"/month · "+(account.status==="signup"?"Awaiting checkout":account.status)+". Voice usage: "+(account.used/60).toFixed(1)+" minutes. Included: "+account.included+". Purchased balance: "+usd(account.balance/6000)+".";
+ by("title").textContent=account.name;by("summary").textContent=names[account.plan]+" · "+usd(prices[account.plan]+2500*account.marketing)+"/month · "+(account.status==="signup"?"Awaiting checkout · first payment "+usd(prices[account.plan]+2500*account.marketing+997)+" including $997 onboarding, before tax":account.status)+". Voice usage: "+(account.used/60).toFixed(1)+" minutes. Included: "+account.included+". Purchased balance: "+usd(account.balance/6000)+".";
  by("accountButtons").replaceChildren();
  if(account.checkoutAvailable && account.status==="signup")action("Continue to Whop checkout","checkout",{});
  if(account.status==="active" && !["website","chat"].includes(account.plan)){action(account.cardSaved?"Update saved card":"Save card with Whop","save-card",{});action("Buy $100 credit","buy",{amount:100});action("Buy $500 credit","buy",{amount:500});}
