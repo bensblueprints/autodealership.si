@@ -6,7 +6,8 @@ import json
 import os
 import re
 import secrets
-import sqlite3
+import psycopg
+from psycopg.rows import dict_row
 import time
 import uuid
 from contextlib import contextmanager
@@ -33,29 +34,25 @@ now = lambda: int(time.time())
 
 @contextmanager
 def transaction():
-    db = sqlite3.connect(ROOT / "billing.sqlite", timeout=10)
-    db.row_factory = sqlite3.Row
-    try:
-        db.execute("BEGIN IMMEDIATE")
+    with psycopg.connect(os.environ["BILLING_DATABASE_URL"],row_factory=dict_row) as db:
+        # Serialize ledger changes, including duplicate webhook and refill checks.
+        db.execute("SELECT pg_advisory_xact_lock(193746820)")
         yield db
-        db.commit()
-    finally:
-        db.close()
 
 with transaction() as db:
-    db.executescript("""
-    CREATE TABLE IF NOT EXISTS dealers(id TEXT PRIMARY KEY,email TEXT UNIQUE,name TEXT,password TEXT,plan TEXT,marketing INTEGER,
-      status TEXT DEFAULT 'signup',cycle INTEGER DEFAULT 0,used INTEGER DEFAULT 0,balance INTEGER DEFAULT 0,
-      refill INTEGER DEFAULT 100,cap INTEGER DEFAULT 300,auto INTEGER DEFAULT 0,member TEXT,method TEXT,membership TEXT UNIQUE);
-    CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,dealer TEXT,expires INTEGER);
-    CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY,dealer TEXT,kind TEXT,amount INTEGER,variant TEXT,
-      cycle INTEGER,state TEXT DEFAULT 'pending',payment TEXT UNIQUE,checkout TEXT,url TEXT,created INTEGER);
-    CREATE TABLE IF NOT EXISTS payments(id TEXT PRIMARY KEY,dealer TEXT,kind TEXT,amount INTEGER,received INTEGER);
-    CREATE TABLE IF NOT EXISTS calls(id TEXT PRIMARY KEY,dealer TEXT,ended INTEGER,seconds INTEGER,charged INTEGER);
-    CREATE TABLE IF NOT EXISTS cycles(dealer TEXT,start INTEGER,used INTEGER DEFAULT 0,PRIMARY KEY(dealer,start));
-    CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY,dealer TEXT,subject TEXT,body TEXT,created INTEGER,sent INTEGER DEFAULT 0);
-    CREATE TABLE IF NOT EXISTS holds(id TEXT PRIMARY KEY,dealer TEXT,expires INTEGER,seconds INTEGER);
-    CREATE TABLE IF NOT EXISTS consent(dealer TEXT,at INTEGER,settings TEXT);
+    db.execute("""
+    CREATE TABLE IF NOT EXISTS dealers(id TEXT PRIMARY KEY,email TEXT UNIQUE,name TEXT,password TEXT,plan TEXT,marketing BIGINT,
+      status TEXT DEFAULT 'signup',cycle BIGINT DEFAULT 0,used BIGINT DEFAULT 0,balance BIGINT DEFAULT 0,
+      refill BIGINT DEFAULT 100,cap BIGINT DEFAULT 300,auto BIGINT DEFAULT 0,member TEXT,method TEXT,membership TEXT UNIQUE);
+    CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,dealer TEXT,expires BIGINT);
+    CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY,dealer TEXT,kind TEXT,amount BIGINT,variant TEXT,
+      cycle BIGINT,state TEXT DEFAULT 'pending',payment TEXT UNIQUE,checkout TEXT,url TEXT,created BIGINT);
+    CREATE TABLE IF NOT EXISTS payments(id TEXT PRIMARY KEY,dealer TEXT,kind TEXT,amount BIGINT,received BIGINT);
+    CREATE TABLE IF NOT EXISTS calls(id TEXT PRIMARY KEY,dealer TEXT,ended BIGINT,seconds BIGINT,charged BIGINT);
+    CREATE TABLE IF NOT EXISTS cycles(dealer TEXT,start BIGINT,used BIGINT DEFAULT 0,PRIMARY KEY(dealer,start));
+    CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY,dealer TEXT,subject TEXT,body TEXT,created BIGINT,sent BIGINT DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS holds(id TEXT PRIMARY KEY,dealer TEXT,expires BIGINT,seconds BIGINT);
+    CREATE TABLE IF NOT EXISTS consent(dealer TEXT,at BIGINT,settings TEXT);
     """)
 
 def one(db, sql, *args):
@@ -84,19 +81,19 @@ def provider(route, body, key):
         return json.load(response)
 
 def start_order(db,d,kind,amount,variant):
-    existing=one(db,"SELECT * FROM orders WHERE dealer=? AND kind=? AND state='pending'",d["id"],kind)
+    existing=one(db,"SELECT * FROM orders WHERE dealer=%s AND kind=%s AND state='pending'",d["id"],kind)
     if existing:
         require(existing["amount"]==amount and existing["variant"]==variant,"Finish the pending checkout before choosing another amount.")
         return existing
     order=uuid.uuid4().hex
-    db.execute("INSERT INTO orders(id,dealer,kind,amount,variant,cycle,created) VALUES(?,?,?,?,?,?,?)",
+    db.execute("INSERT INTO orders(id,dealer,kind,amount,variant,cycle,created) VALUES(%s,%s,%s,%s,%s,%s,%s)",
                (order,d["id"],kind,amount,variant,d["cycle"],now()))
-    return one(db,"SELECT * FROM orders WHERE id=?",order)
+    return one(db,"SELECT * FROM orders WHERE id=%s",order)
 
 def checkout(dealer,kind,amount=0):
     require(ready(),"Your signup is saved. Whop checkout will open once this merchant is connected.")
     with transaction() as db:
-        d=one(db,"SELECT * FROM dealers WHERE id=?",dealer)
+        d=one(db,"SELECT * FROM dealers WHERE id=%s",dealer)
         if kind=="subscription":
             require(d["status"]=="signup","Subscription already started.")
             variant=VARIANTS.get(plan_key(d));amount=price(d)
@@ -113,7 +110,7 @@ def checkout(dealer,kind,amount=0):
     url=result["purchase_url"]
     require(urlparse(url).scheme=="https" and urlparse(url).hostname in {"whop.com","sandbox.whop.com","www.whop.com"},"Unexpected checkout URL.")
     with transaction() as db:
-        db.execute("UPDATE orders SET checkout=?,url=? WHERE id=?",(result["id"],url,o["id"]))
+        db.execute("UPDATE orders SET checkout=%s,url=%s WHERE id=%s",(result["id"],url,o["id"]))
     return url
 
 def billed(seconds, included):
@@ -124,66 +121,66 @@ def queue_refill(db,d):
     if not (ready() and d["auto"] and d["method"] and d["status"]=="active"):return
     if d["used"] < max(0,PLANS[d["plan"]][1]*60-300):return
     if d["balance"] >= d["refill"]*CAP_UNIT//5:return
-    total=one(db,"SELECT COALESCE(SUM(amount),0) FROM orders WHERE dealer=? AND cycle=? AND kind='auto' AND state IN ('pending','paid')",d["id"],d["cycle"])[0]
+    total=one(db,"SELECT COALESCE(SUM(amount),0) AS total FROM orders WHERE dealer=%s AND cycle=%s AND kind='auto' AND state IN ('pending','paid')",d["id"],d["cycle"])["total"]
     variant=VARIANTS.get("credit_"+str(d["refill"]))
     if variant and total+d["refill"]<=d["cap"]:
         start_order(db,d,"auto",d["refill"],variant)
 
 def notify(db,key,dealer,subject,body):
-    db.execute("INSERT OR IGNORE INTO notices(id,dealer,subject,body,created) VALUES(?,?,?,?,?)",(key,dealer,subject,body,now()))
+    db.execute("INSERT INTO notices(id,dealer,subject,body,created) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",(key,dealer,subject,body,now()))
 
 def admit(db,dealer):
-    d=one(db,"SELECT * FROM dealers WHERE id=?",dealer)
+    d=one(db,"SELECT * FROM dealers WHERE id=%s",dealer)
     if not d or d["status"]!="active" or PLANS[d["plan"]][1]==0:return {"allowed":False}
-    db.execute("DELETE FROM holds WHERE expires<=?",(now(),))
-    reserved=one(db,"SELECT COALESCE(SUM(seconds),0) FROM holds WHERE dealer=?",dealer)[0]
+    db.execute("DELETE FROM holds WHERE expires<=%s",(now(),))
+    reserved=one(db,"SELECT COALESCE(SUM(seconds),0) AS total FROM holds WHERE dealer=%s",dealer)["total"]
     free=max(0,PLANS[d["plan"]][1]*60-d["used"])
     # Conservatively reserve at the most expensive tier.
     available=max(0,free+d["balance"]//35-reserved)
     if not available:return {"allowed":False,"fallback":"text_or_dealer_phone"}
     hold=uuid.uuid4().hex
     duration=min(300,available)
-    db.execute("INSERT INTO holds VALUES(?,?,?,?)",(hold,dealer,now()+duration+120,duration))
+    db.execute("INSERT INTO holds VALUES(%s,%s,%s,%s)",(hold,dealer,now()+duration+120,duration))
     return {"allowed":True,"reservation":hold,"maximumConnectedSeconds":duration}
 
 def meter(db,data):
     dealer=AGENTS.get(data["agent_id"])
     if not dealer:return
-    d=one(db,"SELECT * FROM dealers WHERE id=?",dealer)
+    d=one(db,"SELECT * FROM dealers WHERE id=%s",dealer)
     if not d or not d["cycle"]:return
     cid=data["conversation_id"];meta=data["metadata"]
     seconds=meta["call_duration_secs"];start=meta["start_time_unix_secs"]
     require(type(seconds) is int and seconds>=0,"Invalid duration.")
-    if one(db,"SELECT id FROM calls WHERE id=?",cid):return
-    cycle=one(db,"SELECT * FROM cycles WHERE dealer=? AND start<=? ORDER BY start DESC LIMIT 1",dealer,start)
+    if one(db,"SELECT id FROM calls WHERE id=%s",cid):return
+    cycle=one(db,"SELECT * FROM cycles WHERE dealer=%s AND start<=%s ORDER BY start DESC LIMIT 1",dealer,start)
     if not cycle:return
     allowance=PLANS[d["plan"]][1]
     reservation=((data.get("conversation_initiation_client_data") or {}).get("dynamic_variables") or {}).get("billing_reservation")
-    if reservation:db.execute("DELETE FROM holds WHERE id=? AND dealer=?",(reservation,dealer))
+    if reservation:db.execute("DELETE FROM holds WHERE id=%s AND dealer=%s",(reservation,dealer))
     cost=billed(cycle["used"]+seconds,allowance)-billed(cycle["used"],allowance)
     charge=min(cost,d["balance"])
-    db.execute("INSERT INTO calls VALUES(?,?,?,?,?)",(cid,dealer,start+seconds,seconds,charge))
-    db.execute("UPDATE cycles SET used=used+? WHERE dealer=? AND start=?",(seconds,dealer,cycle["start"]))
-    db.execute("UPDATE dealers SET balance=balance-?,used=used+? WHERE id=?",(charge,seconds if cycle["start"]==d["cycle"] else 0,dealer))
-    queue_refill(db,one(db,"SELECT * FROM dealers WHERE id=?",dealer))
+    db.execute("INSERT INTO calls VALUES(%s,%s,%s,%s,%s)",(cid,dealer,start+seconds,seconds,charge))
+    db.execute("UPDATE cycles SET used=used+%s WHERE dealer=%s AND start=%s",(seconds,dealer,cycle["start"]))
+    db.execute("UPDATE dealers SET balance=balance-%s,used=used+%s WHERE id=%s",(charge,seconds if cycle["start"]==d["cycle"] else 0,dealer))
+    queue_refill(db,one(db,"SELECT * FROM dealers WHERE id=%s",dealer))
 
 def whop_event(db,event):
     typ=event["type"];v=event["data"]
     if not MERCHANT or (v.get("account_id") or v.get("company_id"))!=MERCHANT:return
     ref=(v.get("metadata") or {}).get("adsi_order","")
-    order=one(db,"SELECT * FROM orders WHERE id=? OR checkout=?",ref,v.get("checkout_configuration_id"))
+    order=one(db,"SELECT * FROM orders WHERE id=%s OR checkout=%s",ref,v.get("checkout_configuration_id"))
     membership=v.get("membership_id")
     if typ=="membership.deactivated":
-        db.execute("UPDATE dealers SET status='inactive',auto=0 WHERE membership=?",(v["id"],));return
+        db.execute("UPDATE dealers SET status='inactive',auto=0 WHERE membership=%s",(v["id"],));return
     if typ=="setup_intent.succeeded" and order and order["kind"]=="card":
-        d=one(db,"SELECT member FROM dealers WHERE id=?",order["dealer"])
+        d=one(db,"SELECT member FROM dealers WHERE id=%s",order["dealer"])
         if d["member"]==v.get("member_id") and v.get("payment_method_id"):
-            db.execute("UPDATE dealers SET method=? WHERE id=?",(v["payment_method_id"],order["dealer"]))
-            db.execute("UPDATE orders SET state='paid' WHERE id=?",(order["id"],))
+            db.execute("UPDATE dealers SET method=%s WHERE id=%s",(v["payment_method_id"],order["dealer"]))
+            db.execute("UPDATE orders SET state='paid' WHERE id=%s",(order["id"],))
         return
     if typ=="payment.failed" and order and order["kind"]=="auto":
-        db.execute("UPDATE orders SET state='failed' WHERE id=? AND state='pending'",(order["id"],))
-        db.execute("UPDATE dealers SET auto=0 WHERE id=?",(order["dealer"],))
+        db.execute("UPDATE orders SET state='failed' WHERE id=%s AND state='pending'",(order["id"],))
+        db.execute("UPDATE dealers SET auto=0 WHERE id=%s",(order["dealer"],))
         notify(db,"failed:"+v["id"],order["dealer"],"Automatic voice refill failed","Your payment failed. Sign in to review your saved card and turn automatic refills back on.")
         return
     if typ!="payment.succeeded":return
@@ -191,9 +188,9 @@ def whop_event(db,event):
     currency=subtotal.get("currency") if isinstance(subtotal,dict) else v.get("currency")
     if currency!="usd":return
     received=Decimal(str(subtotal["amount"] if isinstance(subtotal,dict) else subtotal))
-    if one(db,"SELECT id FROM payments WHERE id=?",v["id"]):return
+    if one(db,"SELECT id FROM payments WHERE id=%s",v["id"]):return
     if order and order["variant"]!=v.get("variant_id"):return
-    d=one(db,"SELECT * FROM dealers WHERE id=?",order["dealer"]) if order else one(db,"SELECT * FROM dealers WHERE membership=?",membership)
+    d=one(db,"SELECT * FROM dealers WHERE id=%s",order["dealer"]) if order else one(db,"SELECT * FROM dealers WHERE membership=%s",membership)
     if not d:return
     kind=order["kind"] if order else "subscription"
     if kind=="subscription":
@@ -201,23 +198,23 @@ def whop_event(db,event):
         if not membership or not v.get("member_id") or v.get("variant_id")!=VARIANTS.get(plan_key(d)):return
         if d["membership"] and d["membership"]!=membership:return
         stamp=int(datetime.fromisoformat(v["paid_at"].replace("Z","+00:00")).timestamp())
-        db.execute("INSERT OR IGNORE INTO cycles(dealer,start) VALUES(?,?)",(d["id"],stamp))
+        db.execute("INSERT INTO cycles(dealer,start) VALUES(%s,%s) ON CONFLICT DO NOTHING",(d["id"],stamp))
         if stamp>=d["cycle"]:
-            db.execute("UPDATE dealers SET status='active',membership=?,member=?,cycle=?,used=0 WHERE id=?",(membership,v["member_id"],stamp,d["id"]))
+            db.execute("UPDATE dealers SET status='active',membership=%s,member=%s,cycle=%s,used=0 WHERE id=%s",(membership,v["member_id"],stamp,d["id"]))
         amount=price(d)
     elif kind in ("auto","manual"):
         if not order or order["state"]=="paid" or d["member"]!=v.get("member_id"):return
         amount=order["amount"]
         if received!=amount:return
-        db.execute("UPDATE dealers SET balance=balance+? WHERE id=?",(amount*CAP_UNIT,d["id"]))
+        db.execute("UPDATE dealers SET balance=balance+%s WHERE id=%s",(amount*CAP_UNIT,d["id"]))
     else:return
-    db.execute("INSERT INTO payments VALUES(?,?,?,?,?)",(v["id"],d["id"],kind,amount,now()))
+    db.execute("INSERT INTO payments VALUES(%s,%s,%s,%s,%s)",(v["id"],d["id"],kind,amount,now()))
     notify(db,"receipt:"+v["id"],d["id"],"Whop payment received","Your "+kind+" payment was confirmed. Reference "+v["id"]+". View the payment in your dealer billing account.")
     if kind=="auto" and d["cap"]>0:
-        prior=one(db,"SELECT COALESCE(SUM(amount),0) FROM orders WHERE dealer=? AND cycle=? AND kind='auto' AND state='paid'",d["id"],order["cycle"])[0]
+        prior=one(db,"SELECT COALESCE(SUM(amount),0) AS total FROM orders WHERE dealer=%s AND cycle=%s AND kind='auto' AND state='paid'",d["id"],order["cycle"])["total"]
         if (prior+amount)*5>=d["cap"]*4:
             notify(db,"limit:"+d["id"]+":"+str(order["cycle"]),d["id"],"Voice top-ups have reached 80% of your limit","Review your automatic card-charge limit in your billing account.")
-    if order:db.execute("UPDATE orders SET state='paid',payment=? WHERE id=?",(v["id"],order["id"]))
+    if order:db.execute("UPDATE orders SET state='paid',payment=%s WHERE id=%s",(v["id"],order["id"]))
 
 def verify_whop(headers,body):
     secret=SECRET
@@ -234,7 +231,7 @@ def verify_voice(headers,body):
 def preferences(data):
     refill=data.get("refill",100);cap=data.get("cap",300);auto=data.get("auto",False)
     require(type(auto) is bool and type(refill) is int and refill in (100,500) and type(cap) is int and 0<=cap<=100000 and (not auto or cap>=refill),"Check the refill amount and monthly limit.")
-    return refill,cap,auto
+    return refill,cap,int(auto)
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):pass
@@ -247,7 +244,7 @@ class Handler(BaseHTTPRequestHandler):
         c=SimpleCookie();c.load(self.headers.get("Cookie",""));v=c.get("dealer_billing")
         return hashlib.sha256((v.value if v else "").encode()).hexdigest()
     def dealer(self,db):
-        return one(db,"SELECT d.* FROM dealers d JOIN sessions s ON s.dealer=d.id WHERE s.token=? AND s.expires>?",self.token(),now())
+        return one(db,"SELECT d.* FROM dealers d JOIN sessions s ON s.dealer=d.id WHERE s.token=%s AND s.expires>%s",self.token(),now())
     def do_GET(self):
         if self.path!="/billing/account":return self.reply(404,{})
         with transaction() as db:
@@ -255,8 +252,8 @@ class Handler(BaseHTTPRequestHandler):
             if not d:return self.reply(200,{"signedIn":False,"checkoutAvailable":ready()})
             public={k:d[k] for k in ("name","email","plan","marketing","status","cycle","used","balance","refill","cap","auto")}
             public.update(signedIn=True,cardSaved=bool(d["method"]),checkoutAvailable=ready() and bool(VARIANTS.get(plan_key(d))),included=PLANS[d["plan"]][1],
-                notices=[dict(x) for x in db.execute("SELECT subject,created FROM notices WHERE dealer=? ORDER BY created DESC LIMIT 5",(d["id"],))],
-                receipts=[dict(x) for x in db.execute("SELECT kind,amount,received,id FROM payments WHERE dealer=? ORDER BY received DESC LIMIT 25",(d["id"],))])
+                notices=[dict(x) for x in db.execute("SELECT subject,created FROM notices WHERE dealer=%s ORDER BY created DESC LIMIT 5",(d["id"],))],
+                receipts=[dict(x) for x in db.execute("SELECT kind,amount,received,id FROM payments WHERE dealer=%s ORDER BY received DESC LIMIT 25",(d["id"],))])
             self.reply(200,public)
     def do_POST(self):
         try:self.post()
@@ -288,27 +285,27 @@ class Handler(BaseHTTPRequestHandler):
                 if self.path.endswith("signup"):
                     require(data["plan"] in PLANS and data["plan"] not in ("web_voice","omnichannel") and type(data.get("marketing",False)) is bool and 0<len(data["name"].strip())<=150,"Choose a package and enter your dealership name.")
                     salt=secrets.token_hex(16);dealer=uuid.uuid4().hex;refill,cap,auto=preferences(data)
-                    try:db.execute("INSERT INTO dealers(id,email,name,password,plan,marketing,refill,cap,auto) VALUES(?,?,?,?,?,?,?,?,?)",(dealer,email,data["name"].strip(),salt+":"+passwd(password,salt),data["plan"],int(data.get("marketing",False)),refill,cap,auto))
-                    except sqlite3.IntegrityError:raise ValueError("Use sign in if a billing account already exists.")
-                    db.execute("INSERT INTO consent VALUES(?,?,?)",(dealer,now(),json.dumps({"version":1,"refill":refill,"threshold":refill//5,"cap":cap,"auto":auto})))
+                    try:db.execute("INSERT INTO dealers(id,email,name,password,plan,marketing,refill,cap,auto) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)",(dealer,email,data["name"].strip(),salt+":"+passwd(password,salt),data["plan"],int(data.get("marketing",False)),refill,cap,auto))
+                    except psycopg.IntegrityError:raise ValueError("Use sign in if a billing account already exists.")
+                    db.execute("INSERT INTO consent VALUES(%s,%s,%s)",(dealer,now(),json.dumps({"version":1,"refill":refill,"threshold":refill//5,"cap":cap,"auto":auto})))
                 else:
-                    d=one(db,"SELECT * FROM dealers WHERE email=?",email)
+                    d=one(db,"SELECT * FROM dealers WHERE email=%s",email)
                     salt,hashed=d["password"].split(":") if d else ("00"*16,"")
                     require(hmac.compare_digest(passwd(password,salt),hashed),"Invalid sign-in.")
                     dealer=d["id"]
                 token=secrets.token_urlsafe(32)
-                db.execute("INSERT INTO sessions VALUES(?,?,?)",(hashlib.sha256(token.encode()).hexdigest(),dealer,now()+86400*7))
+                db.execute("INSERT INTO sessions VALUES(%s,%s,%s)",(hashlib.sha256(token.encode()).hexdigest(),dealer,now()+86400*7))
                 db.commit()
                 return self.reply(200,{"saved":True},"dealer_billing="+token+"; HttpOnly; Secure; SameSite=Lax; Path=/billing; Max-Age=604800")
             d=self.dealer(db)
             if not d:return self.reply(401,{"error":"Please sign in."})
             dealer=d["id"]
             if self.path=="/billing/logout":
-                db.execute("DELETE FROM sessions WHERE token=?",(self.token(),));return self.reply(200,{"saved":True})
+                db.execute("DELETE FROM sessions WHERE token=%s",(self.token(),));return self.reply(200,{"saved":True})
             if self.path=="/billing/settings":
                 refill,cap,auto=preferences(data)
-                db.execute("UPDATE dealers SET refill=?,cap=?,auto=? WHERE id=?",(refill,cap,auto,dealer))
-                db.execute("INSERT INTO consent VALUES(?,?,?)",(dealer,now(),json.dumps({"version":1,"refill":refill,"threshold":refill//5,"cap":cap,"auto":auto})))
+                db.execute("UPDATE dealers SET refill=%s,cap=%s,auto=%s WHERE id=%s",(refill,cap,auto,dealer))
+                db.execute("INSERT INTO consent VALUES(%s,%s,%s)",(dealer,now(),json.dumps({"version":1,"refill":refill,"threshold":refill//5,"cap":cap,"auto":auto})))
                 return self.reply(200,{"saved":True})
         kinds={"/billing/checkout":"subscription","/billing/save-card":"card","/billing/buy":"manual"}
         if self.path in kinds:
@@ -332,7 +329,7 @@ def deliver_notices():
         with smtplib.SMTP_SSL(host,int(os.getenv("BILLING_SMTP_PORT","465")),timeout=10) as smtp:
             if os.getenv("BILLING_SMTP_USER"):smtp.login(os.environ["BILLING_SMTP_USER"],os.environ["BILLING_SMTP_PASSWORD"])
             smtp.send_message(email)
-        with transaction() as db:db.execute("UPDATE notices SET sent=1 WHERE id=?",(row["id"],))
+        with transaction() as db:db.execute("UPDATE notices SET sent=1 WHERE id=%s",(row["id"],))
 
 def refill_worker():
     import logging
@@ -345,7 +342,7 @@ def refill_worker():
                 # Never replay an ambiguous request after the provider idempotency window.
                 if now()-o["created"]>3600:continue
                 result=provider("/payments",{"account_id":MERCHANT,"variant_id":o["variant"],"member_id":o["member"],"payment_method_id":o["method"],"metadata":{"adsi_order":o["id"]}},o["id"])
-                with transaction() as db:db.execute("UPDATE orders SET payment=? WHERE id=?",(result["id"],o["id"]))
+                with transaction() as db:db.execute("UPDATE orders SET payment=%s WHERE id=%s",(result["id"],o["id"]))
         except Exception:logging.warning("Pending Whop refill requires reconciliation.")
         try:deliver_notices()
         except Exception:logging.warning("Billing notification delivery pending.")

@@ -1,5 +1,5 @@
 # Dealer billing
-The billing service listens on loopback. Nginx serves the sales site and proxies /billing/ to it. SQLite lives in a private systemd StateDirectory. The public showroom demo is unmetered.
+The billing service listens on loopback. Nginx serves the sales site and proxies /billing/ to it. PostgreSQL stores accounts and billing records. Set BILLING_DATABASE_URL in /etc/autodealership-billing-postgres.env and install python3-psycopg. The public showroom demo is unmetered.
 
 ## Merchant activation
 Create the dedicated AutoDealership.SI business. Configure these values in /etc/autodealership-billing.env (root-readable only). Sandbox and production require separate credentials, signing secrets, catalogs and databases.
@@ -14,6 +14,6 @@ Create the dedicated AutoDealership.SI business. Configure these values in /etc/
 Assign a dedicated ElevenLabs agent to each paid rooftop in VOICE_AGENT_ACCOUNTS (JSON object mapping agent ID to the dealer UUID). Set ELEVENLABS_WEBHOOK_SECRET and configure the signed post_call_transcription endpoint /billing/voice-hook. The public demo agent must remain unmapped. Before issuing a signed session URL or accepting a phone call, the tenant's server must call POST /billing/internal/admit with its dealer ID and Authorization: Bearer BILLING_ADMISSION_KEY. Supply the returned reservation as the billing_reservation dynamic variable, respect maximumConnectedSeconds and use text or the configured phone fallback when denied. Never give a public browser this service key. The hosted sales service has no authority to provision a real dealer phone line or inventory feed.
 
 ## Reconciliation
-Credit is granted from signed successful payments. Top-up requests use durable local orders and an Idempotency-Key. An ambiguous request older than an hour is left pending for reconciliation against Whop before any retry. Review refunds, chargebacks and externally modified subscriptions in Whop before adjusting customer credits. Scope checkout variants to the configured merchant; do not apply coupons to prepaid credits. Back up the SQLite state including any journal before maintenance.
+Credit is granted from signed successful payments. Top-up requests use durable local orders and an Idempotency-Key. An ambiguous request older than an hour is left pending for reconciliation against Whop before any retry. Review refunds, chargebacks and externally modified subscriptions in Whop before adjusting customer credits. Scope checkout variants to the configured merchant; do not apply coupons to prepaid credits. Back up the PostgreSQL billing database before maintenance.
 
 Run python test_billing.py in this directory for an isolated ledger test. Production checkout is disabled until merchant settings are supplied.

@@ -1,7 +1,8 @@
-(() => {
+(async () => {
   "use strict";
   const get=id=>document.getElementById(id);
   const id=new URLSearchParams(location.search).get("stock");
+  await Store.inventoryReady;
   const car=Store.cars().find(record=>String(record.id)===id);
   const settings=Store.settings();
   const enabled=key=>settings.options?.[key]!==false;
@@ -211,9 +212,11 @@
       nextNote="preferences";get("follow-up-question").textContent="Is there anything specific you’re looking for in your next vehicle?";
     }
     if(field==="preferences"){nextNote=null;follow.hidden=true;}
+    try{if(receipt.leadId)Store.attachNote(receipt.leadId,field,answer.trim());}catch{}
     follow.elements.answer.value="";
     return field==="tradeIn"?"Trade-in note saved. Ask what the shopper is looking for specifically.":"Shopping preferences saved in the customer notes.";
   }
+  window.pendingBookingNote=()=>receipt && nextNote;
   window.saveBookedCustomerNote=saveCustomerNote;
   follow.onsubmit=async event=>{
     event.preventDefault();const button=follow.querySelector("button");button.disabled=true;
@@ -232,9 +235,9 @@
       const response=await fetch(bookingUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
       const result=await response.json();
       if(!response.ok){if(response.status===409)await loadTimes();throw Error(result.error||"Booking unavailable.");}
-      try{await Store.addLead({...data,carId:car.id,source:"Scheduled test drive",message:data.message+" · "+data.slot});}catch{}
+      let localLead;try{localLead=await Store.addLead({...data,carId:car.id,source:"Scheduled test drive",message:data.message+" · "+data.slot});}catch{}
       get("drive-status").textContent="Reserved for "+form.elements.slot.selectedOptions[0].text+" Central time. Confirmation "+result.confirmation;
-      receipt={slot:data.slot,token:result.noteToken};follow.hidden=false;
+      receipt={leadId:localLead?.id,slot:data.slot,token:result.noteToken};follow.hidden=false;
       form.hidden=true;get("drive-title").textContent="Test drive scheduled";
     }catch(error){get("drive-status").textContent=error.message || "Your reservation could not be saved. Please try again.";button.disabled=false;}
   };

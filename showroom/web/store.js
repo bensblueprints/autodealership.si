@@ -67,7 +67,17 @@
     localStorage.setItem(prefix+key,JSON.stringify(value));
     window.dispatchEvent(new Event("showroom:update"));
   }
-  function cars() {
+  let inventoryStatus={};
+  async function refreshInventoryStatus(){
+    const res=await fetch("/api/inventory-status",{cache:"no-store"});
+    if(!res.ok)throw Error("Inventory availability is unavailable.");
+    inventoryStatus=await res.json();view=null;window.dispatchEvent(new Event("showroom:update"));
+  }
+  const inventoryReady=refreshInventoryStatus().catch(()=>{});
+  function cars(includeSold=false) {
+    return inventoryRows().filter(car=>!inventoryStatus[car.vin||car.id] || (includeSold && inventoryStatus[car.vin||car.id]==="sold"));
+  }
+  function inventoryRows() {
     if(view)return view;
     const byId=new Map(catalogById), added=[];
     function merge(record) {
@@ -141,7 +151,11 @@
     write("settings",next);
   }
   window.addEventListener("focus",()=>loadProfile().catch(()=>{}));
-  window.Store = { cars,leads,addLead,setStatus,saveCar,settings,saveSettings,optionGroups,profileReady };
+  function attachNote(id,field,answer){
+    const lead=read("lead:"+id,null);
+    if(lead)write("lead:"+id,{...lead,notes:{...lead.notes,[field]:answer}});
+  }
+  window.Store = {attachNote, cars,inventoryReady,refreshInventoryStatus,statusFor:vin=>inventoryStatus[vin],leads,addLead,setStatus,saveCar,settings,saveSettings,optionGroups,profileReady };
   window.addEventListener("storage",e=>{if(e.key===prefix+"settings"||e.key===null)loadProfile().catch(()=>{});if (!e.key || e.key.startsWith(prefix)){view=null;window.dispatchEvent(new Event("showroom:update"));}});
 })();
 

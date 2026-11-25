@@ -40,6 +40,9 @@
       details.append(node("strong",lead.name));
       if(car) details.append(node("p",carName(car)+" · Stock "+(car.stock || car.id),"vehiclelabel"));
       if(lead.message) details.append(node("p",lead.message));
+      for(const [field,label] of [["tradeIn","Trade-in"],["preferences","Specific requests"]]){
+        if(lead.notes?.[field])details.append(node("p",label+" — "+lead.notes[field]));
+      }
       const contact=node("div",null,"contact");
       if(lead.email){const a=node("a",lead.email);a.href="mailto:"+encodeURIComponent(lead.email);contact.append(a);}
       if(lead.phone){const a=node("a",lead.phone);a.href="tel:"+lead.phone.replace(/[^+\d]/g,"");contact.append(a);}
@@ -64,21 +67,36 @@
     for (const car of matches.slice(inventoryPage*pageSize,(inventoryPage+1)*pageSize)) {
       const row=node("article",null,"vehicle"),group=node("div",null,"grow");
       group.append(node("strong",carName(car)),node("small",[car.trim,car.stock || car.id,car.miles!=null?fmt.format(car.miles)+" mi":""].filter(Boolean).join(" · ")));
+      const sold=Store.statusFor(car.vin||car.id)==="sold";
+      if(sold)group.append(node("strong","Sold"));
+      for(const [label,status] of [[sold?"Return to inventory":"Mark sold",sold?"available":"sold"],["Delete","deleted"]]){
+        const button=node("button",label,"quiet");
+        button.onclick=async()=>{
+          if(status==="deleted" && !confirm("Delete "+carName(car)+" (stock "+(car.stock||car.id)+") from inventory? Existing appointments will be kept."))return;
+          button.disabled=true;
+          try{
+            const res=await fetch("/api/inventory-status",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({vin:car.vin||car.id,status})});
+            if(!res.ok)throw Error(res.status===403?"Sign in to the dealer dashboard first.":"Could not update vehicle availability.");
+            await Store.refreshInventoryStatus();
+          }catch(e){notice(e.message);}finally{button.disabled=false;}
+        };
+        group.append(button);
+      }
       const edit=node("button","Edit","quiet");edit.addEventListener("click",()=>openEditor(car));
       row.append(thumb(car),group,node("span",car.price==null?"Contact for price":"$"+fmt.format(car.price),"price"),edit);list.append(row);
     }
     if(cars.length && !matches.length)list.append(empty("No matching vehicles","Try a different VIN, stock number, make, or model."));
     if(!cars.length)list.append(empty("Your inventory is ready to fill","Add a vehicle with its stock number, photo and price."));
   }
-  $("inventorySearch").oninput=()=>{inventoryPage=0;renderInventory(Store.cars());};
-  $("invNext").onclick=()=>{inventoryPage++;renderInventory(Store.cars());};
-  $("invPrevious").onclick=()=>{inventoryPage--;renderInventory(Store.cars());};
+  $("inventorySearch").oninput=()=>{inventoryPage=0;renderInventory(Store.cars(true));};
+  $("invNext").onclick=()=>{inventoryPage++;renderInventory(Store.cars(true));};
+  $("invPrevious").onclick=()=>{inventoryPage--;renderInventory(Store.cars(true));};
   function refresh() {
     const cars=Store.cars(),leads=Store.leads(),name=Store.settings().dealerName;
     $("brand").textContent=name;document.title="Sales desk · "+name;
     $("countCars").textContent=cars.length;$("countLeads").textContent=leads.length;
     $("countNew").textContent=leads.filter(l=>l.status==="New").length;
-    renderLeads(leads);renderInventory(cars);
+    renderLeads(leads);renderInventory(Store.cars(true));
   }
   function openEditor(car=null) {
     editing=car;form.reset();$("formError").textContent="";$("editTitle").textContent=car?"Edit vehicle":"Add vehicle";

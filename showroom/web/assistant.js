@@ -321,10 +321,16 @@
     }
     log.scrollTop = log.scrollHeight;
   }
+  let voiceQuestion=null;
   function handleText(input) {
     const query = input.trim();
     if(!query) return;
     addLine(query,"user");
+    const listingWindow=vehicleDoc()?.defaultView,field=listingWindow?.pendingBookingNote?.();
+    if(field){
+      listingWindow.saveBookedCustomerNote(field,query).then(()=>addLine(field==="tradeIn"?"Trade-in saved. Is there anything specific you want the salesperson to know?":"Your requests are attached to your test drive.")).catch(()=>addLine("Your answer could not be saved. Please try again."));
+      return;
+    }
     if(explicitIdentifier(query)){
       const matches=exactVehicles(Store.cars(),query);
       if(!matches.length){addLine("I couldn’t match that identifier. Could you repeat the full stock number or VIN shown on the card?");return;}
@@ -442,6 +448,13 @@
         onMessage: ({message,source}) => {
           if(!message)return;
           addLine(message,source==="user"?"user":"reply");
+          const listingWindow=vehicleDoc()?.defaultView,field=listingWindow?.pendingBookingNote?.();
+          if(source!=="user"){
+            voiceQuestion=field && (field==="tradeIn"?/trade[ -]?in|trading in/i:/looking for|specific|preferences|salesperson.*know/i).test(message)?field:null;
+          }else if(field && voiceQuestion===field){
+            voiceQuestion=null;
+            listingWindow.saveBookedCustomerNote(field,message).catch(()=>addLine("Your appointment note could not be saved. Please repeat it."));
+          }
         },
         onModeChange: ({mode}) => { status.textContent = mode === "speaking" ? "Concierge speaking" : "Listening…"; },
         onDisconnect: () => idle("Voice session ended"),

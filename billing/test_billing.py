@@ -3,6 +3,18 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parent))
 sandbox=tempfile.TemporaryDirectory()
 os.environ["BILLING_DATA"]=sandbox.name
+import psycopg,uuid
+from psycopg.conninfo import make_conninfo
+schema="billing_test_"+uuid.uuid4().hex
+dsn=os.environ["BILLING_DATABASE_URL"]
+with psycopg.connect(dsn) as conn:
+    conn.execute("CREATE SCHEMA "+schema)
+import atexit
+@atexit.register
+def cleanup():
+    with psycopg.connect(dsn) as conn:
+        conn.execute("DROP SCHEMA "+schema+" CASCADE")
+os.environ["BILLING_DATABASE_URL"]=make_conninfo(dsn,options="-c search_path="+schema)
 import server as app
 
 class Billing(unittest.TestCase):
@@ -25,11 +37,11 @@ class Billing(unittest.TestCase):
       refill_event={"type":"payment.succeeded","data":{"id":"pay_refill","account_id":"biz_test","member_id":"mber_test","variant_id":"plan_refill","subtotal":{"amount":"100.00","currency":"usd"},"metadata":{"adsi_order":refill["id"]}}}
       app.whop_event(db,refill_event);app.whop_event(db,refill_event)
       app.meter(db,{**call,"conversation_id":"call_2","metadata":{"call_duration_secs":300,"start_time_unix_secs":dealer["cycle"]+9300}})
-      self.assertEqual(app.one(db,"SELECT balance FROM dealers")[0],100*6000-60*35)
-      self.assertEqual(app.one(db,"SELECT COUNT(*) FROM payments")[0],2)
+      self.assertEqual(app.one(db,"SELECT balance FROM dealers")["balance"],100*6000-60*35)
+      self.assertEqual(app.one(db,"SELECT COUNT(*) FROM payments")["count"],2)
       db.execute("UPDATE dealers SET balance=0,cap=100")
       app.queue_refill(db,app.one(db,"SELECT * FROM dealers"))
-      self.assertEqual(app.one(db,"SELECT COUNT(*) FROM orders WHERE kind='auto'")[0],1)
+      self.assertEqual(app.one(db,"SELECT COUNT(*) FROM orders WHERE kind='auto'")["count"],1)
       self.assertEqual(app.billed(60000*60,0),5000*60*35+15000*60*30+40000*60*27)
       from hashlib import sha256
       import base64,hmac,time

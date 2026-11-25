@@ -7,6 +7,7 @@ StateDirectory=autodealership-billing
 StateDirectoryMode=0700
 Environment=BILLING_DATA=/var/lib/autodealership-billing
 EnvironmentFile=-/etc/autodealership-billing.env
+EnvironmentFile=/etc/autodealership-billing-postgres.env
 ExecStart=/usr/bin/python3 /opt/autodealership-billing/server.py
 Restart=on-failure
 UMask=0077
