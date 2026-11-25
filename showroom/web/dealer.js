@@ -143,7 +143,7 @@
     finally{save.disabled=false;}
   });
   document.querySelectorAll("[data-view]").forEach(btn=>btn.addEventListener("click",()=>{
-    for(const section of ["leads","inventory","pages"])$(section).hidden=section!==btn.dataset.view;
+    for(const section of ["leads","inventory","pages","banners"])$(section).hidden=section!==btn.dataset.view;
     document.querySelectorAll("[data-view]").forEach(b=>{const active=b===btn;b.classList.toggle("active",active);b.setAttribute("aria-pressed",String(active));});
   }));
   $("statusFilter").addEventListener("change",()=>renderLeads(Store.leads()));

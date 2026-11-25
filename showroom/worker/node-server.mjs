@@ -13,6 +13,7 @@ function stored(){
   try{return JSON.parse(readFileSync(path,"utf8"));}catch(e){if(e.code==="ENOENT")return null;throw e;}
 }
 const db=await bookingDatabase();
+await db.query("CREATE TABLE IF NOT EXISTS homepage_banners (id integer PRIMARY KEY, revision integer NOT NULL, config jsonb NOT NULL)");
 const bucket={
   async list({prefix}){return {objects:(await db.query("SELECT key FROM appointments WHERE starts_with(key,$1)",[prefix])).rows,truncated:false};},
   async get(key){
@@ -62,11 +63,40 @@ createServer(async(req,res)=>{
       const chunks=[];let count=0;
       for await(const chunk of req){
         count+=chunk.length;
-        if(count>1000000){res.writeHead(413).end();return;}chunks.push(chunk);
+        if(count>(req.url==="/api/banner-editor" && privateAdmin?6500000:1000000)){res.writeHead(413).end();return;}chunks.push(chunk);
       }
       body=Buffer.concat(chunks);
     }
     const route=new URL(req.url,base);
+    if(["/api/banners","/api/banner-editor"].includes(route.pathname)){
+      const editor=route.pathname.endsWith("editor");
+      const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
+      if(editor && !privateAdmin)return reply(403,{error:"Use Dealer sign in to manage banners."});
+      if(req.method==="GET"){
+        const row=(await db.query("SELECT revision,config FROM homepage_banners WHERE id=1")).rows[0];
+        const config=row?.config??{enabled:false,slides:[]};
+        return reply(200,editor?{...config,revision:row?.revision??0}:{slides:config.enabled?config.slides:[]});
+      }
+      if(!editor || req.method!=="PUT" || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Dealer access required."});
+      let data;try{data=JSON.parse(body);}catch{return reply(400,{error:"Invalid slideshow."});}
+      if(!data || typeof data.enabled!=="boolean" || !Number.isInteger(data.revision) || !Array.isArray(data.slides) || data.slides.length>6 || (data.enabled && !data.slides.length))
+        return reply(400,{error:"Choose up to six banners. Add a banner before enabling the slideshow."});
+      const slides=[];
+      for(const slide of data.slides){
+        if(!slide || typeof slide.image!=="string" || slide.image.length>1000000 || !/^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]+=*$/.test(slide.image) ||
+          typeof slide.alt!=="string" || !slide.alt.trim() || slide.alt.length>300 || typeof slide.link!=="string" || slide.link.length>2048)
+          return reply(400,{error:"Each slide needs a banner image and a short description."});
+        if(slide.link){
+          try{const url=new URL(slide.link,base);if(url.username||url.password||!(url.protocol==="https:" || (url.origin===base.origin && slide.link.startsWith("/"))))throw Error();}
+          catch{return reply(400,{error:"Enter a valid HTTPS link or a showroom path."});}
+        }
+        slides.push({image:slide.image,alt:slide.alt.trim(),link:slide.link});
+      }
+      const config=JSON.stringify({enabled:data.enabled,slides});
+      const saved=data.revision===0?await db.query("INSERT INTO homepage_banners VALUES(1,1,$1) ON CONFLICT DO NOTHING RETURNING revision",[config]):
+        await db.query("UPDATE homepage_banners SET config=$1,revision=revision+1 WHERE id=1 AND revision=$2 RETURNING revision",[config,data.revision]);
+      return saved.rowCount?reply(200,saved.rows[0]):reply(409,{error:"Another editor saved changes. Reload the dashboard before editing again."});
+    }
     if(route.pathname==="/dealer-login"){
       if(!privateAdmin){res.writeHead(401,{"WWW-Authenticate":'Basic realm="Dealer dashboard"',"Cache-Control":"no-store"}).end();return;}
       res.writeHead(302,{Location:"/dealer","Cache-Control":"no-store"}).end();return;
