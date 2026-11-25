@@ -3,8 +3,8 @@
 .hero-title{font-size:clamp(40px,8.6vw,126px);line-height:1.02;letter-spacing:-.065em}
 .hero-line{display:block;white-space:nowrap;min-height:1.05em}
 .hero-accessible{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.hero-cursor{display:none;width:.055em;height:.74em;margin-left:.085em;vertical-align:baseline;background:#ff7455;border-radius:.02em}
+.hero-cursor{display:inline-block;width:.055em;height:.74em;margin-left:.085em;vertical-align:baseline;background:#ff7455;border-radius:.02em}
 .hero-title.is-typing .hero-cursor{display:inline-block;animation:hero-blink 1.2s ease-in-out infinite}
 @keyframes hero-blink{0%,40%,100%{opacity:1}65%,80%{opacity:.18}}
 @media(max-width:700px){.hero-title{font-size:clamp(40px,12vw,78px)}}
-@media(prefers-reduced-motion:reduce){.hero-title.is-typing .hero-cursor{display:none;animation:none}}
+@media(prefers-reduced-motion:reduce){.hero-title.is-typing .hero-cursor{display:inline-block;animation:none}}
