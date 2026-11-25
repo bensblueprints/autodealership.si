@@ -25,7 +25,7 @@ MERCHANT = os.getenv("WHOP_ACCOUNT_ID", "")
 KEY = os.getenv("WHOP_API_KEY", "")
 SECRET = os.getenv("WHOP_WEBHOOK_SECRET", "")
 API = "https://sandbox-api.whop.com/api/v1" if os.getenv("WHOP_ENV") == "sandbox" else "https://api.whop.com/api/v1"
-PLANS = {"chat": (299, 0), "web_voice": (499, 150), "phone_only": (799, 500), "omnichannel": (1099, 750), "website": (499, 0), "starter": (798, 150), "concierge": (1499, 750), "phone": (2499, 2000)}
+PLANS = {"phone_widget": (1099, 750), "chat": (299, 0), "web_voice": (499, 150), "phone_only": (799, 500), "omnichannel": (1099, 750), "website": (499, 0), "starter": (798, 150), "concierge": (1499, 750), "phone": (2499, 2000)}
 VARIANTS = json.loads(os.getenv("WHOP_VARIANTS", "{}"))
 AGENTS = json.loads(os.getenv("VOICE_AGENT_ACCOUNTS", "{}"))
 CAP_UNIT = 6000
@@ -286,7 +286,7 @@ class Handler(BaseHTTPRequestHandler):
                 email=data["email"].strip().lower();password=data["password"]
                 require(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",email) and len(email)<=254 and 12<=len(password)<=256,"Enter an email and a password of 12–256 characters.")
                 if self.path.endswith("signup"):
-                    require(data["plan"] in PLANS and type(data.get("marketing",False)) is bool and 0<len(data["name"].strip())<=150,"Choose a package and enter your dealership name.")
+                    require(data["plan"] in PLANS and data["plan"] not in ("web_voice","omnichannel") and type(data.get("marketing",False)) is bool and 0<len(data["name"].strip())<=150,"Choose a package and enter your dealership name.")
                     salt=secrets.token_hex(16);dealer=uuid.uuid4().hex;refill,cap,auto=preferences(data)
                     try:db.execute("INSERT INTO dealers(id,email,name,password,plan,marketing,refill,cap,auto) VALUES(?,?,?,?,?,?,?,?,?)",(dealer,email,data["name"].strip(),salt+":"+passwd(password,salt),data["plan"],int(data.get("marketing",False)),refill,cap,auto))
                     except sqlite3.IntegrityError:raise ValueError("Use sign in if a billing account already exists.")

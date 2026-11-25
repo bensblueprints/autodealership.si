@@ -14,10 +14,12 @@ catalog_file=ROOT/("catalog-"+os.getenv("WHOP_ENV","production")+"-"+MERCHANT+".
 catalog=json.loads(catalog_file.read_text()) if catalog_file.exists() else {}
 offers={}
 for key,(amount,minutes) in PLANS.items():
+    if key in ("web_voice", "omnichannel"):
+        continue
     for marketing in (False,True):
         name=key+("_marketing" if marketing else "")
         cost=amount+(2500 if marketing else 0)
-        offers[name]={"title":"AutoDealership.SI "+{'chat': 'Dealer Chat', 'web_voice': 'Dealer Chat + Web Voice', 'phone_only': 'AI Phone Receptionist', 'omnichannel': 'Phone + Website Concierge'}.get(key,key.title())+(" + Managed Marketing" if marketing else ""),"billing_type":"renewal","initial_price":cost,"renewal_price":cost,"billing_period":30}
+        offers[name]={"title":"AutoDealership.SI "+{'phone_widget': 'Phone Voice + Web Chat Widget', 'chat': 'Web Chat Widget', 'web_voice': 'Dealer Chat + Web Voice', 'phone_only': 'Phone Voice Receptionist', 'omnichannel': 'Phone + Website Concierge'}.get(key,key.title())+(" + Managed Marketing" if marketing else ""),"billing_type":"renewal","initial_price":cost,"renewal_price":cost,"billing_period":30}
 for amount in (100,500):
     offers["credit_"+str(amount)]={"title":"AutoDealership.SI voice credit $"+str(amount),"billing_type":"one_time","initial_price":amount}
 for key,variant in offers.items():
