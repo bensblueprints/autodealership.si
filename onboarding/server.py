@@ -112,7 +112,7 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:return self.reply(403,{"error":"Please sign in with a verified work email."})
                 token=secrets.token_urlsafe(32)
                 with connect() as db:
-                    if data.get("role")=="owner":
+                    if data.get("role")=="owner" or (data.get("role")=="platform" and email=="benji@benjaminboyce.com"):
                         row=db.execute("SELECT subject FROM public.staff_clerk_links WHERE principal='owner'").fetchone()
                         if not row:
                             if email!="benji@benjaminboyce.com":return self.reply(403,{"error":"Owner access required."})

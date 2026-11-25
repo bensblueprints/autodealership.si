@@ -2,13 +2,21 @@
 <style>body{background:#121620;color:#f5f6fa;font:16px system-ui;margin:8vh auto;padding:24px;max-width:480px}button,input{font:inherit;padding:12px;border-radius:8px}button{cursor:pointer}a{color:#95c9ff}</style>
 <h1>Staff sign-in</h1><p id="status">Connecting to Clerk…</p><div id="auth"></div>
 <script>
-const role=new URLSearchParams(location.search).get("role")==="owner"?"owner":"engineer";
+const params=new URLSearchParams(location.search);
+const site=params.get("site");
+const role=site?"platform":params.get("role")==="owner"?"owner":"engineer";
 const statusText=document.querySelector("#status");
 function failed(){statusText.textContent="Could not connect to Clerk. Please reload to try again."}
 async function enter(){
  const response=await fetch("/onboarding/clerk-exchange",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:await Clerk.session.getToken(),role})});
  const result=await response.json();
  if(!response.ok){statusText.textContent=result.error||"Access denied.";return}
+ if(site){
+   const desk=await fetch("/onboarding/open-desk",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug:site})});
+   const target=await desk.json();
+   if(!desk.ok){statusText.textContent=target.error||"This dealership is unavailable.";return}
+   location.replace(target.url);return
+ }
  location.replace(role==="owner"?"/onboarding/admin":"/onboarding/");
 }
 async function start(){try{await Clerk.load();if(Clerk.session){if(location.pathname.endsWith("/clerk-team")){
