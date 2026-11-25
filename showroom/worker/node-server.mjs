@@ -14,6 +14,17 @@ function stored(){
 }
 const db=await bookingDatabase();
 await db.query("CREATE TABLE IF NOT EXISTS homepage_banners (id integer PRIMARY KEY, revision integer NOT NULL, config jsonb NOT NULL)");
+await db.query("CREATE TABLE IF NOT EXISTS bhph_offers(vehicle text PRIMARY KEY, revision integer NOT NULL, offer jsonb NOT NULL)");
+function publishedOffer(row){
+  if(!row.offer.enabled)return {cash:row.offer.cash,revision:row.revision};
+  return {...row.offer,revision:row.revision};
+}
+async function offerSnapshot(vin,choice){
+  const row=(await db.query("SELECT revision,offer FROM bhph_offers WHERE vehicle=$1",[vin])).rows[0];
+  if(!row?.offer.enabled || row.revision!==choice?.revision)return null;
+  const schedule=row.offer.schedules.find(s=>s.frequency===choice.frequency && s.months===choice.months);
+  return schedule?{cash:row.offer.cash,price:row.offer.price,down:row.offer.down,balance:row.offer.balance,...schedule}:null;
+}
 const bucket={
   async list({prefix}){return {objects:(await db.query("SELECT key FROM appointments WHERE starts_with(key,$1)",[prefix])).rows,truncated:false};},
   async get(key){
@@ -68,6 +79,41 @@ createServer(async(req,res)=>{
       body=Buffer.concat(chunks);
     }
     const route=new URL(req.url,base);
+    if(route.pathname==="/api/bhph"){
+      const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
+      const vehicle=route.searchParams.get("vehicle");
+      if(req.method==="GET" && !vehicle){
+        const {rows}=await db.query("SELECT vehicle,revision,offer FROM bhph_offers");
+        return reply(200,Object.fromEntries(rows.map(row=>[row.vehicle,publishedOffer(row)])));
+      }
+      if(!privateAdmin)return reply(403,{error:"Use Dealer sign in first."});
+      if(!/^[a-zA-Z0-9_-]{1,100}$/.test(vehicle||""))return reply(400,{error:"Missing vehicle identifier."});
+      if(req.method==="GET"){
+        const row=(await db.query("SELECT revision,offer FROM bhph_offers WHERE vehicle=$1",[vehicle])).rows[0];
+        return reply(200,row||{revision:0,offer:null});
+      }
+      if(req.method!=="PUT" || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Use the dealer dashboard."});
+      let data;try{data=JSON.parse(body);}catch{}
+      const cents=n=>Number.isSafeInteger(n)&&n>=0&&n<=10000000000;
+      if(!data || !Number.isInteger(data.revision)||typeof data.enabled!=="boolean"||!cents(data.cash)||!cents(data.price)||!cents(data.down)||data.down>data.price ||
+        (data.override!==null && !cents(data.override)) || !Array.isArray(data.choices)||!data.choices.length||data.choices.length>12)
+        return reply(400,{error:"Check prices, cash down, remaining balance and payment options."});
+      const balance=data.override??(data.price-data.down),schedules=[],seen=new Set();
+      for(const choice of data.choices){
+        if(!choice || !["Weekly","Biweekly","Monthly"].includes(choice.frequency)||![12,18,24,36].includes(choice.months)||seen.has(choice.frequency+choice.months))
+          return reply(400,{error:"Invalid payment option."});
+        seen.add(choice.frequency+choice.months);
+        const count=choice.months*({Weekly:52,Biweekly:26,Monthly:12}[choice.frequency])/12;
+        let payment=Math.round(balance/count);
+        if(payment*(count-1)>balance)payment=Math.floor(balance/count);
+        if(!payment)return reply(400,{error:"The balance is too small for the selected schedule."});
+        schedules.push({...{frequency:choice.frequency,months:choice.months},count,payment,final:balance-payment*(count-1)});
+      }
+      const offer=JSON.stringify({enabled:data.enabled,cash:data.cash,price:data.price,down:data.down,override:data.override,balance,schedules});
+      const result=data.revision===0?await db.query("INSERT INTO bhph_offers VALUES($1,1,$2) ON CONFLICT DO NOTHING RETURNING revision",[vehicle,offer]):
+        await db.query("UPDATE bhph_offers SET offer=$2,revision=revision+1 WHERE vehicle=$1 AND revision=$3 RETURNING revision",[vehicle,offer,data.revision]);
+      return result.rowCount?reply(200,result.rows[0]):reply(409,{error:"Pricing changed in another session. Reopen the editor."});
+    }
     if(["/api/banners","/api/banner-editor"].includes(route.pathname)){
       const editor=route.pathname.endsWith("editor");
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
@@ -111,7 +157,7 @@ createServer(async(req,res)=>{
       else await db.query("INSERT INTO inventory_status VALUES ($1,$2) ON CONFLICT(vin) DO UPDATE SET status=excluded.status WHERE inventory_status.status<>'deleted'",[data.vin,data.status]);
       res.end("{}");return;
     }
-    const response=await worker.default.fetch(new Request(new URL(req.url,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin});
+    const response=await worker.default.fetch(new Request(new URL(req.url,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,offerSnapshot});
     res.writeHead(response.status,Object.fromEntries(response.headers));
     if(req.method==="HEAD"||!response.body)res.end();
     else Readable.fromWeb(response.body).on("error",()=>res.destroy()).pipe(res);

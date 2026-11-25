@@ -54,6 +54,10 @@ async function appointmentApi(request,env){
   }
   if(!data || !slots.includes(data.slot)||typeof data.name!=="string"||!data.name.trim()||data.name.length>100||typeof data.email!=="string"||data.email.length>200||!/^\S+@\S+\.\S+$/.test(data.email)||typeof data.phone!=="string"||data.phone.length>40||!/^\+?[0-9(). \-]+$/.test(data.phone.trim())||!/^\d{7,15}$/.test(data.phone.replace(/\D/g,""))||typeof data.message!=="string"||data.message.length>2000)return profileReply({error:"Check the time and contact details."},400);
   const record={vin,slot:data.slot,name:data.name.trim(),email:data.email.trim(),phone:data.phone.trim(),message:data.message.trim(),confirmation:crypto.randomUUID(),noteToken:crypto.randomUUID(),createdAt:new Date().toISOString()};
+  if(data.bhph){
+    record.bhph=await env.offerSnapshot?.(vin,data.bhph);
+    if(!record.bhph)return profileReply({error:"Financing terms changed. Reload the listing and review them before booking."},422);
+  }
   const saved=await bucket.put(prefix+record.slot,JSON.stringify(record),{onlyIf:{etagDoesNotMatch:"*"}});
   return saved?profileReply({confirmation:record.confirmation,noteToken:record.noteToken},201):profileReply({error:"This time was just reserved. Choose another time."},409);
 }

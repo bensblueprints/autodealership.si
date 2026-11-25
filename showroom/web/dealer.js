@@ -67,6 +67,7 @@
     for (const car of matches.slice(inventoryPage*pageSize,(inventoryPage+1)*pageSize)) {
       const row=node("article",null,"vehicle"),group=node("div",null,"grow");
       group.append(node("strong",carName(car)),node("small",[car.trim,car.stock || car.id,car.miles!=null?fmt.format(car.miles)+" mi":""].filter(Boolean).join(" · ")));
+      const pricing=node("button",car.bhph?"Edit BHPH":"Enable BHPH","quiet");pricing.onclick=()=>BHPH.edit(car);group.append(pricing);
       const sold=Store.statusFor(car.vin||car.id)==="sold";
       if(sold)group.append(node("strong","Sold"));
       for(const [label,status] of [[sold?"Return to inventory":"Mark sold",sold?"available":"sold"],["Delete","deleted"]]){

@@ -187,10 +187,14 @@
     if(Store.settings().options?.trade!==false)options.push("request a trade-in appraisal");
     return "You're looking at the "+title(car)+". Would you like to "+new Intl.ListFormat("en",{type:"disjunction"}).format(options)+"?";
   }
+  function financingContext(car){
+    const o=car?.bhph;
+    return o?" Published Buy Here Pay Here offer. Cash price "+BHPH.money(o.cash)+". "+o.schedules.map(s=>BHPH.summary(o,s)).join(" "):"";
+  }
   function announceCar(car){
     const prompt=vehiclePrompt(car);
     addLine(prompt);
-    if(session)session.sendUserMessage("Website navigation event: the shopper selected "+title(car)+", ID "+car.id+". Briefly offer the available next steps: "+prompt);
+    if(session)session.sendUserMessage("Website navigation event: the shopper selected "+title(car)+", ID "+car.id+". Briefly offer the available next steps: "+prompt+financingContext(car));
   }
   document.addEventListener("click",e=>{
     if(!session && !connecting && panel.hidden || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button!==0)return;
@@ -331,6 +335,9 @@
       listingWindow.saveBookedCustomerNote(field,query).then(()=>addLine(field==="tradeIn"?"Trade-in saved. Is there anything specific you want the salesperson to know?":"Your requests are attached to your test drive.")).catch(()=>addLine("Your answer could not be saved. Please try again."));
       return;
     }
+    if(currentCar()?.bhph && /buy here|bhph|cash down|down payment|weekly|biweekly|monthly payment|cash price/i.test(query) && !/test.drive|book/i.test(query)){
+      addLine(financingContext(currentCar()).trim());return;
+    }
     if(explicitIdentifier(query)){
       const matches=exactVehicles(Store.cars(),query);
       if(!matches.length){addLine("I couldn’t match that identifier. Could you repeat the full stock number or VIN shown on the card?");return;}
@@ -462,7 +469,7 @@
       });
       if (canceled) { await connection.endSession(); idle("Voice by ElevenLabs"); return; }
       session = connection;
-      if(currentCar())session.sendContextualUpdate?.("Currently selected vehicle: "+title(currentCar())+", ID "+currentCar().id+". Use shopper_action directly for this listing.");
+      if(currentCar())session.sendContextualUpdate?.("Currently selected vehicle: "+title(currentCar())+", ID "+currentCar().id+". Use shopper_action directly for this listing."+financingContext(currentCar()));
       launcher.textContent="Voice concierge · Open";
       connecting = false;
       voice.disabled = false;

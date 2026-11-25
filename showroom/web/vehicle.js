@@ -179,6 +179,7 @@
     btn.hidden=!enabled(key)||(key==="payment"&&!modes.some(mode=>mode!=="cash"));
   }
   get("drive-car").textContent=title+(car.stock?" · Stock "+car.stock:" · VIN "+car.vin);
+  if(car.bhph)BHPH.show(car);
   const bookingUrl="/api/test-drives?vin="+encodeURIComponent(car.vin);
   async function loadTimes(){
     const select=get("leadform").elements.slot;
@@ -232,6 +233,7 @@
     if(!data.name.trim()||!data.message.trim()){get("drive-status").textContent="Enter your name and a message.";return;}
     button.disabled=true;
     try{
+      if(window.bhphChoice)data.bhph=window.bhphChoice;
       const response=await fetch(bookingUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
       const result=await response.json();
       if(!response.ok){if(response.status===409)await loadTimes();throw Error(result.error||"Booking unavailable.");}

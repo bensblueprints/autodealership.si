@@ -60,19 +60,22 @@
   let mode = "cash", minimum = null, maximum = null, layout = "browse", sort = "recommended", options = {};
   const enabled = key => options[key] !== false;
   function reset() {
+    const down=document.getElementById("max-cash-down");if(down)down.value="";
     searchTerms.clear();
     selected.clear();
     equipment.clear();
     minimum = maximum = null;
   }
   function isNarrowed() {
-    return selected.size > 0 || equipment.size > 0 || minimum !== null || maximum !== null;
+    return !!document.getElementById("max-cash-down")?.value || selected.size > 0 || equipment.size > 0 || minimum !== null || maximum !== null;
   }
   function amount(car) {
     const value = window.Retail?.amount(car,mode) ?? (mode === "cash" ? car.price : null);
     return value === null || value === undefined || !Number.isFinite(Number(value)) ? null : Number(value);
   }
   function matches(car) {
+    const down=document.getElementById("max-cash-down")?.value;
+    if(down && (!car.bhph || car.bhph.down>Math.round(Number(down)*100)))return false;
     for (const [key,value] of selected) {
       if (key === "miles") {
         if (car.miles === null || car.miles === undefined || car.miles === "" || Number(car.miles)>Number(value)) return false;
@@ -137,6 +140,7 @@
     indexFeatures(cars);
     const catalog = featureCatalog;
     for (const key of equipment) if (!catalog.has(key)) equipment.delete(key);
+    const downPanel=document.getElementById("bhph-filter");downPanel.hidden=!cars.some(car=>car.bhph);if(downPanel.hidden)downPanel.querySelector("input").value="";
     renderBudget(cars);
     const fieldHtml = [];
     for (const [key,label] of Object.entries(fields)) {
@@ -234,6 +238,7 @@
     if (bound) section.querySelector('[data-budget="'+bound+'"]').value = event.target.value;
   });
   section.addEventListener("change",event=>{
+    if(event.target.id==="max-cash-down"){change();return;}
     const target=event.target, field=target.dataset.facet, value=target.value;
     if(field){
       searchTerms.delete(field);

@@ -67,11 +67,14 @@
     localStorage.setItem(prefix+key,JSON.stringify(value));
     window.dispatchEvent(new Event("showroom:update"));
   }
-  let inventoryStatus={};
+  let inventoryStatus={},offers={};
   async function refreshInventoryStatus(){
     const res=await fetch("/api/inventory-status",{cache:"no-store"});
     if(!res.ok)throw Error("Inventory availability is unavailable.");
-    inventoryStatus=await res.json();view=null;window.dispatchEvent(new Event("showroom:update"));
+    inventoryStatus=await res.json();
+    const offerResponse=await fetch("/api/bhph",{cache:"no-store"});
+    if(offerResponse.ok)offers=await offerResponse.json();
+    view=null;window.dispatchEvent(new Event("showroom:update"));
   }
   const inventoryReady=refreshInventoryStatus().catch(()=>{});
   function cars(includeSold=false) {
@@ -91,7 +94,7 @@
     for(const key of Object.keys(localStorage)){
       if(key.startsWith(prefix+"vehicle:"))merge(JSON.parse(localStorage.getItem(key)));
     }
-    view=[...added,...catalogById.keys()].map(id=>byId.get(id));
+    view=[...added,...catalogById.keys()].map(id=>{const car=byId.get(id),offer=offers[car.vin||id];return offer?{...car,price:offer.cash/100,bhph:offer.enabled?offer:null}:car;});
     return view;
   }
   const leads = () => Object.keys(localStorage).filter(k=>k.startsWith(prefix+"lead:"))
