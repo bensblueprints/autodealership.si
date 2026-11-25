@@ -82,6 +82,8 @@ class Handler(BaseHTTPRequestHandler):
             if row:return row["id"]
         return None
     def do_GET(self):
+        if self.path.split("?")[0] in ("/onboarding/clerk-login","/onboarding/clerk-team"):
+            return self.reply(200,(ROOT/"clerk-login.html").read_text().replace("__KEY__",os.environ["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"]).encode(),True)
         if self.path not in ["/onboarding/","/onboarding/owner","/onboarding/admin","/onboarding/sites","/onboarding/team"]:return self.reply(404,{})
         who=self.identity()
         if not who:
@@ -104,6 +106,29 @@ class Handler(BaseHTTPRequestHandler):
             size=int(self.headers.get("Content-Length",0))
             if not 0<size<8000:raise ValueError("Invalid request.")
             data=json.loads(self.rfile.read(size))
+            if self.path=="/onboarding/clerk-exchange":
+                from clerk_auth import verified_identity
+                try:subject,email=verified_identity(data["token"])
+                except Exception:return self.reply(403,{"error":"Please sign in with a verified work email."})
+                token=secrets.token_urlsafe(32)
+                with connect() as db:
+                    if data.get("role")=="owner":
+                        row=db.execute("SELECT subject FROM public.staff_clerk_links WHERE principal='owner'").fetchone()
+                        if not row:
+                            if email!="benji@benjaminboyce.com":return self.reply(403,{"error":"Owner access required."})
+
+                            db.execute("INSERT INTO public.staff_clerk_links VALUES ('owner',%s)",(subject,))
+                        elif row["subject"]!=subject:return self.reply(403,{"error":"Owner access required."})
+                        db.execute("INSERT INTO public.owner_sessions VALUES(%s,now()+interval '1 hour')",(digest(token),))
+                    else:
+                        eng=db.execute("SELECT id FROM public.client_engineers WHERE email=%s AND active FOR UPDATE",(email,)).fetchone()
+                        if not eng:return self.reply(403,{"error":"No active engineer assignment for this account."})
+                        principal=str(eng["id"])
+                        db.execute("INSERT INTO public.staff_clerk_links VALUES (%s,%s) ON CONFLICT(principal) DO NOTHING",(principal,subject))
+                        if not db.execute("SELECT 1 FROM public.staff_clerk_links WHERE principal=%s AND subject=%s",(principal,subject)).fetchone():return self.reply(403,{"error":"Engineer identity has changed."})
+                        db.execute("INSERT INTO public.engineer_sessions VALUES(%s,%s,now()+interval '1 hour')",(digest(token),eng["id"]))
+                self.session_cookie="onboarding_session="+token+"; Path=/onboarding/; Secure; HttpOnly; SameSite=Strict; Max-Age=3600"
+                return self.reply(200,{})
             if self.path=="/onboarding/owner-signin":
                 if data.get("username")!="owner" or not hmac.compare_digest(str(data.get("password","")).encode(),os.environ["CLIENT_OWNER_PASSWORD"].encode()):return self.reply(403,{"error":"Check your owner username and password."})
                 token=secrets.token_urlsafe(32)
@@ -181,3 +206,4 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,TypeError,KeyError) as err:self.reply(400,{"error":str(err)})
         except Exception:self.reply(500,{"error":"Could not complete this change."})
 ThreadingHTTPServer(("127.0.0.1",18485),Handler).serve_forever()
+

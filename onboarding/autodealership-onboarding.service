@@ -4,6 +4,7 @@ After=network-online.target
 [Service]
 DynamicUser=yes
 EnvironmentFile=/etc/autodealership-onboarding.env
+EnvironmentFile=/etc/autodealership-clerk.env
 EnvironmentFile=-/opt/business-demo-tools/voice-provider.env
 ExecStart=/usr/bin/python3 /opt/autodealership-onboarding/server.py
 Restart=on-failure

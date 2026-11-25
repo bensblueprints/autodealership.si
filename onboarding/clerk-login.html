@@ -1,0 +1,23 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Staff sign-in · AutoDealership.SI</title>
+<style>body{background:#121620;color:#f5f6fa;font:16px system-ui;margin:8vh auto;padding:24px;max-width:480px}button,input{font:inherit;padding:12px;border-radius:8px}button{cursor:pointer}a{color:#95c9ff}</style>
+<h1>Staff sign-in</h1><p id="status">Connecting to Clerk…</p><div id="auth"></div>
+<script>
+const role=new URLSearchParams(location.search).get("role")==="owner"?"owner":"engineer";
+const statusText=document.querySelector("#status");
+function failed(){statusText.textContent="Could not connect to Clerk. Please reload to try again."}
+async function enter(){
+ const response=await fetch("/onboarding/clerk-exchange",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:await Clerk.session.getToken(),role})});
+ const result=await response.json();
+ if(!response.ok){statusText.textContent=result.error||"Access denied.";return}
+ location.replace(role==="owner"?"/onboarding/admin":"/onboarding/");
+}
+async function start(){try{await Clerk.load();if(Clerk.session){if(location.pathname.endsWith("/clerk-team")){
+ const memberships=await Clerk.user.getOrganizationMemberships();
+ const match=memberships.data.find(m=>m.organization.id==="org_3MbiCG7rWv2mpK2XJJX7FGnqZxg");
+ if(!match){statusText.textContent="Accept your Southern Ohio invitation to access this team.";return}
+ await Clerk.setActive({organization:match.organization.id});
+ statusText.textContent="Southern Ohio Auto Sales";Clerk.mountOrganizationProfile(document.querySelector("#auth"),{routing:"hash"});return
+ }await enter();return}statusText.textContent="Use your work email.";Clerk.mountSignIn(document.querySelector("#auth"),{routing:"hash",forceRedirectUrl:location.href,signUpForceRedirectUrl:location.href})}catch(e){failed()}}
+</script>
+
+<script async crossorigin="anonymous" data-clerk-publishable-key="__KEY__" src="https://clerk.autodealership.si/npm/@clerk/clerk-js@5/dist/clerk.browser.js" onload="start()" onerror="failed()"></script>
