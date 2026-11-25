@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const prefix = "motor-showroom-v1:";
+  const prefix = window.clientSite?"client-"+clientSite.slug+":":"motor-showroom-v1:";
   const catalog=window.CdjrInventory;
   for(const car of catalog){
     const cover=window.CdjrCovers?.[car.vin];
@@ -113,7 +113,12 @@
     const lead=read("lead:"+id,null);
     if (lead) write("lead:"+id,{...lead,status});
   }
-  function saveCar(car) {
+  async function saveCar(car) {
+    if(window.clientSite){
+      const res=await fetch("/api/client-inventory",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(car)});
+      if(!res.ok)throw Error("Sign in as dealer and enter a valid VIN to publish inventory.");
+      car.id=car.vin;catalogById.set(car.id,car);view=null;window.dispatchEvent(new Event("showroom:update"));return;
+    }
     const original=catalogById.get(car.id);
     const patch={...read("vehicle:"+car.id,{}),...car};
     if(original)for(const key of Object.keys(patch)){
@@ -136,8 +141,8 @@
   const profileReady=loadProfile().catch(()=>{});
   function settings() {
     const stored=read("settings",{});
-    return {dealerName:"Capital City CDJR",tradeUrl:"",...stored,...sharedProfile,
-      profile:{...defaultProfile,...(sharedProfile?.profile||stored.profile)},options:{...defaultOptions,...stored.options}};
+    return {dealerName:window.clientSite?.name||"Capital City CDJR",tradeUrl:"",...stored,...sharedProfile,
+      profile:{...(window.clientSite?{}:defaultProfile),...(sharedProfile?.profile||stored.profile)},options:{...defaultOptions,...stored.options}};
   }
   async function saveSettings(changes) {
     await profileReady;

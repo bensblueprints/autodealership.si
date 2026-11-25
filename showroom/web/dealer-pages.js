@@ -31,9 +31,10 @@
     const byKey=Array.isArray(overrides) ? Object.fromEntries(overrides.filter(p=>p?.key).map(p=>[p.key,p])) : overrides;
     return defaults.map(base=>{
       const change=byKey[base.key]||{};
+      if(window.clientSite && !byKey[base.key])return {...base,enabled:false,url:""};
       return {...base,title:typeof change.title==="string" && change.title.trim()?change.title.trim():base.title,
         body:typeof change.body==="string"?change.body:base.body,
-        url:safeUrl(typeof change.url==="string"?change.url:base.url),enabled:change.enabled!==false};
+        url:safeUrl(typeof change.url==="string"?change.url:(window.clientSite?"":base.url)),enabled:change.enabled!==false};
     });
   }
   const href=key=>"page.html?page="+encodeURIComponent(key);

@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   if (window.parent !== window && window.parent.location.origin === location.origin && window.parent.document.querySelector("#showroom-concierge")) { window.addEventListener("open-assistant",()=>parent.dispatchEvent(new Event("open-assistant"))); return; }
-  const agentId = "agent_7301m87be6t1fasvq15wzgg7wd3g";
+  const agentId = window.clientSite?clientSite.agent:"agent_7301m87be6t1fasvq15wzgg7wd3g";
   const style = document.createElement("link");
   style.rel = "stylesheet";
   style.href = "assistant.css";
@@ -41,7 +41,8 @@
   invite.setAttribute("aria-label","Dealer Concierge invitation");
   invite.innerHTML='<button class="invite-close" type="button" aria-label="Dismiss invitation">×</button><p>Looking for a vehicle?</p><span>Talk to the Dealer Concierge about the inventory or book a test drive.</span><button type="button" class="invite-talk">Start Voice Chat</button>';
   document.body.append(invite);
-  const inviteKey="dealer-concierge-invited";
+  const tenantKey=window.clientSite?":"+clientSite.slug:"";
+  const inviteKey="dealer-concierge-invited"+tenantKey;
   function dismissInvite(){
     invite.hidden=true;
     try{sessionStorage.setItem(inviteKey,"1");}catch{}
@@ -61,7 +62,7 @@
   const initialUrl=location.href;
   const messages=[];
   function saveChat(){
-    try {sessionStorage.setItem("showroom-chat",JSON.stringify({messages:messages.slice(-60),open:!panel.hidden,draft:field.value}));}catch{}
+    try {sessionStorage.setItem("showroom-chat"+tenantKey,JSON.stringify({messages:messages.slice(-60),open:!panel.hidden,draft:field.value}));}catch{}
   }
   field.addEventListener("input",saveChat);
   function close() {
@@ -409,6 +410,7 @@
     voice.textContent = "Start Voice Chat";
     status.textContent = label;
   }
+  if(window.clientSite && !agentId){voice.disabled=true;voice.textContent="Web voice unavailable";}
   voice.addEventListener("click", async () => {
     if (session) { await session.endSession(); return; }
     if (connecting) return;
@@ -484,7 +486,7 @@
     invite.querySelector("span").textContent=vehiclePrompt(currentCar());
   }
   let restored;
-  try {restored=JSON.parse(sessionStorage.getItem("showroom-chat"));}catch{}
+  try {restored=JSON.parse(sessionStorage.getItem("showroom-chat"+tenantKey));}catch{}
   if(restored?.messages?.length){for(const m of restored.messages)addLine(m.content,m.kind);field.value=restored.draft||"";if(restored.open)open();saveChat();}
   else addLine("What would you like to drive? I can search the dealership inventory and open a test-drive request.");
 })();

@@ -9,7 +9,7 @@
   const title = car => [car.year,car.make,car.model].filter(Boolean).join(' ');
   const specs = car => [...new Set([car.trim,car.body,miles(car)].filter(Boolean))].join(' · ');
   let saved;
-  try { saved = JSON.parse(localStorage.getItem('apex-showroom-saved') || '[]'); } catch { saved=[]; }
+  try { saved = JSON.parse(localStorage.getItem(('apex-showroom-saved'+(window.clientSite?':'+clientSite.slug:''))) || '[]'); } catch { saved=[]; }
   let category='', query='', savedOnly=false, slide=0, selectedIds=null;
   function matches(car) {
     if (!Facets.matches(car)) return false;
@@ -97,7 +97,7 @@
     if (!btn.hasAttribute('data-save')) return;
     const id=btn.dataset.save;
     saved=saved.includes(id)?saved.filter(item=>item!==id):[...saved,id];
-    try{localStorage.setItem('apex-showroom-saved',JSON.stringify(saved));}catch{}
+    try{localStorage.setItem(('apex-showroom-saved'+(window.clientSite?':'+clientSite.slug:'')),JSON.stringify(saved));}catch{}
     render();
   };
   for(const [id,step] of [['inventoryPrev',-1],['inventoryNext',1]]){

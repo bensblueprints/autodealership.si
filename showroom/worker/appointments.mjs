@@ -34,7 +34,7 @@ async function appointmentApi(request,env){
     return profileReply({appointments:rows.sort((a,b)=>a.slot.localeCompare(b.slot))});
   }
   const vin=url.searchParams.get("vin")||"";
-  if(!bookingVins.has(vin))return profileReply({error:"Select a vehicle from the dealer inventory."},400);
+  if(!(env.clientHasVin?await env.clientHasVin(vin):bookingVins.has(vin)))return profileReply({error:"Select a vehicle from the dealer inventory."},400);
   const prefix=appointmentPrefix+vin+"/",slots=driveSlots();
   if(request.method==="GET" && !url.pathname.endsWith("/notes")){
     const occupied=await bucket.list({prefix});

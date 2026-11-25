@@ -1,3 +1,5 @@
+import {AsyncLocalStorage} from "node:async_hooks";
+import {createHash} from "node:crypto";
 import {bookingDatabase} from "./booking-database.mjs";
 import {timingSafeEqual} from "node:crypto";
 import {createServer} from "node:http";
@@ -12,7 +14,13 @@ const path=join(dataDir,"profile.json");
 function stored(){
   try{return JSON.parse(readFileSync(path,"utf8"));}catch(e){if(e.code==="ENOENT")return null;throw e;}
 }
-const db=await bookingDatabase();
+const pool=await bookingDatabase(),scope=new AsyncLocalStorage();
+const db={async query(sql,args){
+  const tenant=scope.getStore();if(!tenant)return pool.query(sql,args);
+  const conn=await pool.connect();
+  try{await conn.query("BEGIN");await conn.query("SET LOCAL search_path TO "+tenant.schema);const result=await conn.query(sql,args);await conn.query("COMMIT");return result;}
+  catch(e){await conn.query("ROLLBACK");throw e;}finally{conn.release();}
+}};
 await db.query("CREATE TABLE IF NOT EXISTS homepage_banners (id integer PRIMARY KEY, revision integer NOT NULL, config jsonb NOT NULL)");
 await db.query("CREATE TABLE IF NOT EXISTS bhph_offers(vehicle text PRIMARY KEY, revision integer NOT NULL, offer jsonb NOT NULL)");
 function publishedOffer(row){
@@ -37,6 +45,10 @@ const bucket={
       const row=(await db.query("SELECT notes->>$2 AS answer FROM appointments WHERE confirmation=$1",[id,field])).rows[0];
       return row?.answer?{json:async()=>row.answer}:null;
     }
+    if(scope.getStore()){
+      const row=(await db.query("SELECT settings,etag FROM client_profile WHERE id=1")).rows[0];
+      return {etag:row.etag,json:async()=>row.settings};
+    }
     const value=stored();return value?{etag:value.etag,json:async()=>value.settings}:null;
   },
   async put(key,body,options){
@@ -51,6 +63,10 @@ const bucket={
       const result=await db.query("INSERT INTO appointments(key,confirmation,body) SELECT $1,$2,$3 WHERE NOT EXISTS (SELECT 1 FROM inventory_status WHERE vin=$4) ON CONFLICT DO NOTHING",[key,record.confirmation,body,record.vin]);
       return result.rowCount?{}:null;
     }
+    if(scope.getStore()){
+      const etag=randomUUID(),r=await db.query("UPDATE client_profile SET settings=$1,etag=$2 WHERE id=1 AND etag=$3",[body,etag,options.onlyIf.etagMatches]);
+      return r.rowCount?{etag}:null;
+    }
     const prior=stored(),condition=options.onlyIf;
     if(condition.etagMatches && condition.etagMatches!==prior?.etag)return null;
     if(condition.etagDoesNotMatch==="*" && prior)return null;
@@ -63,10 +79,27 @@ const bucket={
 createServer(async(req,res)=>{
   try{
     const base=new URL((req.headers["x-forwarded-proto"]==="https"?"https":"http")+"://"+req.headers.host);
+    const pathMatch=/^\/clients\/([a-z0-9-]+)(\/.*)?$/.exec(req.url.split("?")[0]);
+    let tenant=null,prefix="";
+    if(pathMatch || !["demo.autodealership.si","localhost","127.0.0.1","[::1]","apex-motorclub-showroom-demo.benji108479.chatgpt.site"].includes(base.hostname)){
+      if(pathMatch && !["autodealership.si","localhost","127.0.0.1"].includes(base.hostname)){res.writeHead(404).end();return;}
+      tenant=(await pool.query(pathMatch?"SELECT * FROM public.client_sites WHERE slug=$1":"SELECT * FROM public.client_sites WHERE slug||'.autodealership.si'=$1 OR verified_domain=$1",[pathMatch?pathMatch[1]:base.hostname])).rows[0];
+      if(!tenant){res.writeHead(404).end();return;}
+      tenant.schema="client_"+tenant.id.replaceAll("-","");
+      if(!/^client_[a-f0-9]{32}$/.test(tenant.schema))throw Error();
+      if(pathMatch){
+        prefix="/clients/"+tenant.slug;
+        if(!pathMatch[2]){res.writeHead(302,{Location:prefix+"/"}).end();return;}
+        req.url=req.url.slice(prefix.length);
+      }
+    }
+    return await scope.run(tenant,async()=>{
     const supplied=Buffer.from(req.headers.authorization||"");
     const expected=Buffer.from("Basic "+Buffer.from("dealer:"+process.env.DEALER_PASSWORD).toString("base64"));
     const signed=!!process.env.DEALER_PASSWORD && supplied.length===expected.length && timingSafeEqual(supplied,expected);
-    const privateAdmin=signed || ["localhost","127.0.0.1","[::1]"].includes(base.hostname) && !req.headers.forwarded && !req.headers["x-forwarded-for"];
+    const desk=tenant && prefix && /(?:^|; )client_desk=([a-zA-Z0-9_-]{43})(?:;|$)/.exec(req.headers.cookie||"");
+    const delegated=desk && (await pool.query("SELECT 1 FROM public.client_desk_sessions s JOIN public.client_sites t USING(slug) LEFT JOIN public.client_engineers e ON e.id=s.engineer WHERE s.token=$1 AND s.slug=$2 AND s.expires>now() AND (s.engineer IS NULL OR (e.active AND t.engineer=s.engineer))",[createHash("sha256").update(desk[1]).digest("hex"),tenant.slug])).rowCount>0;
+    const privateAdmin=tenant ? delegated || (createHash("sha256").update(supplied).digest("hex")===tenant.admin_hash) : signed || ["localhost","127.0.0.1","[::1]"].includes(base.hostname) && !req.headers.forwarded && !req.headers["x-forwarded-for"];
     const headers=new Headers();
     for(const [k,v] of Object.entries(req.headers))if(typeof v==="string"&&!k.startsWith("oai-"))headers.set(k,v);
     let body;
@@ -80,6 +113,7 @@ createServer(async(req,res)=>{
     }
     const route=new URL(req.url,base);
     if(route.pathname==="/api/bhph"){
+      if(tenant && !tenant.bhph){res.writeHead(req.method==="GET"?200:403,{"Content-Type":"application/json"}).end("{}");return;}
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
       const vehicle=route.searchParams.get("vehicle");
       if(req.method==="GET" && !vehicle){
@@ -114,6 +148,19 @@ createServer(async(req,res)=>{
         await db.query("UPDATE bhph_offers SET offer=$2,revision=revision+1 WHERE vehicle=$1 AND revision=$3 RETURNING revision",[vehicle,offer,data.revision]);
       return result.rowCount?reply(200,result.rows[0]):reply(409,{error:"Pricing changed in another session. Reopen the editor."});
     }
+    if(tenant && route.pathname==="/api/client-inventory" && req.method==="PUT"){
+      if(!privateAdmin || req.headers.origin!==base.origin){res.writeHead(403).end();return;}
+      let car;try{car=JSON.parse(body);}catch{}
+      if(!car || !/^[A-HJ-NPR-Z0-9]{17}$/.test(car.vin)|| !car.stock || !car.make || !car.model){res.writeHead(400).end();return;}
+      car.id=car.vin;
+      await db.query("INSERT INTO client_cars(vin,body) VALUES($1,$2) ON CONFLICT(vin) DO UPDATE SET body=excluded.body",[car.vin,JSON.stringify(car)]);
+      res.writeHead(200,{"Content-Type":"application/json"}).end("{}");return;
+    }
+    if(tenant && route.pathname==="/assets/cdjr-inventory.js"){
+      const cars=(await db.query("SELECT body FROM client_cars ORDER BY vin")).rows.map(r=>r.body);
+      res.writeHead(200,{"Content-Type":"application/javascript","Cache-Control":"no-store"}).end("window.clientSite="+JSON.stringify({slug:tenant.slug,name:tenant.name,agent:tenant.agent_id,bhph:tenant.bhph})+";window.CdjrInventory="+JSON.stringify(cars)+";");return;
+    }
+    if(tenant && route.pathname==="/assets/cdjr-covers.js"){res.writeHead(200,{"Content-Type":"application/javascript"}).end("window.CdjrCovers={};");return;}
     if(["/api/banners","/api/banner-editor"].includes(route.pathname)){
       const editor=route.pathname.endsWith("editor");
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
@@ -145,7 +192,7 @@ createServer(async(req,res)=>{
     }
     if(route.pathname==="/dealer-login"){
       if(!privateAdmin){res.writeHead(401,{"WWW-Authenticate":'Basic realm="Dealer dashboard"',"Cache-Control":"no-store"}).end();return;}
-      res.writeHead(302,{Location:"/dealer","Cache-Control":"no-store"}).end();return;
+      res.writeHead(302,{Location:prefix+"/dealer","Cache-Control":"no-store"}).end();return;
     }
     if(route.pathname==="/api/inventory-status"){
       res.setHeader("Cache-Control","no-store");res.setHeader("Content-Type","application/json");
@@ -157,9 +204,16 @@ createServer(async(req,res)=>{
       else await db.query("INSERT INTO inventory_status VALUES ($1,$2) ON CONFLICT(vin) DO UPDATE SET status=excluded.status WHERE inventory_status.status<>'deleted'",[data.vin,data.status]);
       res.end("{}");return;
     }
-    const response=await worker.default.fetch(new Request(new URL(req.url,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,offerSnapshot});
+    const response=await worker.default.fetch(new Request(new URL(req.url,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,offerSnapshot,clientHasVin:tenant?async vin=>(await db.query("SELECT 1 FROM client_cars WHERE vin=$1",[vin])).rowCount>0:null});
+    if(tenant && /html|javascript/.test(response.headers.get("content-type")||"") && req.method==="GET"){
+      let content=await response.text();
+      if(prefix)content=content.replace(/(["'`])\/(?!\/)(?=(?:api\/|dealer-login|bhph\.|banner|inventory|index\.html))/g,"$1"+prefix+"/");
+      if(response.headers.get("content-type").includes("html"))content=content.replaceAll("Capital City CDJR",tenant.name.replace(/[&<>"]/g,x=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[x])));
+      res.writeHead(response.status,{"Content-Type":response.headers.get("content-type"),"Cache-Control":"no-store","X-Robots-Tag":"noindex"}).end(content);return;
+    }
     res.writeHead(response.status,Object.fromEntries(response.headers));
     if(req.method==="HEAD"||!response.body)res.end();
     else Readable.fromWeb(response.body).on("error",()=>res.destroy()).pipe(res);
+    });
   }catch{if(!res.headersSent)res.writeHead(500);res.end();}
 }).listen(Number(process.env.PORT||8184),process.env.BIND_ADDRESS||"127.0.0.1");
