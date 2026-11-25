@@ -110,17 +110,63 @@
     }
     if(car) for(const key of [...textFields,...optionalNumbers,"year","price","miles"])form.elements[key].value=car[key] ?? "";
     if(car) form.elements.features.value=(car.features || []).join("\n");
-    if(car?.image?.startsWith("https://"))form.elements.image.value=car.image;
+    galleryGeneration++;
+    photoBusy=false;
+    photos=[...new Set([car?.image,...(car?.photos||[])].filter(Boolean))];
+    $("gallery-status").textContent="";renderPhotos();
+    if(car?.galleryPath && !car.galleryEdited)loadImported(car,galleryGeneration);
     StickerIntake.restore(car);
     $("editor").showModal();
   }
+  let photos=[],photoBusy=false,galleryGeneration=0;
+  function renderPhotos(){
+    const list=$("gallery-editor");list.replaceChildren();
+    photos.forEach((url,index)=>{
+      const row=node("li"),preview=node("img");
+      preview.src=url;preview.alt="";preview.width=88;preview.height=64;preview.style.objectFit="cover";
+      row.append(preview,node("span",index===0?"Cover":"Photo "+(index+1)));
+      for(const [label,offset] of [["Earlier",-1],["Later",1],["Remove",0]]){
+        const button=node("button",label);button.type="button";button.disabled=photoBusy || (offset!==0 && !photos[index+offset]);
+        button.onclick=()=>{photos.splice(index,1);if(offset)photos.splice(index+offset,0,url);renderPhotos()};row.append(button);
+      }
+      list.append(row);
+    });
+    form.elements.photo.disabled=photoBusy;$("add-photo-url").disabled=photoBusy;
+    for(const button of form.querySelectorAll('[type="submit"]'))button.disabled=photoBusy;
+  }
+  async function loadImported(car,gen){
+    photoBusy=true;renderPhotos();
+    try{const r=await fetch(car.galleryPath);if(!r.ok)throw Error();const rows=await r.json();
+      if(gen===galleryGeneration)photos=[...new Set([...photos,...(rows[car.vin]||[])])];
+    }catch{if(gen===galleryGeneration)$("gallery-status").textContent="Imported photos could not load. Reopen the editor to retry.";}
+    finally{if(gen===galleryGeneration){photoBusy=false;renderPhotos()}}
+  }
+  function addPhotoUrl(){
+    const field=form.elements.image,url=field.value.trim();if(!url)return;
+    if(new URL(url).protocol!=="https:")throw Error("Enter an HTTPS photo URL.");
+    if(!photos.includes(url))photos.push(url);field.value="";renderPhotos();
+  }
+  $("add-photo-url").onclick=()=>{try{addPhotoUrl()}catch(e){$("gallery-status").textContent=e.message}};
+  form.elements.photo.onchange=async()=>{
+    const gen=galleryGeneration,files=Array.from(form.elements.photo.files);photoBusy=true;renderPhotos();
+    try{for(const [i,file] of files.entries()){
+      if(gen!==galleryGeneration)return;
+      $("gallery-status").textContent="Uploading photo "+(i+1)+" of "+files.length+"…";
+      const blob=await photoData(file);
+      const r=await fetch("/api/vehicle-photos",{method:"POST",headers:{"Content-Type":"image/jpeg"},body:blob});
+      if(!r.ok)throw Error("Could not upload "+file.name+". Choose the file to retry.");
+      const {url}=await r.json();if(gen!==galleryGeneration)return;if(!photos.includes(url))photos.push(url);
+    }$("gallery-status").textContent="Photos ready. Save the vehicle to publish this order."}
+    catch(e){if(gen===galleryGeneration)$("gallery-status").textContent=e.message}
+    finally{if(gen===galleryGeneration){photoBusy=false;form.elements.photo.value="";renderPhotos()}}
+  };
   async function photoData(file) {
     if(!["image/jpeg","image/png","image/webp"].includes(file.type) || file.size>16*1024*1024)throw Error("Choose a JPEG, PNG, or WebP under 16 MB.");
     const pic=await createImageBitmap(file);
     try {
       const canvas=document.createElement("canvas"),scale=Math.min(1,1000/pic.width,800/pic.height);
       canvas.width=Math.max(1,Math.round(pic.width*scale));canvas.height=Math.max(1,Math.round(pic.height*scale));
-      canvas.getContext("2d").drawImage(pic,0,0,canvas.width,canvas.height);return canvas.toDataURL("image/jpeg",0.78);
+      canvas.getContext("2d").drawImage(pic,0,0,canvas.width,canvas.height);return await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error("Could not convert photo.")),"image/jpeg",0.82));
     } finally { pic.close(); }
   }
   form.addEventListener("submit",async e=>{
@@ -139,9 +185,8 @@
       for(const key of ["year","price","miles"])car[key]=f.get(key)===""?null:Number(f.get(key));
       if(Store.cars().some(c=>c.id!==editing?.id && String(c.stock||c.id).toLowerCase()===car.stock.toLowerCase()))throw Error("This stock number is already in use.");
       car.id=editing?.id || crypto.randomUUID();car.featured=editing?.featured || false;
-      const file=f.get("photo"),url=String(f.get("image")||"").trim();
-      if(url && new URL(url).protocol!=="https:")throw Error("Enter an HTTPS photo URL.");
-      car.image=file?.size ? await photoData(file) : url || editing?.image || "";
+      if(photoBusy)throw Error("Wait for photo uploads to finish.");
+      addPhotoUrl();car.photos=[...photos];car.image=photos[0]||"";car.galleryEdited=true;
       if(!car.image && !editing)throw Error("Add a photo URL or upload a photo to publish this vehicle.");
       await Store.saveCar(car);refresh();$("editor").close();notice("Vehicle saved to showroom");
       if(save.id==="saveWithBhph")await BHPH.edit(car);

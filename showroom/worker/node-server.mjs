@@ -24,6 +24,7 @@ const db={async query(sql,args){
 }};
 await db.query("CREATE TABLE IF NOT EXISTS homepage_banners (id integer PRIMARY KEY, revision integer NOT NULL, config jsonb NOT NULL)");
 await db.query("CREATE TABLE IF NOT EXISTS bhph_offers(vehicle text PRIMARY KEY, revision integer NOT NULL, offer jsonb NOT NULL)");
+await pool.query("CREATE TABLE IF NOT EXISTS public.vehicle_photo_assets(site text NOT NULL, digest text NOT NULL, jpeg bytea NOT NULL, PRIMARY KEY(site,digest))");
 const passwordHash=promisify(scrypt);
 await pool.query(`CREATE TABLE IF NOT EXISTS public.dealer_users(site text NOT NULL,email text NOT NULL,salt text NOT NULL,hash text NOT NULL,active boolean NOT NULL DEFAULT true,PRIMARY KEY(site,email));
 CREATE TABLE IF NOT EXISTS public.dealer_sessions(token text PRIMARY KEY,site text NOT NULL,email text NOT NULL,expires timestamptz NOT NULL);
@@ -207,6 +208,19 @@ createServer(async(req,res)=>{
       body=Buffer.concat(chunks);
     }
     const route=new URL(req.url,base);
+    if(route.pathname==="/api/vehicle-photos" && req.method==="POST"){
+      if(!privateAdmin || req.headers.origin!==base.origin){res.writeHead(403).end();return;}
+      if(req.headers["content-type"]!=="image/jpeg" || body.length<4 || body.readUInt16BE(0)!==0xffd8 || body.readUInt16BE(body.length-2)!==0xffd9){res.writeHead(400).end();return;}
+      const hash=createHash("sha256").update(body).digest("hex");
+      await pool.query("INSERT INTO public.vehicle_photo_assets(site,digest,jpeg) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",[site,hash,body]);
+      res.writeHead(200,{"Content-Type":"application/json"}).end(JSON.stringify({url:"assets/vehicle-photos/"+hash+".jpg"}));return;
+    }
+    const photo=/^\/assets\/vehicle-photos\/([a-f0-9]{64})\.jpg$/.exec(route.pathname);
+    if(photo && ["GET","HEAD"].includes(req.method)){
+      const {rows}=await pool.query("SELECT jpeg FROM public.vehicle_photo_assets WHERE site=$1 AND digest=$2",[site,photo[1]]);
+      if(!rows.length){res.writeHead(404).end();return;}
+      res.writeHead(200,{"Content-Type":"image/jpeg","X-Content-Type-Options":"nosniff","Cache-Control":"public,max-age=31536000,immutable"}).end(req.method==="HEAD"?undefined:rows[0].jpeg);return;
+    }
     if(route.pathname==="/api/vin-decode" && req.method==="GET"){
       const send=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
       if(!privateAdmin)return send(403,{error:"Dealer sign-in required."});

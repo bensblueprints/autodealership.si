@@ -79,7 +79,7 @@
     },{passive:true});
   }
   drawPhoto();
-  if(car.galleryPath){
+  if(car.galleryPath && !car.galleryEdited){
     fetch(car.galleryPath).then(response=>response.ok?response.json():{}).then(rows=>{
       const urls=rows[car.vin]||[];
       const next=urls.filter(url=>typeof url==="string" && url.startsWith("https://") && !gallery.includes(url));
