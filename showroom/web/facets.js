@@ -158,10 +158,10 @@
         });
       } else if (key === "make" || key === "model") {
         const year = selected.get("year"), make = selected.get("make");
-        disabled = (enabled("year") && !year) || (key === "model" && enabled("make") && !make);
+        disabled = key === "model" && enabled("make") && !make;
         if (disabled) {
           choices = [];
-          hint = !year && enabled("year") ? "Choose year first" : "Choose make first";
+          hint = "Choose make first";
         } else {
           const list = VehicleCatalog.choices(key,year,make,cars);
           choices = list.values.map(v=>[v,v]);

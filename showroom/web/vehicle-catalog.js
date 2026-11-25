@@ -13,7 +13,7 @@
       })
       .then(data => {state.values = select(data);})
       .catch(() => {state.failed = true;})
-      .finally(() => {state.loading=false;window.renderShowroom();});
+      .finally(() => {state.loading=false;window.renderShowroom?.();window.dispatchEvent(new Event("vehicle-catalog-updated"));});
     return state;
   }
   function choices(field,year,make,cars) {
@@ -39,5 +39,5 @@
     results.forEach(result=>result.values.forEach(add));
     return {values:[...values.values()].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})),loading:results.some(r=>r.loading),failed:results.some(r=>r.failed)};
   }
-  window.VehicleCatalog={choices,key,retry(){for(const [url,state] of requests)if(state.failed)requests.delete(url);window.renderShowroom();}};
+  window.VehicleCatalog={choices,key,retry(){for(const [url,state] of requests)if(state.failed)requests.delete(url);window.renderShowroom?.();window.dispatchEvent(new Event("vehicle-catalog-updated"));}};
 })();
