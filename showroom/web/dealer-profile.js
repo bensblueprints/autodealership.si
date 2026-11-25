@@ -5,6 +5,10 @@
   const brand = document.querySelector(".brand");
   const image = brand.querySelector("[data-dealer-logo]");
   const wordmark = document.getElementById("brandname");
+  const salesLink=document.createElement("a");
+  salesLink.className="header-sales-phone";
+  salesLink.hidden=true;
+  brand.closest("header").append(salesLink);
   let rendered = "";
   let lastLogo = "";
 
@@ -62,6 +66,13 @@
     rendered = signature;
     const light=["pearl","sand"].includes(document.documentElement.dataset.skin||profile.skin);
     updateLogo(name,text(light?(profile.logoLightBackground||profile.logo):(profile.logo||profile.logoLightBackground)));
+    const number=text(profile.salesPhone), phoneHref=dial(number);
+    salesLink.hidden=!phoneHref;
+    if(phoneHref){
+      salesLink.href=phoneHref;
+      salesLink.textContent=number;
+      salesLink.setAttribute("aria-label","Call sales at "+number);
+    }else salesLink.removeAttribute("href");
     const grid = create("div");
     grid.className = "contact-grid";
     const phones = group("Call a department");

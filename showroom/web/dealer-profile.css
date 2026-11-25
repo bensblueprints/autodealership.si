@@ -24,3 +24,8 @@
 .dealer-page-groups a:hover,.dealer-page-groups a:focus-visible,.dealer-page-groups a[aria-current=page]{color:var(--acid);text-decoration:underline}
 #dealership-page-menu{position:fixed;z-index:95;left:5vw;right:5vw;padding:clamp(16px,3vw,30px);border:1px solid #4c5447;border-radius:10px;background:var(--control);box-shadow:0 12px 36px #0009;max-height:65vh;overflow:auto}
 @media(max-width:680px){.dealer-page-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.dealer-page-groups a{padding:7px 0}}
+.top .header-sales-phone{order:3;margin-inline-start:auto;color:inherit;font-size:clamp(1.65rem,3vw,3rem);font-weight:800;letter-spacing:-.045em;line-height:1.1;text-decoration:none;white-space:nowrap;display:inline-flex;align-items:center;min-height:44px}
+.top .header-sales-phone:hover{text-decoration:underline}
+.top .header-sales-phone[hidden]{display:none}
+@media(max-width:1000px){.top:has(.header-sales-phone:not([hidden])){height:auto;flex-wrap:wrap;gap:8px 16px;padding-block:8px}.top:has(.header-sales-phone:not([hidden])) nav{order:4;width:100%;overflow-x:auto}.top:has(.header-sales-phone:not([hidden])) .brand{max-width:45%;min-width:0;overflow:hidden}}
+@media(max-width:500px){.top .header-sales-phone{font-size:clamp(1.25rem,5.6vw,1.75rem)}}
