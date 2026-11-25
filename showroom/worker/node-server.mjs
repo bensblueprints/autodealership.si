@@ -155,8 +155,8 @@ function platformSignIn(slug){
   return '<p><a style="color:#95c9ff" href="https://autodealership.si/onboarding/clerk-login?site='+encodeURIComponent(slug)+'">Platform admin or engineer sign-in</a></p>';
 }
 function clerkDealerPage(org,slug){
-  return `<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dealer sign-in</title><style>body{background:#131721;color:white;font:16px system-ui;margin:8vh auto;padding:24px;max-width:460px}button{padding:10px}</style><h1>Dealer sign-in</h1><p id="message">Connecting to Clerk…</p>${platformSignIn(slug)}<div id="signin"></div><button hidden id="change">Switch account</button>${clerkScript}<script>
-  (async()=>{await Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});if(!Clerk.session){message.textContent="Sign in with your invited work email.";Clerk.mountSignIn(signin,{routing:"hash",forceRedirectUrl:location.href,signUpForceRedirectUrl:location.href});return}
+  return `<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dealer sign-in</title><style>body{background:#131721;color:white;font:16px system-ui;margin:8vh auto;padding:24px;max-width:460px}button{padding:10px}</style><a href="https://autodealership.si/" aria-label="AutoDealership.SI home"><img src="https://autodealership.si/brand/logo-dark.webp" alt="AutoDealership.SI" width="186" height="62" style="display:block;width:min(186px,39vw);height:auto"></a><h1>Dealer sign-in</h1><p id="message">Connecting to Clerk…</p>${platformSignIn(slug)}<div id="signin"></div><button hidden id="change">Switch account</button>${clerkScript}<script>
+  (async()=>{await Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});if(!Clerk.session){message.textContent="Sign in with your invited work email.";Clerk.mountSignIn(signin,{appearance:{options:{logoImageUrl:"https://autodealership.si/brand/logo-white.webp"}},routing:"hash",forceRedirectUrl:location.href,signUpForceRedirectUrl:location.href});return}
   change.hidden=false;change.onclick=()=>Clerk.signOut({redirectUrl:location.pathname});
   await Clerk.setActive({organization:${JSON.stringify(org)}});
   await Clerk.session.getToken({skipCache:true});
@@ -409,6 +409,31 @@ createServer(async(req,res)=>{
       else await db.query("INSERT INTO inventory_status VALUES ($1,$2) ON CONFLICT(vin) DO UPDATE SET status=excluded.status WHERE inventory_status.status<>'deleted'",[data.vin,data.status]);
       res.end("{}");return;
     }
+    const publicDealer=tenant && !prefix && ["GET","HEAD"].includes(req.method);
+    const esc=value=>String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    const origin=publicDealer?"https://"+(tenant.verified_domain || tenant.slug+".autodealership.si"):"";
+    const available=" FROM client_cars c WHERE NOT EXISTS (SELECT 1 FROM inventory_status s WHERE s.vin=c.vin)";
+    let seo;
+    if(publicDealer){
+      if(route.pathname==="/robots.txt"){
+        res.writeHead(200,{"Content-Type":"text/plain"}).end("User-agent: *\nDisallow: /dealer\nDisallow: /api/\nSitemap: "+origin+"/sitemap.xml\n");return;
+      }
+      if(route.pathname==="/sitemap.xml"){
+        const cars=await db.query("SELECT vin"+available+" ORDER BY vin");
+        const urls=["/",...cars.rows.map(c=>"/vehicle.html?stock="+encodeURIComponent(c.vin))];
+        res.writeHead(200,{"Content-Type":"application/xml"}).end('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+urls.map(p=>"<url><loc>"+esc(origin+p)+"</loc></url>").join("")+"</urlset>");return;
+      }
+      if(["/","/index.html"].includes(route.pathname)){
+        seo={title:tenant.name+" | Vehicle Inventory",description:"Browse available vehicles at "+tenant.name+", explore vehicle details and schedule a test drive.",path:"/"};
+      }else if(route.pathname==="/vehicle.html"){
+        const vin=route.searchParams.get("stock")||"";
+        const car=(await db.query("SELECT body->>'year' AS year, body->>'make' AS make, body->>'model' AS model, body->>'trim' AS trim"+available+" AND c.vin=$1",[vin])).rows[0];
+        if(!car){res.writeHead(404,{"Content-Type":"text/plain","X-Robots-Tag":"noindex"}).end("Vehicle unavailable");return;}
+        const label=[car.year,car.make,car.model,car.trim].filter(Boolean).join(" ")||vin;
+        seo={title:label+" | "+tenant.name,description:"View the "+label+" at "+tenant.name+". VIN "+vin+". Explore its features and request a test drive.",path:"/vehicle.html?stock="+encodeURIComponent(vin)};
+      }
+    }
+    if(!seo)res.setHeader("X-Robots-Tag","noindex");
     const response=await worker.default.fetch(new Request(new URL(req.url,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,offerSnapshot,clientHasVin:tenant?async vin=>(await db.query("SELECT 1 FROM client_cars WHERE vin=$1",[vin])).rowCount>0:null});
     if(tenant && /html|javascript/.test(response.headers.get("content-type")||"") && req.method==="GET"){
       let content=await response.text();
@@ -416,7 +441,8 @@ createServer(async(req,res)=>{
       if(clerkRole && response.headers.get("content-type").includes("html") && ["/dealer","/dealer.html"].includes(route.pathname))content=content.replace("</head>",clerkScript+'<script>window.dealerClerkReady=Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}})</script></head>');
       if(prefix)content=content.replace(/(["'`])\/(?!\/)(?=(?:api\/|dealer-login|bhph\.|banner|inventory|index\.html))/g,"$1"+prefix+"/");
       if(response.headers.get("content-type").includes("html"))content=content.replaceAll("Capital City CDJR",tenant.name.replace(/[&<>"]/g,x=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[x])));
-      res.writeHead(response.status,{"Content-Type":response.headers.get("content-type"),"Cache-Control":"no-store","X-Robots-Tag":"noindex"}).end(content);return;
+      if(seo)content=content.replace(/<title>.*?<[/]title>/i,()=>"<title>"+esc(seo.title)+"</title>").replace("</head>",()=>'<meta name="description" content="'+esc(seo.description)+'"><link rel="canonical" href="'+esc(origin+seo.path)+'"></head>');
+      res.writeHead(response.status,{"Content-Type":response.headers.get("content-type"),"Cache-Control":"no-store"}).end(content);return;
     }
     res.writeHead(response.status,Object.fromEntries(response.headers));
     if(req.method==="HEAD"||!response.body)res.end();

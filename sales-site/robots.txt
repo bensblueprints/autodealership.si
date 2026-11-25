@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /admin
+Disallow: /onboarding/
+Disallow: /clients/
+Sitemap: https://autodealership.si/sitemap.xml
