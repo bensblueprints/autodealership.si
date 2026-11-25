@@ -122,7 +122,7 @@ async function voiceReport(site,month){
 }
 
 const clerkIssuer="https://clerk.autodealership.si";
-const clerkScript='<script crossorigin="anonymous" data-clerk-publishable-key="pk_live_Y2xlcmsuYXV0b2RlYWxlcnNoaXAuc2kk" src="'+clerkIssuer+'/npm/@clerk/clerk-js@5/dist/clerk.browser.js"></script>';
+const clerkScript='<script crossorigin="anonymous" src="https://clerk.autodealership.si/npm/@clerk/ui@1/dist/ui.browser.js"></script><script crossorigin="anonymous" data-clerk-publishable-key="pk_live_Y2xlcmsuYXV0b2RlYWxlcnNoaXAuc2kk" src="'+clerkIssuer+'/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>';
 let clerkKeys;
 async function dealerClaim(cookie, origin, org){
   const token=/(?:^|; *)__session=([^; ]+)/.exec(cookie||"")?.[1];
@@ -151,7 +151,7 @@ function platformSignIn(slug){
 }
 function clerkDealerPage(org,slug){
   return `<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dealer sign-in</title><style>body{background:#131721;color:white;font:16px system-ui;margin:8vh auto;padding:24px;max-width:460px}button{padding:10px}</style><h1>Dealer sign-in</h1><p id="message">Connecting to Clerk…</p>${platformSignIn(slug)}<div id="signin"></div><button hidden id="change">Switch account</button>${clerkScript}<script>
-  (async()=>{await Clerk.load();if(!Clerk.session){message.textContent="Sign in with your invited work email.";Clerk.mountSignIn(signin,{routing:"hash",forceRedirectUrl:location.href,signUpForceRedirectUrl:location.href});return}
+  (async()=>{await Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});if(!Clerk.session){message.textContent="Sign in with your invited work email.";Clerk.mountSignIn(signin,{routing:"hash",forceRedirectUrl:location.href,signUpForceRedirectUrl:location.href});return}
   change.hidden=false;change.onclick=()=>Clerk.signOut({redirectUrl:location.pathname});
   await Clerk.setActive({organization:${JSON.stringify(org)}});
   await Clerk.session.getToken({skipCache:true});
@@ -377,7 +377,7 @@ createServer(async(req,res)=>{
     if(tenant && /html|javascript/.test(response.headers.get("content-type")||"") && req.method==="GET"){
       let content=await response.text();
       if(!clerkOrg && ["/dealer-login","/dealer-signin.html"].includes(route.pathname))content=content.replace("</main>",platformSignIn(tenant.slug)+"</main>");
-      if(clerkRole && response.headers.get("content-type").includes("html") && ["/dealer","/dealer.html"].includes(route.pathname))content=content.replace("</head>",clerkScript+'<script>window.dealerClerkReady=Clerk.load()</script></head>');
+      if(clerkRole && response.headers.get("content-type").includes("html") && ["/dealer","/dealer.html"].includes(route.pathname))content=content.replace("</head>",clerkScript+'<script>window.dealerClerkReady=Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}})</script></head>');
       if(prefix)content=content.replace(/(["'`])\/(?!\/)(?=(?:api\/|dealer-login|bhph\.|banner|inventory|index\.html))/g,"$1"+prefix+"/");
       if(response.headers.get("content-type").includes("html"))content=content.replaceAll("Capital City CDJR",tenant.name.replace(/[&<>"]/g,x=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[x])));
       res.writeHead(response.status,{"Content-Type":response.headers.get("content-type"),"Cache-Control":"no-store","X-Robots-Tag":"noindex"}).end(content);return;

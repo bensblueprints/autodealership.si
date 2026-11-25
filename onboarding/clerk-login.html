@@ -19,7 +19,7 @@ async function enter(){
  }
  location.replace(role==="owner"?"/onboarding/admin":"/onboarding/");
 }
-async function start(){try{await Clerk.load();if(Clerk.session){if(location.pathname.endsWith("/clerk-team")){
+async function start(){try{await Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});if(Clerk.session){if(location.pathname.endsWith("/clerk-team")){
  const memberships=await Clerk.user.getOrganizationMemberships();
  const match=memberships.data.find(m=>m.organization.id==="org_3MbiCG7rWv2mpK2XJJX7FGnqZxg");
  if(!match){statusText.textContent="Accept your Southern Ohio invitation to access this team.";return}
@@ -28,4 +28,4 @@ async function start(){try{await Clerk.load();if(Clerk.session){if(location.path
  }await enter();return}statusText.textContent="Use your work email.";Clerk.mountSignIn(document.querySelector("#auth"),{routing:"hash",forceRedirectUrl:location.href,signUpForceRedirectUrl:location.href})}catch(e){failed()}}
 </script>
 
-<script async crossorigin="anonymous" data-clerk-publishable-key="__KEY__" src="https://clerk.autodealership.si/npm/@clerk/clerk-js@5/dist/clerk.browser.js" onload="start()" onerror="failed()"></script>
+<script crossorigin="anonymous" src="https://clerk.autodealership.si/npm/@clerk/ui@1/dist/ui.browser.js"></script><script async crossorigin="anonymous" data-clerk-publishable-key="__KEY__" src="https://clerk.autodealership.si/npm/@clerk/clerk-js@6/dist/clerk.browser.js" onload="start()" onerror="failed()"></script>
