@@ -20,6 +20,19 @@
     const features=[clean(r.DriveType),...Object.entries(standard).filter(([key])=>r[key]==="Standard").map(([,label])=>label)].filter(Boolean);
     return {year:r.ModelYear,make:r.Make,model:r.Model,trim:r.Trim,body,fuel:[clean(r.FuelTypePrimary),clean(r.FuelTypeSecondary)].filter(Boolean).join(" / "),transmission:r.TransmissionStyle,engine,doors:r.Doors,features:features.join("\n")};
   }
+  window.applyStickerFields=(record)=>{
+    if(record.vin!==normalize(fields.vin.value))return;
+    for(const [key,value] of Object.entries(record.listingFields||{})){
+      const field=fields.namedItem(key);
+      if(!value || !field || (field.value.trim() && field.value!==filled.get(key)))continue;
+      field.value=value;filled.set(key,field.value);
+    }
+    const features=fields.features;
+    if(!features.value.trim() || features.value===filled.get("features")){
+      const lines=[...features.value.split("\n"),...(record.equipment||[]),...(record.options||[]).map(x=>x.name),...(record.packages||[]).map(x=>x.name)];
+      features.value=[...new Set(lines.map(s=>s.trim()).filter(Boolean))].join("\n");filled.set("features",features.value);
+    }
+  };
   function cancel(){revision++;controller?.abort();controller=null;button.disabled=false;}
   function clearDecoded(){
     for(const [key,value] of filled)if(fields[key].value===value)fields[key].value="";
@@ -64,7 +77,7 @@
         if(field.value){filled.set(key,field.value);count++;}
       }
       form.querySelector(".editor-details").open=true;
-      status.textContent=count?"NHTSA filled "+count+" fields. Review the details before saving.":"Lookup complete. Review existing entries and complete any blank fields.";
+      status.textContent=count?"NHTSA filled "+count+" fields. Review the details before saving.":"VIN confirmed: "+[row.ModelYear,row.Make,row.Model,row.Trim].filter(Boolean).join(" ")+". Existing entries retained.";
     }catch{if(token===revision)status.textContent="VIN lookup is unavailable. Retry or enter the vehicle details manually.";}
     finally{clearTimeout(timer);if(token===revision){controller=null;button.disabled=false;}}
   }

@@ -59,6 +59,7 @@
       if(!field.value && Number.isFinite(current.msrp)) {
         field.value=String(current.msrp);automaticMsrp=field.value;
       }
+      window.applyStickerFields(current);
       FactorySticker.render(preview,current);
       message.textContent="Factory sticker matched to this VIN. Review the equipment below.";
     }catch(error){

@@ -87,7 +87,23 @@
       if (provider==="gm") return window.GmSticker.read(pages,vin);
       if (!stickerVinMatches(pages,vin)) throw Error("The VIN printed on the sticker could not be matched.");
       const result={msrp:getMsrp(pages),options:[],packages:[],equipment:[]};
-      pages.forEach(items=>collectOptions(items,result));
+      const listingFields={};
+      for(const items of pages){
+        collectOptions(items,result);
+        const start=items.findIndex(item=>/^base price:/i.test(item.text));
+        const end=items.findIndex(item=>/^standard equipment/i.test(item.text));
+        if(start<0 || end<=start)continue;
+        const header=items.slice(start+1,end);
+        for(const [index,item] of header.entries()){
+          const match=/^(Exterior Color|Interior Color|Interior|Engine|Transmission):\s*(.*)$/i.exec(item.text);
+          if(!match)continue;
+          const key={"exterior color":"color","interior color":"interiorColor",interior:"interiorMaterial",engine:"engine",transmission:"transmission"}[match[1].toLowerCase()];
+          const next=header[index+1];
+          const value=match[2].trim() || (next && next.x>item.x && Math.abs(next.y-item.y)<1.5?next.text:"");
+          if(value)listingFields[key]=value;
+        }
+      }
+      result.listingFields={color:listingFields.color,interior:[listingFields.interiorColor,listingFields.interiorMaterial].filter(Boolean).join(" · "),engine:listingFields.engine,transmission:listingFields.transmission};
       return result;
     } finally { await task.destroy(); }
   }
