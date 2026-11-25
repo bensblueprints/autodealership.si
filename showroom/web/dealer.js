@@ -131,6 +131,7 @@
       car.financingEnabled=form.elements.vehicleFinancing.checked;
       car.vin=car.vin.replace(/\s+/g,"").toUpperCase();
       if(window.clientSite && !/^[A-HJ-NPR-Z0-9]{17}$/.test(car.vin))throw Error("Enter a 17-character VIN. VINs use letters and numbers and exclude I, O and Q.");
+      car.vpicDetails=window.vpicDetailsFor?.(car.vin)??(editing?.vin===car.vin?editing.vpicDetails:undefined);
       car.factorySticker=StickerIntake.recordFor(car.vin);
       for(const key of optionalNumbers) car[key]=f.get(key)==="" ? null : Number(f.get(key));
       car.features=[...new Set(String(f.get("features") || "").split(/\r?\n/).map(item=>item.trim()).filter(Boolean))];

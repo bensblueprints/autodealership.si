@@ -135,6 +135,12 @@
       get("option-list").append(option);
     }
   }
+  if(Array.isArray(car.vpicDetails) && car.vpicDetails.length){
+    const details=document.createElement("details"),list=document.createElement("dl");
+    details.append(makeNode("summary","Manufacturer specifications from NHTSA"),list);
+    describe(list,car.vpicDetails.filter(pair=>Array.isArray(pair)&&pair.length===2));
+    get("specs").after(details);
+  }
   if(car.description){get("description-section").hidden=false;get("vehicle-description").textContent=car.description;}
   function safeUrl(value){try{const link=new URL(value);return link.protocol==="https:"?link.href:null;}catch{return null;}}
   const source=safeUrl(car.sourceUrl);

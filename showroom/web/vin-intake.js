@@ -3,6 +3,8 @@
   const status=document.getElementById("vinStatus"), button=document.getElementById("decodeVin");
   const cache=new Map(), filled=new Map();
   let controller=null, lastVin="", revision=0;
+  const detailsByVin=new Map();
+  window.vpicDetailsFor=vin=>detailsByVin.get(vin);
   const ready="Paste a VIN to fill available vehicle specifications.";
   const normalize=value=>value.replace(/\s/g,"").toUpperCase();
   function clean(value) {
@@ -40,9 +42,12 @@
     try{
       let row=cache.get(vin);
       if(!row){
-        const response=await fetch("https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValuesExtended/"+vin+"?format=json",{signal:controller.signal});
+        let response=await fetch("/api/vin-decode?vin="+encodeURIComponent(vin),{signal:controller.signal});
+        if(response.status===503 || response.status===404)response=await fetch("https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValuesExtended/"+vin+"?format=json",{signal:controller.signal});
         if(!response.ok)throw Error();
-        row=(await response.json()).Results?.[0];
+        const decoded=await response.json();
+        row=decoded.Results?.[0];
+        if(row && String(row.ErrorCode)==="0" && decoded.details)detailsByVin.set(vin,decoded.details);
         if(!row)throw Error();
         cache.set(vin,row);
       }

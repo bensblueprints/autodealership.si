@@ -207,6 +207,18 @@ createServer(async(req,res)=>{
       body=Buffer.concat(chunks);
     }
     const route=new URL(req.url,base);
+    if(route.pathname==="/api/vin-decode" && req.method==="GET"){
+      const send=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
+      if(!privateAdmin)return send(403,{error:"Dealer sign-in required."});
+      const vin=route.searchParams.get("vin")||"";
+      if(!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin))return send(400,{error:"Invalid VIN."});
+      try{
+        const {rows}=await pool.query("SELECT variable,value,code FROM vpic.spvindecode($1) WHERE nullif(trim(value),'') IS NOT NULL",[vin]);
+        const result=Object.fromEntries(rows.map(item=>[item.code,item.value]));
+        const details=rows.filter(item=>!["ErrorCode","ErrorText","SuggestedVIN","PossibleValues","VehicleDescriptor"].includes(item.code) && !/^(not applicable|unknown|not available)$/i.test(item.value)).map(({variable,value})=>[variable,value]);
+        return send(200,{Results:[result],details});
+      }catch{return send(503,{error:"Local VIN catalog unavailable."})}
+    }
     if(tenant && route.pathname.startsWith("/api/web-voice/")){
       const op=route.pathname.split("/").pop();
       const send=(code,obj)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(obj));
