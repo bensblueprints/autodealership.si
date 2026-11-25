@@ -329,8 +329,11 @@ createServer(async(req,res)=>{
       await db.query("INSERT INTO client_cars(vin,body) VALUES($1,$2) ON CONFLICT(vin) DO UPDATE SET body=excluded.body",[car.vin,JSON.stringify(car)]);
       res.writeHead(200,{"Content-Type":"application/json"}).end("{}");return;
     }
-    if(tenant && route.pathname==="/assets/cdjr-inventory.js"){
+    if(tenant && (route.pathname==="/assets/cdjr-inventory.js" || route.pathname==="/api/showroom-inventory") && req.method==="GET"){
       const cars=(await db.query("SELECT body FROM client_cars ORDER BY vin")).rows.map(r=>r.body);
+      if(route.pathname==="/api/showroom-inventory"){
+        res.writeHead(200,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(cars));return;
+      }
       res.writeHead(200,{"Content-Type":"application/javascript","Cache-Control":"no-store"}).end("window.clientSite="+JSON.stringify({slug:tenant.slug,name:tenant.name,agent:tenant.agent_id,bhph:tenant.bhph})+";window.CdjrInventory="+JSON.stringify(cars)+";");return;
     }
     if(tenant && route.pathname==="/assets/cdjr-covers.js"){res.writeHead(200,{"Content-Type":"application/javascript"}).end("window.CdjrCovers={};");return;}

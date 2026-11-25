@@ -77,6 +77,28 @@
     view=null;window.dispatchEvent(new Event("showroom:update"));
   }
   const inventoryReady=refreshInventoryStatus().catch(()=>{});
+  if(window.clientSite && document.getElementById("cards")){
+    let pending=false;
+    async function syncCatalog(){
+      if(pending || document.hidden)return;
+      pending=true;
+      try{
+        const res=await fetch("/api/showroom-inventory",{cache:"no-store"});
+        if(!res.ok)return;
+        const records=await res.json();
+        catalogById.clear();
+        for(const car of records)catalogById.set(car.id,car);
+        view=null;
+        await refreshInventoryStatus();
+      }catch{/* Retry on the next visit or refresh interval. */}
+      finally{pending=false;}
+    }
+    window.addEventListener("focus",syncCatalog);
+    document.addEventListener("visibilitychange",syncCatalog);
+    window.addEventListener("pageshow",e=>{if(e.persisted)syncCatalog()});
+    window.addEventListener("storage",e=>{if(e.key===prefix+"inventory-saved")syncCatalog()});
+    setInterval(syncCatalog,60000);
+  }
   function cars(includeSold=false) {
     return inventoryRows().filter(car=>!inventoryStatus[car.vin||car.id] || (includeSold && inventoryStatus[car.vin||car.id]==="sold"));
   }
@@ -120,7 +142,7 @@
         const detail=await res.json().catch(()=>({}));
         throw Error(detail.error || (res.status===403?"Your dashboard session expired. Reopen this dealership from your client list.":res.status===413?"The vehicle photo is too large. Choose a smaller photo or use an HTTPS photo URL.":"Could not save this vehicle. Please try again."));
       }
-      car.id=car.vin;catalogById.set(car.id,car);view=null;window.dispatchEvent(new Event("showroom:update"));return;
+      car.id=car.vin;catalogById.set(car.id,car);view=null;try{localStorage.setItem(prefix+"inventory-saved",String(Date.now()))}catch{}window.dispatchEvent(new Event("showroom:update"));return;
     }
     const original=catalogById.get(car.id);
     const patch={...read("vehicle:"+car.id,{}),...car};
