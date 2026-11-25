@@ -116,7 +116,10 @@
   async function saveCar(car) {
     if(window.clientSite){
       const res=await fetch("/api/client-inventory",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(car)});
-      if(!res.ok)throw Error("Sign in as dealer and enter a valid VIN to publish inventory.");
+      if(!res.ok){
+        const detail=await res.json().catch(()=>({}));
+        throw Error(detail.error || (res.status===403?"Your dashboard session expired. Reopen this dealership from your client list.":res.status===413?"The vehicle photo is too large. Choose a smaller photo or use an HTTPS photo URL.":"Could not save this vehicle. Please try again."));
+      }
       car.id=car.vin;catalogById.set(car.id,car);view=null;window.dispatchEvent(new Event("showroom:update"));return;
     }
     const original=catalogById.get(car.id);

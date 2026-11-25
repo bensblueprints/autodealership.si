@@ -97,7 +97,7 @@ class Handler(BaseHTTPRequestHandler):
             with connect() as db:team=db.execute("SELECT email,id,active,password IS NOT NULL AS joined FROM public.client_engineers ORDER BY email").fetchall()
             return self.reply(200,{"owner":True,"team":team})
         with connect() as db:
-            rows=db.execute("SELECT slug,name,rate,domain,verified_domain,bhph,voice,agent_state,engineer FROM public.client_sites "+("" if who=="owner" else "WHERE engineer=%s ")+"ORDER BY created_at DESC",() if who=="owner" else (who,)).fetchall()
+            rows=db.execute("SELECT slug,name,rate,domain,verified_domain,bhph,voice,agent_state,engineer,clerk_org_id FROM public.client_sites "+("" if who=="owner" else "WHERE engineer=%s ")+"ORDER BY created_at DESC",() if who=="owner" else (who,)).fetchall()
         self.reply(200,rows)
     def do_POST(self):
         who=self.identity()
@@ -184,6 +184,27 @@ class Handler(BaseHTTPRequestHandler):
             if self.path!="/onboarding/sites" and who!="owner":
                 with connect() as db:
                     if not db.execute("SELECT 1 FROM public.client_sites WHERE slug=%s AND engineer=%s",(data.get("slug"),who)).fetchone():return self.reply(403,{"error":"This client is not assigned to you."})
+            if self.path=="/onboarding/dealer-invite":
+                if who!="owner":return self.reply(403,{})
+                email=str(data.get("email","")).strip().lower()
+                if not re.fullmatch(r"[^ @]+@[^ @]+\.[^ @]+",email) or len(email)>254:raise ValueError("Enter a valid dealer email.")
+                with connect() as db:
+                    site=db.execute("SELECT clerk_org_id FROM public.client_sites WHERE slug=%s",(data["slug"],)).fetchone()
+                if not site or not site["clerk_org_id"]:raise ValueError("Connect a Clerk organization to this client first.")
+                path="/organizations/"+site["clerk_org_id"]+"/invitations"
+                from clerk_auth import provider
+                offset=0
+                while True:
+                    page=provider(path.lstrip("/")+"?status=pending&limit=100&offset="+str(offset))["data"]
+                    for invitation in page:
+                        if invitation["email_address"].lower()==email and invitation["role"]=="org:admin" and invitation["status"]=="pending" and invitation.get("url") and invitation.get("expires_at",0)>__import__("time").time()*1000:return self.reply(200,{"url":invitation["url"]})
+                    if len(page)<100:break
+                    offset+=100
+                request=Request("https://api.clerk.com/v1"+path,data=json.dumps({"email_address":email,"role":"org:admin","notify":False}).encode(),headers={"Authorization":"Bearer "+os.environ["CLERK_SECRET_KEY"],"User-Agent":"AutoDealership/1","Content-Type":"application/json"})
+                try:
+                    with urlopen(request,timeout=10) as response:invitation=json.load(response)
+                except HTTPError:return self.reply(409,{"error":"Clerk could not create the invitation. Check whether this email is already a dealership member."})
+                return self.reply(200,{"url":invitation["url"]})
             if self.path=="/onboarding/open-desk":
                 slug=data["slug"];token=secrets.token_urlsafe(32)
                 with connect() as db:

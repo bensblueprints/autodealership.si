@@ -323,7 +323,8 @@ createServer(async(req,res)=>{
     if(tenant && route.pathname==="/api/client-inventory" && req.method==="PUT"){
       if(!privateAdmin || req.headers.origin!==base.origin){res.writeHead(403).end();return;}
       let car;try{car=JSON.parse(body);}catch{}
-      if(!car || !/^[A-HJ-NPR-Z0-9]{17}$/.test(car.vin)|| !car.stock || !car.make || !car.model){res.writeHead(400).end();return;}
+      const field=!car || !/^[A-HJ-NPR-Z0-9]{17}$/.test(car.vin)?"Enter a valid 17-character VIN (letters I, O and Q are excluded).":!car.stock?"Enter the stock number.":!car.make?"Enter the make.":!car.model?"Enter the model.":null;
+      if(field){res.writeHead(400,{"Content-Type":"application/json"}).end(JSON.stringify({error:field}));return;}
       car.id=car.vin;
       await db.query("INSERT INTO client_cars(vin,body) VALUES($1,$2) ON CONFLICT(vin) DO UPDATE SET body=excluded.body",[car.vin,JSON.stringify(car)]);
       res.writeHead(200,{"Content-Type":"application/json"}).end("{}");return;
