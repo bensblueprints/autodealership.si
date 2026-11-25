@@ -9,16 +9,9 @@ const showroomSkins={
   sand:["Desert sand","#f1e0c6","#fff2df","#32261e","#844022"]
 };
 (() => {
- const defaultSkin=()=>Store.settings().profile?.skin || "midnight";
- const select=document.createElement("select");
- const label=document.createElement("label");label.className="skin-picker";label.append("Showroom skin ",select);
- select.add(new Option("Dealer default",""));
- for(const [key,[name]] of Object.entries(showroomSkins))select.add(new Option(name,key));
- document.querySelector(".top")?.after(label);
  function apply(){
-   const preview=sessionStorage.getItem("skin-preview")||"";
-   select.value=preview;
-   const key=Object.hasOwn(showroomSkins,preview)?preview:defaultSkin();
+   const saved=Store.showroomSkin();
+   const key=Object.hasOwn(showroomSkins,saved)?saved:"midnight";
    const [,surface,card,ink,accent]=showroomSkins[key]||showroomSkins.midnight;
    const root=document.documentElement;const changed=root.dataset.skin!==key;root.dataset.skin=key;
    const light=["pearl","sand"].includes(key);
@@ -26,6 +19,5 @@ const showroomSkins={
    for(const [name,value] of Object.entries({surface,card,ink,acid:accent,"on-accent":light?"#ffffff":"#101510",control:"color-mix(in srgb,"+card+" 92%, "+ink+")",selected:"color-mix(in srgb,"+card+" 90%, "+accent+")",muted:"color-mix(in srgb,"+ink+" 78%, "+surface+")",hair:"color-mix(in srgb,"+ink+" 30%, "+surface+")"}))root.style.setProperty("--"+name,value);
    if(changed)window.dispatchEvent(new Event("showroom:skin"));
  }
- select.onchange=()=>{sessionStorage.setItem("skin-preview",select.value);apply();};
  addEventListener("showroom:update",apply);addEventListener("storage",apply);apply();
 })();
