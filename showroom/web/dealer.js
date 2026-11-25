@@ -100,6 +100,7 @@
     renderLeads(leads);renderInventory(Store.cars(true));
   }
   function openEditor(car=null) {
+    $("saveWithBhph").hidden=!!window.clientSite && !clientSite.bhph;
     editing=car;form.reset();$("formError").textContent="";$("editTitle").textContent=car?"Edit vehicle":"Add vehicle";
     form.querySelector(".editor-details").open=false;
     for(const field of ['stock','price','miles'])form.elements[field].required=!car || car[field]!=null && car[field]!=="";
@@ -123,7 +124,7 @@
     } finally { pic.close(); }
   }
   form.addEventListener("submit",async e=>{
-    e.preventDefault(); const save=e.submitter;save.disabled=true;$("formError").textContent="";
+    e.preventDefault(); if(form.dataset.saving)return;form.dataset.saving="1"; const save=e.submitter||form.querySelector('[type="submit"]');save.disabled=true;$("formError").textContent="";
     try {
       const f=new FormData(form),car={};
       for(const key of textFields) car[key]=String(f.get(key)||"").trim();
@@ -140,8 +141,9 @@
       car.image=file?.size ? await photoData(file) : url || editing?.image || "";
       if(!car.image && !editing)throw Error("Add a photo URL or upload a photo to publish this vehicle.");
       await Store.saveCar(car);refresh();$("editor").close();notice("Vehicle saved to showroom");
+      if(save.id==="saveWithBhph")await BHPH.edit(car);
     }catch(err){$("formError").textContent=err.name==="QuotaExceededError"?"Photo storage is full. Try a hosted photo URL.":err.message;}
-    finally{save.disabled=false;}
+    finally{delete form.dataset.saving;save.disabled=false;}
   });
   document.querySelectorAll("[data-view]").forEach(btn=>btn.addEventListener("click",()=>{
     for(const section of ["leads","inventory","pages","banners"])$(section).hidden=section!==btn.dataset.view;
