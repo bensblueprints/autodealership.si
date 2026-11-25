@@ -2,7 +2,21 @@ const panel=document.querySelector("#sale-slides");
 async function showPromotions(){
   const response=await fetch("/api/banners");
   if(!response.ok)return;
-  const {slides}=await response.json();
+  const {slides,heroImage}=await response.json();
+  if(heroImage){
+    const photo=new Image();
+    photo.onload=()=>{
+      const original=document.querySelector(".hero");
+      if(!original)return;
+      const hero=document.createElement("section");hero.className="hero";hero.setAttribute("aria-label","Dealership showroom");
+      hero.innerHTML='<div class="scrim"></div><div class="herotext"><div class="eyebrow">Our showroom</div><h1></h1><div class="actions"><a class="primary" href="#inventory">Browse inventory</a><button type="button" class="secondary">Ask concierge</button></div></div>';
+      hero.querySelector("h1").textContent=window.Store.settings().dealerName;
+      hero.querySelector("button").onclick=()=>document.querySelector("#assistantlaunch").click();
+      photo.alt="Dealership exterior";photo.style.cssText="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center";
+      hero.prepend(photo);original.before(hero);original.style.display="none";
+    };
+    photo.src=heroImage;
+  }
   if(!slides.length)return;
   let index=0,paused=matchMedia("(prefers-reduced-motion: reduce)").matches,timer;
   const frame=document.createElement("div"),controls=document.createElement("div");

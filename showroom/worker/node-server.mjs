@@ -198,7 +198,7 @@ createServer(async(req,res)=>{
       const chunks=[];let count=0;
       for await(const chunk of req){
         count+=chunk.length;
-        if(count>(req.url==="/api/banner-editor" && privateAdmin?6500000:req.url==="/api/dealer-profile" && privateAdmin?2000000:1000000)){res.writeHead(413).end();return;}chunks.push(chunk);
+        if(count>(req.url==="/api/banner-editor" && privateAdmin?8700000:req.url==="/api/dealer-profile" && privateAdmin?2000000:1000000)){res.writeHead(413).end();return;}chunks.push(chunk);
       }
       body=Buffer.concat(chunks);
     }
@@ -344,7 +344,7 @@ createServer(async(req,res)=>{
       if(req.method==="GET"){
         const row=(await db.query("SELECT revision,config FROM homepage_banners WHERE id=1")).rows[0];
         const config=row?.config??{enabled:false,slides:[]};
-        return reply(200,editor?{...config,revision:row?.revision??0}:{slides:config.enabled?config.slides:[]});
+        return reply(200,editor?{...config,revision:row?.revision??0}:{heroImage:config.heroMode==="dealership"?config.heroImage:null,slides:config.enabled?config.slides:[]});
       }
       if(!editor || req.method!=="PUT" || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Dealer access required."});
       let data;try{data=JSON.parse(body);}catch{return reply(400,{error:"Invalid slideshow."});}
@@ -361,7 +361,9 @@ createServer(async(req,res)=>{
         }
         slides.push({image:slide.image,alt:slide.alt.trim(),link:slide.link});
       }
-      const config=JSON.stringify({enabled:data.enabled,slides});
+      const heroMode=data.heroMode??"vehicle",heroImage=data.heroImage??"";
+      if(!["vehicle","dealership"].includes(heroMode) || typeof heroImage!=="string" || heroImage.length>2400000 || (heroImage && !/^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]+=*$/.test(heroImage)) || (heroMode==="dealership" && !heroImage))return reply(400,{error:"Upload a dealership photo before enabling the dealership hero."});
+      const config=JSON.stringify({enabled:data.enabled,slides,heroMode,heroImage});
       const saved=data.revision===0?await db.query("INSERT INTO homepage_banners VALUES(1,1,$1) ON CONFLICT DO NOTHING RETURNING revision",[config]):
         await db.query("UPDATE homepage_banners SET config=$1,revision=revision+1 WHERE id=1 AND revision=$2 RETURNING revision",[config,data.revision]);
       return saved.rowCount?reply(200,saved.rows[0]):reply(409,{error:"Another editor saved changes. Reload the dashboard before editing again."});
