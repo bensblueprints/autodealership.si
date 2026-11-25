@@ -60,7 +60,7 @@
   let mode = "cash", minimum = null, maximum = null, layout = "browse", sort = "recommended", options = {};
   const enabled = key => options[key] !== false;
   function reset() {
-    featureSearch="";
+    searchTerms.clear();
     selected.clear();
     equipment.clear();
     minimum = maximum = null;
@@ -102,7 +102,7 @@
     });
   }
 
-  let priorFeatures=[], featureCatalog=new Map(), featureChoices=[], featureSearch="";
+  let priorFeatures=[], featureCatalog=new Map(), featureChoices=[];
   function indexFeatures(cars) {
     if (cars.length===priorFeatures.length && cars.every((c,i)=>c.features===priorFeatures[i])) return;
     priorFeatures=cars.map(c=>c.features);
@@ -113,9 +113,15 @@
     }
     featureChoices=[...featureCatalog].sort((a,b)=>a[1].localeCompare(b[1]));
   }
-  function matchingFeatures(){
-    const term=keyFor(featureSearch);
-    return featureChoices.filter(([key])=>key.includes(term)).slice(0,60);
+  const searchTerms=new Map(), fullChoices=new Map();
+  function filteredChoices(key){
+    const term=keyFor(searchTerms.get(key)||"").replace(/,/g,"");
+    const all=fullChoices.get(key)||[];
+    if(!term)return all;
+    return all.filter(([value,label])=>{
+      const text=keyFor(value+" "+label).replace(/,/g,"");
+      return text.includes(term) || (key==="features" && value===featureKey(term));
+    });
   }
   function optionMarkup(key,choices,placeholder){
     return '<option value="">'+escape(placeholder)+'</option>'+choices.map(([value,title])=>'<option value="'+escape(value)+'"'+(selected.get(key)===value?' selected':'')+'>'+escape(key==="features" && equipment.has(value)?"✓ "+title:title)+'</option>').join("");
@@ -137,7 +143,7 @@
       if (!enabled(key)) continue;
       let choices, hint="", disabled=false, retry=false;
       if (key === "features") {
-        choices = matchingFeatures();
+        choices = featureChoices;
       } else if (key === "year") {
         const stockYears = cars.map(car => Number(car.year)).filter(year => Number.isInteger(year) && year >= 1885 && year <= 2100);
         const newest = Math.max(new Date().getFullYear() + 1, ...stockYears);
@@ -170,8 +176,10 @@
         if (selected.has(key) && !values.includes(selected.get(key))) selected.delete(key);
       }
       const placeholder = key==="features" ? (equipment.size ? "Selected ("+equipment.size+")" : "Any feature") : "Any";
-      const featureInput=key==="features" && catalog.size>60 ? '<input data-feature-search type="search" aria-label="Search equipment names" placeholder="Find equipment" style="min-width:0;width:100%" value="'+escape(featureSearch)+'">' : "";
-      fieldHtml.push('<div class="facet-field">'+icon(key)+label+featureInput+'<select data-facet="'+key+'" aria-label="'+label+'"'+(disabled?' disabled':'')+'>'+optionMarkup(key,choices,disabled?hint:placeholder)+'</select>'+(!disabled && hint?'<small>'+hint+'</small>':'')+'</div>'+(retry?'<button type="button" data-retry-catalog>Retry catalog</button>':''));
+      fullChoices.set(key,choices);
+      choices=filteredChoices(key);
+      const featureInput='<input data-facet-search="'+key+'" type="search" aria-label="Search '+escape(label)+' options" placeholder="Search…" value="'+escape(searchTerms.get(key)||"")+'"'+(disabled?' disabled':'')+'>';
+      fieldHtml.push('<div class="facet-field">'+icon(key)+label+featureInput+'<select data-facet="'+key+'" aria-label="'+label+'"'+(disabled?' disabled':'')+'>'+optionMarkup(key,choices,disabled?hint:choices.length?placeholder:"No matches")+'</select>'+(!disabled && hint?'<small>'+hint+'</small>':'')+'</div>'+(retry?'<button type="button" data-retry-catalog>Retry catalog</button>':''));
 
     }
     get("facetfields").innerHTML=fieldHtml.join("");
@@ -215,12 +223,11 @@
     change();
   });
   section.addEventListener("input",event=>{
-    if(event.target.hasAttribute("data-feature-search")){
-      featureSearch=event.target.value;
-      const select=section.querySelector('[data-facet="features"]');
-      const choices=matchingFeatures();
-      const hint=choices.length ? (equipment.size?"Selected ("+equipment.size+")":"Any feature") : "No matching equipment";
-      select.innerHTML=optionMarkup("features",choices,hint);
+    const key=event.target.dataset.facetSearch;
+    if(key){
+      searchTerms.set(key,event.target.value);
+      const choices=filteredChoices(key);
+      section.querySelector('[data-facet="'+key+'"]').innerHTML=optionMarkup(key,choices,choices.length?"Choose an option":"No matches");
       return;
     }
     const bound = event.target.dataset.budgetSlider;
@@ -228,6 +235,12 @@
   });
   section.addEventListener("change",event=>{
     const target=event.target, field=target.dataset.facet, value=target.value;
+    if(field){
+      searchTerms.delete(field);
+      if(field==="year")searchTerms.delete("make");
+      if(field==="year" || field==="make")searchTerms.delete("model");
+      if(["year","make","model"].includes(field))searchTerms.delete("trim");
+    }
     if(field==="features"){if(value)toggleFeature(value);else equipment.clear();}
     else if(field){
       if(value)selected.set(field,value);else selected.delete(field);

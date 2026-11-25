@@ -5,3 +5,5 @@
 .monthly-estimate{font-size:12px;margin-top:4px;color:var(--muted)}
 
 .inventory-icon{display:inline-block;width:19px;height:19px;fill:currentColor;flex:none}.facet-field{background:var(--control);border:1px solid var(--hair);border-radius:7px;padding:8px 5px;text-align:center;justify-items:center}.facet-field .inventory-icon{color:var(--ink)}.facet-field select{text-align:center}#featurestrip button{display:inline-flex;align-items:center;gap:6px}#featurestrip .inventory-icon{width:17px;height:17px}
+
+.facet-field input[type=search]{width:100%;min-width:0;padding:6px 3px;border:1px solid var(--hair);border-radius:5px;background:var(--surface);color:var(--ink);font:inherit}.facet-field input:focus-visible{outline:2px solid var(--acid)}

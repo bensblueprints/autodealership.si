@@ -15,7 +15,7 @@
     if (!Facets.matches(car)) return false;
     if(selectedIds)return selectedIds.has(String(car.id)) && (!category || car.body===category);
     const words = query.trim().toLowerCase();
-    const haystack=[title(car),car.trim,car.body,car.id,car.stock,car.fuel,car.transmission,car.engine,car.color,car.doors,car.location,car.status,...(car.features || [])].join(' ').toLowerCase();
+    const haystack=[title(car),car.trim,car.body,car.id,car.stock,car.vin,car.miles,miles(car),car.price,currency(car.price),car.fuel,car.transmission,car.engine,car.color,car.doors,car.location,car.status,...(car.features || [])].join(' ').toLowerCase();
     return (!savedOnly || saved.includes(String(car.id))) && (!category || car.body===category) && (!words || words.split(/\s+/).every(word => haystack.includes(word)));
   }
   function card(car) {
