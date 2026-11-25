@@ -190,8 +190,17 @@
   }
   function financingContext(car){
     const o=car?.bhph;
-    return o?" Published Buy Here Pay Here offer. Cash price "+BHPH.money(o.cash)+". "+o.schedules.map(s=>BHPH.summary(o,s)).join(" "):"";
+    if(!o)return "";
+    const choice=vehicleDoc()?.defaultView?.bhphChoice;
+    const selected=choice?.revision===o.revision && o.schedules.find(s=>s.frequency===choice.frequency && s.months===choice.months);
+    const intro="Stock "+(car.stock||car.id)+". Cash price "+BHPH.money(o.cash)+". ";
+    if(selected)return intro+"Selected schedule: "+BHPH.summary(o,selected);
+    return intro+"BHPH price "+BHPH.money(o.price)+", cash down "+BHPH.money(o.down)+", remaining "+BHPH.money(o.balance)+". Available schedules: "+o.schedules.map(s=>s.months+" months "+s.frequency.toLowerCase()+" ("+(s.count-1)+" payments of "+BHPH.money(s.payment)+", final payment "+BHPH.money(s.final)+")").join("; ")+".";
   }
+  window.addEventListener("bhph-schedule-change",()=>{
+    const car=currentCar();
+    if(session && car?.bhph)session.sendContextualUpdate?.("The shopper changed the payment schedule. Use the exact published figures when asked. "+financingContext(car));
+  });
   function announceCar(car){
     const prompt=vehiclePrompt(car);
     addLine(prompt);
@@ -327,7 +336,7 @@
     log.scrollTop = log.scrollHeight;
   }
   let voiceQuestion=null;
-  function handleText(input) {
+  async function handleText(input) {
     const query = input.trim();
     if(!query) return;
     addLine(query,"user");
@@ -336,7 +345,8 @@
       listingWindow.saveBookedCustomerNote(field,query).then(()=>addLine(field==="tradeIn"?"Trade-in saved. Is there anything specific you want the salesperson to know?":"Your requests are attached to your test drive.")).catch(()=>addLine("Your answer could not be saved. Please try again."));
       return;
     }
-    if(currentCar()?.bhph && /buy here|bhph|cash down|down payment|weekly|biweekly|monthly payment|cash price/i.test(query) && !/test.drive|book/i.test(query)){
+    await Store.inventoryReady;
+    if(currentCar()?.bhph && /(?:pay(?:ment|out)?|pay[ -]off) schedule|read.*schedule|selected plan|buy here|bhph|cash down|down payment|weekly|biweekly|monthly payment|cash price/i.test(query) && !/test.drive|book/i.test(query)){
       addLine(financingContext(currentCar()).trim());return;
     }
     if(explicitIdentifier(query)){
@@ -477,6 +487,8 @@
       });
       if (canceled) { await connection.endSession(); idle("Voice by ElevenLabs"); return; }
       session = connection;
+      await Store.inventoryReady;
+      if(session!==connection)return;
       if(currentCar())session.sendContextualUpdate?.("Currently selected vehicle: "+title(currentCar())+", ID "+currentCar().id+". Use shopper_action directly for this listing."+financingContext(currentCar()));
       launcher.textContent="Voice concierge · Open";
       connecting = false;

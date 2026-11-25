@@ -12,6 +12,8 @@
       const s=select.value===""?null:offer.schedules[Number(select.value)];
       window.bhphChoice=s?{revision:offer.revision,frequency:s.frequency,months:s.months}:null;
       section.lastChild.textContent=s?summary(offer,s):"";
+      window.dispatchEvent(new Event("bhph-schedule-change"));
+      if(parent!==window && parent.location.origin===location.origin)parent.dispatchEvent(new Event("bhph-schedule-change"));
     };
     document.getElementById("vehicle-actions").before(section);
   }
