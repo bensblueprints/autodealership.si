@@ -107,7 +107,7 @@ createServer(async(req,res)=>{
       const chunks=[];let count=0;
       for await(const chunk of req){
         count+=chunk.length;
-        if(count>(req.url==="/api/banner-editor" && privateAdmin?6500000:1000000)){res.writeHead(413).end();return;}chunks.push(chunk);
+        if(count>(req.url==="/api/banner-editor" && privateAdmin?6500000:req.url==="/api/dealer-profile" && privateAdmin?2000000:1000000)){res.writeHead(413).end();return;}chunks.push(chunk);
       }
       body=Buffer.concat(chunks);
     }

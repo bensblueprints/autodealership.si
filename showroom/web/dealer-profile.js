@@ -57,10 +57,11 @@
   function render() {
     const settings = Store.settings(), profile = settings.profile || {};
     const name = text(settings.dealerName) || "Dealership";
-    const signature = JSON.stringify([name,profile]);
+    const signature = JSON.stringify([name,profile,document.documentElement.dataset.skin]);
     if (signature === rendered) return;
     rendered = signature;
-    updateLogo(name,text(profile.logo));
+    const light=["pearl","sand"].includes(document.documentElement.dataset.skin||profile.skin);
+    updateLogo(name,text(light?(profile.logoLightBackground||profile.logo):(profile.logo||profile.logoLightBackground)));
     const grid = create("div");
     grid.className = "contact-grid";
     const phones = group("Call a department");
@@ -98,6 +99,7 @@
       footer.append(title,grid);
     }
   }
+  window.addEventListener("showroom:skin",render);
   window.addEventListener("showroom:update",render);
   window.addEventListener("storage",render);
   render();

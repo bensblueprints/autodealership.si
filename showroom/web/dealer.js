@@ -154,7 +154,7 @@
   const profileFields=["salesPhone","partsPhone","servicePhone","street","city","region","postal","country"];
   const socialFields=["facebook","instagram","youtube","tiktok","x","linkedin"];
   const profileForm=$("settingsForm"),profileInputs=profileForm.elements;
-  let logoDraft="",logoVersion=0,logoLoading=false,logoError="";
+
   function httpsUrl(value,label){
     if(!value)return "";
     let parsed;
@@ -162,34 +162,36 @@
     if(parsed.protocol!=="https:" || parsed.username || parsed.password)throw Error("Enter an HTTPS URL for "+label+" without embedded credentials.");
     return parsed.href;
   }
+  function logoControl(previewImage,fileInput,urlInput,clear,status){
+  let logoDraft="",logoVersion=0,logoLoading=false,logoError="";
   function displayLogo(value){
-    const preview=$("logoPreview");
+    const preview=previewImage;
     preview.hidden=!value;
     if(value)preview.src=value;else preview.removeAttribute("src");
-    $("clearLogo").disabled=!value && !profileInputs.logoUrl.value && !profileInputs.logoFile.files.length;
+    clear.disabled=!value && !urlInput.value && !fileInput.files.length;
   }
-  $("logoPreview").onerror=()=>{
-    $("logoPreview").hidden=true;
-    $("logoStatus").textContent="The preview could not load. Check the logo URL or upload an image.";
+  previewImage.onerror=()=>{
+    previewImage.hidden=true;
+    status.textContent="The preview could not load. Check the logo URL or upload an image.";
   };
   function resetLogo(){
     logoVersion++;logoDraft="";logoLoading=false;logoError="";
-    profileInputs.logoFile.value=profileInputs.logoUrl.value="";
-    $("logoStatus").textContent="";
+    fileInput.value=urlInput.value="";
+    status.textContent="";
     displayLogo("");
   }
-  $("clearLogo").onclick=resetLogo;
-  profileInputs.logoUrl.oninput=()=>{
-    logoVersion++;logoLoading=false;logoError="";logoDraft="";profileInputs.logoFile.value="";
-    try{logoDraft=httpsUrl(profileInputs.logoUrl.value.trim(),"the logo");}catch{}
-    $("logoStatus").textContent="";displayLogo(logoDraft);
+  clear.onclick=resetLogo;
+  urlInput.oninput=()=>{
+    logoVersion++;logoLoading=false;logoError="";logoDraft="";fileInput.value="";
+    try{logoDraft=httpsUrl(urlInput.value.trim(),"the logo");}catch{}
+    status.textContent="";displayLogo(logoDraft);
   };
-  profileInputs.logoFile.onchange=async()=>{
-    const file=profileInputs.logoFile.files[0];
+  fileInput.onchange=async()=>{
+    const file=fileInput.files[0];
     if(!file)return;
     const revision=++logoVersion;
     logoLoading=true;logoError="";
-    $("logoStatus").textContent="Preparing logo…";
+    status.textContent="Preparing logo…";
     try{
       if(!["image/png","image/jpeg","image/webp"].includes(file.type) || file.size>12*1024*1024)throw Error("Choose a PNG, JPEG, or WebP logo under 12 MB.");
       const img=await createImageBitmap(file);
@@ -201,12 +203,19 @@
         canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
         const encoded=canvas.toDataURL("image/webp",0.86);
         if(encoded.length>600000)throw Error("Use a smaller logo file.");
-        logoDraft=encoded;profileInputs.logoUrl.value="";
-        $("logoStatus").textContent="";displayLogo(logoDraft);
+        logoDraft=encoded;urlInput.value="";
+        status.textContent="";displayLogo(logoDraft);
       }finally{img.close();}
-    }catch(err){if(revision===logoVersion){logoError=err.message||"Could not read that logo."; $("logoStatus").textContent=logoError;}}
+    }catch(err){if(revision===logoVersion){logoError=err.message||"Could not read that logo."; status.textContent=logoError;}}
     finally{if(revision===logoVersion)logoLoading=false;}
   };
+    return {
+      load(value){resetLogo();logoDraft=value||"";if(logoDraft.startsWith("https://"))urlInput.value=logoDraft;displayLogo(logoDraft);},
+      value(){if(logoLoading)throw Error("The logo is still processing.");if(logoError)throw Error(logoError);return urlInput.value.trim()?httpsUrl(urlInput.value.trim(),"the logo"):logoDraft;}
+    };
+  }
+  const darkLogo=logoControl($("logoPreview"),profileInputs.logoFile,profileInputs.logoUrl,$("clearLogo"),$("logoStatus"));
+  const lightLogo=logoControl($("lightLogoPreview"),profileInputs.lightLogoFile,profileInputs.lightLogoUrl,$("clearLightLogo"),$("lightLogoStatus"));
   async function openSettings() {
     try{await Store.profileReady;}catch{notice("Could not load the saved dealership profile.");return;}
     const settings=Store.settings(), fields=$("settingsForm").elements;
@@ -214,9 +223,7 @@
     fields.tradeUrl.value=settings.tradeUrl;
     const profile=settings.profile||{};
     for(const key of [...profileFields,...socialFields])fields[key].value=profile[key]||"";
-    resetLogo();logoDraft=profile.logo||"";
-    if(logoDraft.startsWith("https://"))fields.logoUrl.value=logoDraft;
-    displayLogo(logoDraft);
+    darkLogo.load(profile.logo);lightLogo.load(profile.logoLightBackground);
     const groups=$("shopOptions");
     groups.replaceChildren();
     for(const [heading,options] of Object.entries(Store.optionGroups)) {
@@ -244,9 +251,7 @@
       }
       const options={};
       for(const input of e.target.querySelectorAll('[name^="option-"]')) options[input.name.slice(7)]=input.checked;
-      if(logoLoading)throw Error("The logo is still processing. Save again in a moment.");
-      if(logoError)throw Error(logoError);
-      const profile={...Store.settings().profile,skin:fields.skin.value,logo:fields.logoUrl.value.trim()?httpsUrl(fields.logoUrl.value.trim(),"the logo"):logoDraft};
+      const profile={...Store.settings().profile,skin:fields.skin.value,logo:darkLogo.value(),logoLightBackground:lightLogo.value()};
       for(const key of profileFields)profile[key]=fields[key].value.trim();
       for(const key of socialFields)profile[key]=httpsUrl(fields[key].value.trim(),key);
       await Store.saveSettings({dealerName,tradeUrl,options,profile});

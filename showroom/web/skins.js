@@ -20,10 +20,11 @@ const showroomSkins={
    select.value=preview;
    const key=Object.hasOwn(showroomSkins,preview)?preview:defaultSkin();
    const [,surface,card,ink,accent]=showroomSkins[key]||showroomSkins.midnight;
-   const root=document.documentElement;root.dataset.skin=key;
+   const root=document.documentElement;const changed=root.dataset.skin!==key;root.dataset.skin=key;
    const light=["pearl","sand"].includes(key);
    root.style.colorScheme=light?"light":"dark";
    for(const [name,value] of Object.entries({surface,card,ink,acid:accent,"on-accent":light?"#ffffff":"#101510",control:"color-mix(in srgb,"+card+" 92%, "+ink+")",selected:"color-mix(in srgb,"+card+" 90%, "+accent+")",muted:"color-mix(in srgb,"+ink+" 78%, "+surface+")",hair:"color-mix(in srgb,"+ink+" 30%, "+surface+")"}))root.style.setProperty("--"+name,value);
+   if(changed)window.dispatchEvent(new Event("showroom:skin"));
  }
  select.onchange=()=>{sessionStorage.setItem("skin-preview",select.value);apply();};
  addEventListener("showroom:update",apply);addEventListener("storage",apply);apply();

@@ -1,5 +1,5 @@
 const profileKey="dealer-profile.json";
-const profileKeys=["logo","salesPhone","partsPhone","servicePhone","street","city","region","postal","country","facebook","instagram","youtube","tiktok","x","linkedin"];
+const profileKeys=["logo","logoLightBackground","salesPhone","partsPhone","servicePhone","street","city","region","postal","country","facebook","instagram","youtube","tiktok","x","linkedin"];
 function profileReply(body,status=200){return Response.json(body,{status,headers:{"Cache-Control":"no-store"}});}
 function validateProfile(input){
   if(!input || typeof input.dealerName!=="string" || !(input.dealerName.trim()) || input.dealerName.length>120 || typeof input.profile!=="object" || !input.profile)throw Error("Enter a dealership name and profile.");
@@ -10,9 +10,9 @@ function validateProfile(input){
     const str=input.profile[key]??"";
     if(typeof str!=="string")throw Error("Invalid profile field.");
     const value=str.trim();
-    if(key==="logo" && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(value)){
+    if((key==="logo" || key==="logoLightBackground") && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(value)){
       if(value.length>630000)throw Error("Choose a smaller logo.");
-    } else if(["logo","facebook","instagram","youtube","tiktok","x","linkedin"].includes(key) && value){
+    } else if(["logo","logoLightBackground","facebook","instagram","youtube","tiktok","x","linkedin"].includes(key) && value){
       let u;try{u=new URL(value);}catch{throw Error("Enter a complete HTTPS URL.");}
       if(u.protocol!=="https:" || u.username || u.password || value.length>4096)throw Error("Enter a valid HTTPS URL.");
     } else if(value.length>200)throw Error("One of the address or phone fields is too long.");
@@ -45,9 +45,9 @@ async function dealershipProfile(request,env){
   if(request.method!=="PUT")return profileReply({error:"Unsupported method"},405);
   if(!env.privateAdmin && request.headers.get("oai-authenticated-user-email")?.toLowerCase()!=="benji@benjaminboyce.com")return profileReply({error:"Dealer administrator access required."},403);
   if(request.headers.get("origin")!==new URL(request.url).origin || !request.headers.get("content-type")?.startsWith("application/json"))return profileReply({error:"Use the dealer dashboard to make changes."},403);
-  if(Number(request.headers.get("content-length"))>1000000)return profileReply({error:"Logo is too large."},413);
+  if(Number(request.headers.get("content-length"))>2000000)return profileReply({error:"Logo is too large."},413);
   try{
-    const bytes=await request.text();if(bytes.length>1000000)return profileReply({error:"Logo is too large."},413);
+    const bytes=await request.text();if(bytes.length>2000000)return profileReply({error:"Logo is too large."},413);
     const input=JSON.parse(bytes),settings=validateProfile(input),revision=input.revision;
     if(typeof revision!=="string" || !revision)return profileReply({error:"Reload the profile before saving."},409);
     const object=await bucket.put(profileKey,JSON.stringify(settings),{onlyIf:revision==="0"?{etagDoesNotMatch:"*"}:{etagMatches:revision}});
