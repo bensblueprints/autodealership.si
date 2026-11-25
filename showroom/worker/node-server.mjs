@@ -161,6 +161,13 @@ async function voiceReport(site,month){
  return {...totals,terms,overageCents:terms?Math.round(Math.max(0,totals.seconds-terms.minutes*60)*terms.cents/60):null};
 }
 
+async function vinIdentities(vins,decode){
+  if(!vins.length)return [];
+  const source=decode?"SELECT vin,public.vehicle_specs(vin) AS specs FROM unnest($1::text[]) AS v(vin)":"SELECT vin,specs FROM public.vin_spec_cache WHERE vin=ANY($1::text[])";
+  const sql="WITH catalog AS MATERIALIZED ("+source+") SELECT vin,specs->>'ModelYear' AS year,specs->>'Make' AS make,specs->>'Model' AS model FROM catalog WHERE specs->>'ErrorCode'='0'";
+  try{return (await pool.query(sql,[vins])).rows;}
+  catch(error){if(["42883","42P01","3F000"].includes(error.code))return [];throw error;}
+}
 const clerkIssuer="https://clerk.autodealership.si";
 const clerkScript='<script crossorigin="anonymous" src="https://clerk.autodealership.si/npm/@clerk/ui@1/dist/ui.browser.js"></script><script crossorigin="anonymous" data-clerk-publishable-key="pk_live_Y2xlcmsuYXV0b2RlYWxlcnNoaXAuc2kk" src="'+clerkIssuer+'/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>';
 let clerkKeys;
@@ -452,11 +459,28 @@ createServer(async(req,res)=>{
       }
       return reply(201,{id:lead.id});
     }
+    if(route.pathname==="/api/inventory-review" && req.method==="GET"){
+      if(!privateAdmin){res.writeHead(403).end();return;}
+      const vins=[...new Set(route.searchParams.getAll("vin"))];
+      if(vins.length>32 || vins.some(v=>!/^[A-HJ-NPR-Z0-9]{17}$/.test(v))){res.writeHead(400).end();return;}
+      const cars=(await db.query("SELECT vin FROM client_cars WHERE vin=ANY($1::text[])",[vins])).rows.map(c=>c.vin);
+      const rows=await vinIdentities(cars,route.searchParams.get("decode")==="1" && cars.length<=12);
+      res.writeHead(200,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(rows));return;
+    }
     if(route.pathname==="/api/client-inventory" && req.method==="PUT"){
       if(!privateAdmin || req.headers.origin!==base.origin){res.writeHead(403).end();return;}
       let car;try{car=JSON.parse(body);}catch{}
       const field=!car || !/^[A-HJ-NPR-Z0-9]{17}$/.test(car.vin)?"Enter a valid 17-character VIN (letters I, O and Q are excluded).":!car.stock?"Enter the stock number.":!car.make?"Enter the make.":!car.model?"Enter the model.":null;
       if(field){res.writeHead(400,{"Content-Type":"application/json"}).end(JSON.stringify({error:field}));return;}
+      const identity=(await vinIdentities([car.vin],true))[0];
+      const entered=[car.year,car.make,car.model].map(v=>String(v??"").trim());
+      const norm=v=>v.toLowerCase().replace(/[^a-z0-9]/g,"");
+      const mismatch=identity && ["year","make","model"].some((k,i)=>identity[k] && norm(identity[k])!==norm(entered[i]));
+      const decision=mismatch?JSON.stringify([car.vin,...entered,identity.year,identity.make,identity.model]):null;
+      if(mismatch && car.vinReviewDecision!==decision){
+        res.writeHead(422,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify({error:"Review the VIN and listing details before publishing.",identity}));return;
+      }
+      car.vinReviewDecision=decision;
       car.id=car.vin;
       await db.query("INSERT INTO client_cars(vin,body) VALUES($1,$2) ON CONFLICT(vin) DO UPDATE SET body=client_cars.body || excluded.body",[car.vin,JSON.stringify(car)]);
       res.writeHead(200,{"Content-Type":"application/json"}).end("{}");return;

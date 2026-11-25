@@ -130,7 +130,13 @@
   function optionMarkup(key,choices,placeholder){
     return '<option value="">'+escape(placeholder)+'</option>'+choices.map(([value,title])=>'<option value="'+escape(value)+'"'+(selected.get(key)===value?' selected':'')+'>'+escape(key==="features" && equipment.has(value)?"✓ "+title:title)+'</option>').join("");
   }
+  let compactLot;
   function prepare(cars) {
+    const compact=Boolean(window.clientSite && cars.length<=12);
+    if(compact!==compactLot){
+      compactLot=compact;document.body.classList.toggle("compact-lot",compact);
+      get("filterpanel").open=!compact && !mobile.matches;
+    }
     options = window.Store.settings().options || {};
     for (const field of selected.keys()) if (!enabled(field)) selected.delete(field);
     if (!enabled("features")) equipment.clear();
@@ -266,7 +272,7 @@
   section.addEventListener("click",event=>{if(event.target.closest("[data-retry-catalog]"))VehicleCatalog.retry();});
   const mobile=window.matchMedia("(max-width: 760px)");
   get("filterpanel").open=!mobile.matches;
-  mobile.addEventListener("change",e=>get("filterpanel").open=!e.matches);
+  mobile.addEventListener("change",e=>get("filterpanel").open=!compactLot && !e.matches);
   window.Facets={prepare,matches,order,sync,reset,isNarrowed,amount,get paymentMode(){return enabled("price") && enabled(mode) ? mode : "cash"},get layout(){return layout},get sorted(){return sort!=="recommended"}};
 })();
 

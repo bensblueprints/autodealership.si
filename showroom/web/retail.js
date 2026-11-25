@@ -38,7 +38,11 @@
   const button = (action, label, extra="") => '<button type="button" data-retail="'+action+'" '+extra+'>'+html(label)+'</button>';
   function card(car) {
     const id=html(car.id);
-    const actions=[button("question","Ask about this vehicle")];
+    const actions=['<a class="drive-link" href="vehicle.html?stock='+encodeURIComponent(car.id)+'&amp;book=1">Schedule a test drive</a>',button("question","Ask about this vehicle")];
+    const offer=car.bhph;
+    const schedules=offer?.schedules||[];
+    const plan=offer?'<div class="bhph-card-terms">'+
+      (schedules.length?'<details><summary>Payment schedules</summary>'+schedules.map(s=>'<p>'+html(s.months)+' months · '+html(s.frequency)+' · '+html(s.count-1)+' payments of '+html(BHPH.money(s.payment))+', final '+html(BHPH.money(s.final))+'</p>').join("")+'</details>':'')+'</div>':'';
     if (Store.financingAllowed(car) && amount(car) !== null && enabled("payment") && (enabled("finance") || enabled("lease"))) actions.push(button("payment","Calculate payment"));
     if (enabled("trade")) actions.push(button("trade","Value my trade"));
     if (enabled("availability")) actions.push(button("availability","Confirm availability"));
@@ -48,7 +52,7 @@
       (car.msrp!=null && car.msrp!=="" ? '<p>MSRP <b>'+money(car.msrp)+'</b></p>' : '')+
       (car.adminFee!=null && car.adminFee!=="" ? '<p>Admin fee'+(car.adminFeeIncluded ? " (included)" : "")+' <b>'+money(car.adminFee)+'</b></p>' : '')+
       '<p>Asking price <b>'+money(car.price)+'</b></p></div>' : '';
-    return '<div class="retail-card" data-retail-car="'+id+'">'+link+pricing+'<div class="retail-actions">'+actions.join("")+'</div>'+(showCompare?button("compare",selected.has(String(car.id))?"✓ Selected for comparison":"+ Compare",'aria-pressed="'+selected.has(String(car.id))+'"'):"")+'</div>';
+    return '<div class="retail-card" data-retail-car="'+id+'">'+link+(offer?plan:pricing)+'<div class="retail-actions">'+actions.join("")+'</div>'+(showCompare?button("compare",selected.has(String(car.id))?"✓ Selected for comparison":"+ Compare",'aria-pressed="'+selected.has(String(car.id))+'"'):"")+'</div>';
   }
   let dialog,tray;
   function setup() {

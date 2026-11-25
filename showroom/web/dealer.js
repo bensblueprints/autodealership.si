@@ -28,12 +28,11 @@
     if(link) { const a=node("a","Open showroom ↗");a.href="index.html";box.append(a); }
     return box;
   }
-  function renderLeads(leads) {
-    const list=$("leadList"),filter=$("statusFilter").value;
+  function renderLeads(leads,list,filter) {
     list.replaceChildren();
     if(Store.inquiryState()){list.textContent=Store.inquiryState();return;}
     const filtered=leads.filter(l=>!filter || l.status===filter);
-    if(!filtered.length) {list.append(filter ? empty("No matching inquiries","Choose another status to see more leads.") : empty("No shopper inquiries yet","Questions about vehicles, availability requests and trade appraisals appear here."));return;}
+    if(!filtered.length) {list.append(filter ? empty("No matching inquiries","Choose another status to see more leads.") : list.id==="pending-inquiries"?empty("All caught up","No inquiries are waiting for first contact."):empty("No shopper inquiries yet","Questions about vehicles, availability requests and trade appraisals appear here."));return;}
     for(const lead of filtered) {
       const row=node("article",null,"lead"),details=node("div",null,"grow");
       const car=lead.car || Store.cars().find(c=>c.id===lead.carId);
@@ -54,6 +53,51 @@
       row.append(details,status); list.append(row);
     }
   }
+  const identities=new Map(),checkedVins=new Set();
+  const fieldsForIdentity=["year","make","model"];
+  function identityDiff(car,expected){
+    const key=v=>String(v??"").trim().toLowerCase().replace(/[^a-z0-9]/g,"");
+    return expected && fieldsForIdentity.some(k=>expected[k] && key(car[k])!==key(expected[k]));
+  }
+  function identityDecision(car,expected){
+    return JSON.stringify([car.vin,...fieldsForIdentity.map(k=>String(car[k]??"").trim()),...fieldsForIdentity.map(k=>expected[k])]);
+  }
+  function editorIdentity(){
+    return Object.fromEntries(["vin",...fieldsForIdentity].map(k=>[k,form.elements[k].value.trim()]));
+  }
+  let reviewSignature="";
+  function showReview(){
+    const car=editorIdentity(),expected=identities.get(car.vin);
+    const mismatch=identityDiff(car,expected);
+    $("vin-review").hidden=!mismatch;
+    const signature=mismatch?identityDecision(car,expected):"";
+    if(signature!==reviewSignature){
+      $("keep-identity").checked=Boolean(signature && signature===editing?.vinReviewDecision);
+      reviewSignature=signature;
+    }
+    if(mismatch)$("vin-comparison").textContent="Entered: "+fieldsForIdentity.map(k=>car[k]).join(" ")+" · NHTSA: "+fieldsForIdentity.map(k=>expected[k]).join(" ")+". Check the VIN on the vehicle.";
+    return mismatch && !$("keep-identity").checked;
+  }
+  $("apply-identity").onclick=()=>{
+    const expected=identities.get(form.elements.vin.value.trim());if(!expected)return;
+    for(const k of fieldsForIdentity)if(expected[k])form.elements[k].value=expected[k];
+    showReview();$("formError").textContent="";
+  };
+  form.addEventListener("input",showReview);
+  form.addEventListener("vin:decoded",e=>{identities.set(e.detail.vin,e.detail);showReview();});
+  async function loadIdentityFlags(cars){
+    const vins=cars.map(c=>c.vin).filter(v=>v && !checkedVins.has(v));
+    if(!vins.length)return;
+    vins.forEach(v=>checkedVins.add(v));
+    const params=new URLSearchParams(vins.map(v=>["vin",v]));
+    if(cars.length<=12)params.set("decode","1");
+    try{
+      const r=await readDealerDesk("/api/inventory-review?"+params,{cache:"no-store"});
+      if(!r.ok)throw Error();
+      for(const identity of await r.json())identities.set(identity.vin,identity);
+      showReview();renderInventory(Store.cars(true));
+    }catch{vins.forEach(v=>checkedVins.delete(v));}
+  }
   let inventoryPage=0;
   const pageSize=32;
   function renderInventory(cars) {
@@ -65,9 +109,13 @@
     $("invPrevious").disabled=inventoryPage===0;
     $("invNext").disabled=inventoryPage+1>=pages;
     const list=$("inventoryList");list.replaceChildren();
-    for (const car of matches.slice(inventoryPage*pageSize,(inventoryPage+1)*pageSize)) {
+    const visible=matches.slice(inventoryPage*pageSize,(inventoryPage+1)*pageSize);
+    if(!$("inventory").hidden)loadIdentityFlags(visible);
+    for (const car of visible) {
       const row=node("article",null,"vehicle"),group=node("div",null,"grow");
       group.append(node("strong",carName(car)),node("small",[car.trim,car.stock || car.id,car.miles!=null?fmt.format(car.miles)+" mi":""].filter(Boolean).join(" · ")));
+      const expected=identities.get(car.vin);
+      if(identityDiff(car,expected))group.append(node("small",car.vinReviewDecision===identityDecision(car,expected)?"VIN difference reviewed":"VIN details need review","identity-flag"));
       const pricing=node("button",car.bhph?"Edit BHPH":"Enable BHPH","quiet");pricing.onclick=()=>BHPH.edit(car);if(!window.clientSite||clientSite.bhph)group.append(pricing);
       const sold=Store.statusFor(car.vin||car.id)==="sold";
       if(sold)group.append(node("strong","Sold"));
@@ -116,8 +164,9 @@
     refreshLogo(Store.settings().profile||{});
     $("brand").textContent=name;document.title="Sales desk · "+name;
     $("countCars").textContent=cars.length;
-    $("countNew").textContent=leads.filter(l=>l.status==="New").length;
-    renderLeads(leads);renderInventory(Store.cars(true));
+    $("countNew").textContent=Store.inquiryState()?"—":leads.filter(l=>l.status==="New").length;
+    renderLeads(leads,$("leadList"),$("statusFilter").value);
+    renderLeads(leads.filter(l=>l.status==="New").sort((a,b)=>a.createdAt.localeCompare(b.createdAt)),$("pending-inquiries"),"");renderInventory(Store.cars(true));
   }
   function openEditor(car=null) {
     $("saveWithBhph").hidden=!!window.clientSite && !clientSite.bhph;
@@ -136,6 +185,7 @@
     $("gallery-status").textContent="";renderPhotos();
     if(car?.galleryPath && !car.galleryEdited)loadImported(car,galleryGeneration);
     StickerIntake.restore(car);
+    reviewSignature="";showReview();
     $("editor").showModal();
   }
   let photos=[],photoBusy=false,galleryGeneration=0;
@@ -198,6 +248,8 @@
       car.vin=car.vin.replace(/\s+/g,"").toUpperCase();
       if(window.clientSite && !/^[A-HJ-NPR-Z0-9]{17}$/.test(car.vin))throw Error("Enter a 17-character VIN. VINs use letters and numbers and exclude I, O and Q.");
       car.vpicDetails=window.vpicDetailsFor?.(car.vin)??(editing?.vin===car.vin?editing.vpicDetails:undefined);
+      if(showReview()){$("vin-review").scrollIntoView({block:"center"});throw Error("Review the VIN difference before saving.");}
+      if($("keep-identity").checked && reviewSignature)car.vinReviewDecision=reviewSignature;
       car.factorySticker=StickerIntake.recordFor(car.vin);
       for(const key of optionalNumbers) car[key]=f.get(key)==="" ? null : Number(f.get(key));
       car.features=[...new Set(String(f.get("features") || "").split(/\r?\n/).map(item=>item.trim()).filter(Boolean))];
@@ -210,19 +262,21 @@
       if(!car.image && !editing)throw Error("Add a photo URL or upload a photo to publish this vehicle.");
       await Store.saveCar(car);refresh();$("editor").close();notice("Vehicle saved to showroom");
       if(save.id==="saveWithBhph")await BHPH.edit(car);
-    }catch(err){$("formError").textContent=err.name==="QuotaExceededError"?"Photo storage is full. Try a hosted photo URL.":err.message;}
+    }catch(err){if(err.identity){identities.set(err.identity.vin,err.identity);showReview();$("vin-review").scrollIntoView({block:"center"});}$("formError").textContent=err.name==="QuotaExceededError"?"Photo storage is full. Try a hosted photo URL.":err.message;}
     finally{delete form.dataset.saving;save.disabled=false;}
   });
   const tabs=Array.from(document.querySelectorAll("nav [data-view]"));
   function selectTab(key){
-    if(!tabs.some(btn=>btn.dataset.view===key))key="leads";
+    if(!tabs.some(btn=>btn.dataset.view===key))key="today";
     for(const btn of tabs){
       const active=btn.dataset.view===key;
       $(btn.dataset.view).hidden=!active;
       btn.classList.toggle("active",active);
       btn.setAttribute("aria-pressed",String(active));
     }
-    if(key==="inquiries")Store.loadLeads();
+    if(key==="inventory")renderInventory(Store.cars(true));
+    if(key==="inquiries" || key==="today")Store.loadLeads();
+    if(["banners","pages","voice"].includes(key))$("setup-menu").open=true;
   }
   tabs.forEach(btn=>btn.addEventListener("click",()=>{
     selectTab(btn.dataset.view);
@@ -230,7 +284,7 @@
   }));
   // Trigger the normal loaders for bookmarked workspace tabs after their scripts initialize.
   window.addEventListener("DOMContentLoaded",()=>tabs.find(btn=>"#"+btn.dataset.view===location.hash)?.click());
-  $("statusFilter").addEventListener("change",()=>renderLeads(Store.leads()));
+  $("statusFilter").addEventListener("change",()=>renderLeads(Store.leads(),$("leadList"),$("statusFilter").value));
   $("addCar").addEventListener("click",()=>openEditor());
   const profileFields=["salesPhone","partsPhone","servicePhone","street","city","region","postal","country"];
   const socialFields=["facebook","instagram","youtube","tiktok","x","linkedin"];
@@ -297,16 +351,10 @@
   }
   const darkLogo=logoControl($("logoPreview"),profileInputs.logoFile,profileInputs.logoUrl,$("clearLogo"),$("logoStatus"));
   const lightLogo=logoControl($("lightLogoPreview"),profileInputs.lightLogoFile,profileInputs.lightLogoUrl,$("clearLightLogo"),$("lightLogoStatus"));
-  async function openSettings() {
-    try{await Store.profileReady;}catch{notice("Could not load the saved dealership profile.");return;}
-    const settings=Store.settings(), fields=$("settingsForm").elements;
-    fields.name.value=settings.dealerName;fields.skin.value=settings.profile?.skin || "midnight";
-    fields.tradeUrl.value=settings.tradeUrl;
-    const profile=settings.profile||{};
-    const zone=$("drive-zone");zone.replaceChildren(...["America/New_York","America/Chicago","America/Denver","America/Phoenix","America/Los_Angeles","America/Anchorage","Pacific/Honolulu"].map(z=>new Option(z.replaceAll("_"," "),z)));zone.value=profile.driveTimezone||"America/Chicago";
-    const hours=$("drive-hours");hours.replaceChildren();
+  function fillHours(hours,ranges){
+    hours.replaceChildren();
     for(const day of ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]){
-      const range=profile.driveHours?profile.driveHours[day]:["Sat","Sun"].includes(day)?null:["10:00","17:00"];
+      const range=ranges?ranges[day]:["Sat","Sun"].includes(day)?null:["10:00","17:00"];
       const row=node("div");row.dataset.day=day;
       const label=node("label"),box=node("input");box.type="checkbox";box.checked=!!range;label.append(box,day);row.append(label);
       for(const [index,title] of ["Opens","Closes"].entries()){
@@ -314,6 +362,19 @@
       }
       box.onchange=()=>row.querySelectorAll("input[type=time]").forEach(t=>t.disabled=!box.checked);hours.append(row);
     }
+  }
+  async function openSettings() {
+    try{await Store.profileReady;}catch{notice("Could not load the saved dealership profile.");return;}
+    const settings=Store.settings(), fields=$("settingsForm").elements;
+    fields.name.value=settings.dealerName;fields.skin.value=settings.profile?.skin || "midnight";
+    fields.tradeUrl.value=settings.tradeUrl;
+    const profile=settings.profile||{};
+    const zone=$("drive-zone");zone.replaceChildren(...["America/New_York","America/Chicago","America/Denver","America/Phoenix","America/Los_Angeles","America/Anchorage","Pacific/Honolulu"].map(z=>new Option(z.replaceAll("_"," "),z)));zone.value=profile.driveTimezone||"America/Chicago";
+    fillHours($("drive-hours"),profile.driveHours);
+    fillHours($("sales-hours"),profile.salesHours);
+    const salesToggle=$("publish-sales-hours");salesToggle.checked=Boolean(profile.salesHours);
+    salesToggle.onchange=()=>{$("sales-hours").hidden=!salesToggle.checked;$("sales-hours").querySelectorAll("input[type=time]").forEach(input=>input.required=salesToggle.checked);};
+    salesToggle.onchange();
     for(const key of [...profileFields,...socialFields])fields[key].value=profile[key]||"";
     darkLogo.load(profile.logo);lightLogo.load(profile.logoLightBackground);
     const groups=$("shopOptions");
@@ -345,7 +406,9 @@
       for(const input of e.target.querySelectorAll('[name^="option-"]')) options[input.name.slice(7)]=input.checked;
       const profile={...Store.settings().profile,skin:fields.skin.value,logo:darkLogo.value(),logoLightBackground:lightLogo.value()};
       profile.driveTimezone=$("drive-zone").value;
-      profile.driveHours=Object.fromEntries(Array.from($("drive-hours").children,row=>[row.dataset.day,row.querySelector("input").checked?Array.from(row.querySelectorAll("input[type=time]"),t=>t.value):null]));
+      const readHours=id=>Object.fromEntries(Array.from($(id).children,row=>[row.dataset.day,row.querySelector("input").checked?Array.from(row.querySelectorAll("input[type=time]"),t=>t.value):null]));
+      profile.driveHours=readHours("drive-hours");
+      profile.salesHours=$("publish-sales-hours").checked?readHours("sales-hours"):null;
       for(const key of profileFields)profile[key]=fields[key].value.trim();
       for(const key of socialFields)profile[key]=httpsUrl(fields[key].value.trim(),key);
       await Store.saveSettings({dealerName,tradeUrl,options,profile});

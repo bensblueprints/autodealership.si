@@ -76,6 +76,7 @@
         field.value=value;
         if(field.value){filled.set(key,field.value);count++;}
       }
+      form.dispatchEvent(new CustomEvent("vin:decoded",{detail:{vin,year:clean(row.ModelYear),make:clean(row.Make),model:clean(row.Model)}}));
       form.querySelector(".editor-details").open=true;
       status.textContent=count?"NHTSA filled "+count+" fields. Review the details before saving.":"VIN confirmed: "+[row.ModelYear,row.Make,row.Model,row.Trim].filter(Boolean).join(" ")+". Existing entries retained.";
     }catch{if(token===revision)status.textContent="VIN lookup is unavailable. Retry or enter the vehicle details manually.";}

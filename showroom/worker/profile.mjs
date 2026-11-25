@@ -6,14 +6,15 @@ function validateProfile(input){
   const skin=input.profile.skin||"midnight";
   if(!["midnight", "pearl", "navy", "forest", "burgundy", "plum", "slate", "sand"].includes(skin))throw Error("Unknown showroom skin.");
   const profile={skin};
-  if(input.profile.driveHours!==undefined){
+  for(const key of ["driveHours","salesHours"]){
+    if(input.profile[key]==null)continue;
     const zone=input.profile.driveTimezone;
     if(typeof zone!=="string" || !["America/New_York","America/Chicago","America/Denver","America/Phoenix","America/Los_Angeles","America/Anchorage","Pacific/Honolulu"].includes(zone))throw Error("Select a dealership time zone.");
-    profile.driveTimezone=zone;profile.driveHours={};
+    profile.driveTimezone=zone;profile[key]={};
     for(const day of ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]){
-      const pair=input.profile.driveHours?.[day];
+      const pair=input.profile[key][day];
       if(pair!==null && !(Array.isArray(pair)&&pair.length===2&&pair.every(t=>typeof t==="string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(t))&&pair[0]<pair[1]))throw Error("Check opening and closing times for "+day+".");
-      profile.driveHours[day]=pair;
+      profile[key][day]=pair;
     }
   }
   for(const key of profileKeys){

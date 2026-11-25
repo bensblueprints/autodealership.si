@@ -214,7 +214,7 @@
     const url=new URL(a.href);
     if(url.origin!==location.origin || !url.pathname.endsWith("/vehicle.html"))return;
     const car=Store.cars().find(c=>c.id===url.searchParams.get("stock"));
-    if(car){e.preventDefault();openCar(car);}
+    if(car){e.preventDefault();openCar(car,url.searchParams.get("book")==="1");}
   },true);
   let activeWorkflow;
   let review=null;

@@ -11,3 +11,14 @@
 .inventory-pager{display:flex;align-items:center;justify-content:center;gap:14px;padding:20px 0}.inventory-pager[hidden]{display:none}.inventory-pager button{border:1px solid #50584b;background:var(--control);color:var(--ink);border-radius:7px;padding:8px 12px}.inventory-pager button:disabled{opacity:.45}.inventory-pager span{font-size:13px;color:var(--muted)}.inventory-search{display:block;margin:12px 0;max-width:390px}
 
 .photo-missing{display:grid;align-content:center;justify-items:center;gap:7px;aspect-ratio:1.8;background:linear-gradient(150deg,#313a31,#1b211e);color:#d2dbcf;font-size:12px}.photo-missing svg{width:42px;height:42px;fill:#aab8a8}.hero-no-photo{background:linear-gradient(120deg,#111712 12%,#29392f 57%,#141c18)}.hero-no-photo::after{content:"";position:absolute;pointer-events:none;inset:0 0 0 45%;background:repeating-linear-gradient(125deg,transparent 0 52px,#9bb4971a 53px 54px,transparent 55px 140px)}.hero-no-photo .slide{z-index:2}.hero img[hidden]{display:none}
+
+#lot-contact:not([hidden]){display:flex;align-items:center;flex-wrap:wrap;gap:.65rem 1.6rem;padding:1rem clamp(16px,5vw,84px);background:var(--card);color:var(--ink);border-bottom:1px solid var(--hair)}
+#lot-contact a{color:inherit;font-weight:700}
+.compact-lot #inventory .inventory-layout{grid-template-columns:minmax(0,1fr)}
+.compact-lot #inventory .inventory-sidebar{position:static;max-height:none}
+.compact-lot #inventory .shelftop .eyebrow,.compact-lot:not(:has(#filterpanel[open])) #featurestrip,.compact-lot .layout-switch{display:none}
+.compact-lot #cards:not(.list-layout){display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));align-items:start}
+.compact-lot .hero{min-height:clamp(260px,48vh,540px)}
+.retail-actions a.drive-link{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:6px 10px;background:var(--acid);color:#101610;border-radius:6px;font-weight:700;text-decoration:none;font-size:.85rem}
+.bhph-card-terms{margin:.75rem 0;border-block:1px solid var(--hair);padding:.6rem 0}
+.bhph-card-terms summary{cursor:pointer;font-weight:650}.bhph-card-terms p{font-size:.85rem;margin:.45rem 0}

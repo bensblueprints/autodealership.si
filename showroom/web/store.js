@@ -156,6 +156,7 @@
       const res=await fetch("/api/client-inventory",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(car)});
       if(!res.ok){
         const detail=await res.json().catch(()=>({}));
+        if(detail.identity)throw Object.assign(Error(detail.error),{identity:detail.identity});
         throw Error(detail.error || (res.status===403?"Your dashboard session expired. Reopen this dealership from your client list.":res.status===413?"The vehicle photo is too large. Choose a smaller photo or use an HTTPS photo URL.":"Could not save this vehicle. Please try again."));
       }
       car.id=car.vin;catalogById.set(car.id,car);view=null;try{localStorage.setItem(prefix+"inventory-saved",String(Date.now()))}catch{}window.dispatchEvent(new Event("showroom:update"));return;
