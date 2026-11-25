@@ -104,7 +104,13 @@
     const words=normalize(query);
     const exact=exactVehicles(cars,query);
     if(exact.length || explicitIdentifier(query))return exact;
-    const models=cars.filter(car=>car.model && words.includes(normalize(car.model)));
+    const phrase=" "+words.replace(/[^a-z0-9]+/g," ").trim()+" ";
+    const models=cars.filter(car=>{
+      const model=normalize(car.model).replace(/[^a-z0-9]+/g," ").trim();
+      if(!model || !phrase.includes(" "+model+" "))return false;
+      // Short model names can also be ordinary words in a shopper's sentence.
+      return !["is","as","at","up","one"].includes(model) || phrase.includes(" "+normalize(car.make)+" "+model+" ");
+    });
     if(models.length)return models;
     if(allowMake)return cars.filter(car=>car.make && words.includes(normalize(car.make)));
     return [];
@@ -263,6 +269,16 @@
 
   function openCar(car,book=false,push=true,notify=true) {
     if(!car)return false;
+    if(book){
+      const doc=vehicleDoc();
+      const shown=doc && new URL(doc.URL).searchParams.get("stock");
+      const button=doc?.getElementById("request-drive");
+      if(shown===String(car.id) && button){
+        close();
+        if(!doc.getElementById("drive").open)button.click();
+        return true;
+      }
+    }
     const url=new URL("vehicle.html",location.href);
     url.searchParams.set("stock",car.id);
     if(book)url.searchParams.set("book","1");
@@ -317,9 +333,11 @@
     }
     if (/test[ -]?drive|book an appointment|schedule a drive/i.test(query)){
       const named=referencedCars(Store.cars(),query);
-      const car=named.length===1?named[0]:currentCar() || (last.length===1?last[0]:null);
+      const shown=currentCar();
+      const options=named.length ? named : shown ? [shown] : last.length ? last : Store.cars();
+      const car=options.length===1 ? options[0] : options.find(candidate=>candidate.id===shown?.id);
       if(car){addLine("Choose a time and enter your contact details to reserve the test drive.");openCar(car,true);}
-      else list("Select a vehicle to schedule your test drive.",named.length?named:last.length?last:Store.cars(),true);
+      else list("Select a vehicle to schedule your test drive.",options,true);
       return;
     }
     if (/\b(features?|equipment|equipped|options|packages?)\b|\bdoes\b.*\bhave\b/i.test(query)) {
