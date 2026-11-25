@@ -82,6 +82,17 @@ class Handler(BaseHTTPRequestHandler):
             if row:return row["id"]
         return None
     def do_GET(self):
+        if self.path.startswith("/api/v1/vin/"):
+            vin=self.path.split("?",1)[0][len("/api/v1/vin/"):].upper()
+            if not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}",vin):return self.reply(400,{"error":"Provide a 17-character VIN."})
+            try:
+                with connect() as db:
+                    db.execute("SET LOCAL statement_timeout='6s'")
+                    specs=db.execute("SELECT public.vehicle_specs(%s) AS specs",(vin,)).fetchone()["specs"]
+            except psycopg.Error:return self.reply(503,{"error":"Vehicle catalog temporarily unavailable."})
+            if not specs or specs.get("ErrorCode")!="0":return self.reply(422,{"vin":vin,"error":"VIN could not be confirmed."})
+            return self.reply(200,{"vin":vin,"source":"NHTSA vPIC","catalogRelease":"2026-11","specs":specs})
+
         if self.path.split("?")[0] in ("/onboarding/clerk-login","/onboarding/clerk-team"):
             return self.reply(200,(ROOT/"clerk-login.html").read_text().replace("__KEY__",os.environ["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"]).encode(),True)
         if self.path not in ["/onboarding/","/onboarding/owner","/onboarding/admin","/onboarding/sites","/onboarding/team"]:return self.reply(404,{})
