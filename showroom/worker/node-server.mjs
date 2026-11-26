@@ -41,6 +41,30 @@ const db={async query(sql,args){
     await conn.query("COMMIT");return result;}
   catch(e){await conn.query("ROLLBACK");throw e;}finally{conn.release();}
 }};
+db.transaction=async function(action){
+  const tenant=scope.getStore(), control=await pool.connect();
+  let local;
+  try{
+    await control.query("BEGIN");
+    if(tenant){
+      const route=(await control.query("SELECT database_name FROM public.client_sites WHERE id=$1 FOR SHARE",[tenant.id])).rows[0];
+      if(!route || (route.database_name && route.database_name!==tenant.schema))throw Error("Invalid dealership database route");
+      if(route.database_name){
+        local=await dealerPool(route.database_name).connect();
+        await local.query("BEGIN");
+      }else await control.query("SET LOCAL search_path TO "+tenant.schema);
+    }
+    const result=await action(local||control);
+    const finish=result.status>=400?"ROLLBACK":"COMMIT";
+    if(local)await local.query(finish);
+    await control.query(finish);
+    return result;
+  }catch(error){
+    if(local)await local.query("ROLLBACK");
+    await control.query("ROLLBACK");
+    throw error;
+  }finally{local?.release();control.release();}
+};
 await db.query("CREATE TABLE IF NOT EXISTS homepage_banners (id integer PRIMARY KEY, revision integer NOT NULL, config jsonb NOT NULL)");
 await db.query("CREATE TABLE IF NOT EXISTS bhph_offers(vehicle text PRIMARY KEY, revision integer NOT NULL, offer jsonb NOT NULL)");
 await pool.query("CREATE TABLE IF NOT EXISTS public.vehicle_photo_assets(site text NOT NULL, digest text NOT NULL, jpeg bytea NOT NULL, PRIMARY KEY(site,digest))");
@@ -391,6 +415,20 @@ createServer(async(req,res)=>{
       if(result.image){
         res.writeHead(200,{...headers,"Content-Type":"image/png","Content-Security-Policy":"default-src 'none'; sandbox"}).end(result.image);return;
       }
+      return send(result.status,result.data);
+    }
+    if(route.pathname==="/api/website-pages"){
+      const send=(status,data)=>res.writeHead(status,{"Content-Type":"application/json","Cache-Control":"private, no-store","X-Robots-Tag":"noindex"}).end(JSON.stringify(data));
+      if(!privateAdmin)return send(403,{error:"Dealer sign-in required."});
+      let input;
+      if(req.method==="POST"){
+        if(req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return send(403,{error:"Use this dealership dashboard."});
+        if(body.length>80000)return send(413,{error:"Page content is too large."});
+        try{input=JSON.parse(body);}catch{return send(400,{error:"Invalid page data."});}
+      }
+      const actor=(clerkRole||platformStaff)?claims.subject:grant?(grant.email||"Platform owner"):account?.email||"Dealer administrator";
+      const result=await worker.pageWorkflow({db,key:route.searchParams.get("key"),method:req.method,input,tenant,actor,
+        fingerprint:value=>createHash("sha256").update(value).digest("hex"),uuid:randomUUID});
       return send(result.status,result.data);
     }
     if(route.pathname==="/api/oem-programs"){
