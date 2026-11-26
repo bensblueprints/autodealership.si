@@ -107,3 +107,56 @@ export async function oemProgramsApi({db,method,input,actor,canReview,exportId})
     ON CONFLICT(program_id,revision) DO NOTHING RETURNING revision,state`,[id,revision+1,state,details,actor]);
   return saved.rowCount?oemResult(200,saved.rows[0]):oemFailure(409,"Another editor saved this program. Refresh to review their changes.");
 }
+
+const rooftopArtTable="oem_dealer_art";
+async function ensureDealerArt(db){
+  if((await db.query("SELECT to_regclass($1) AS relation",[rooftopArtTable])).rows[0].relation)return;
+  try{await db.query(`CREATE TABLE IF NOT EXISTS oem_dealer_art (
+    brand text PRIMARY KEY, revision integer NOT NULL, source_note text NOT NULL,
+    rights_note text NOT NULL, image bytea NOT NULL, digest text NOT NULL,
+    actor text NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now())`);}
+  catch(error){if(!["23505","42P07"].includes(error.code))throw error;}
+}
+export async function oemBrandLibrary({db,platform,method,brand,asset,scope,input,actor,canReview}){
+  // Global references are curated; dealer-supplied originals use the current rooftop's database.
+  if(!(await platform.query("SELECT to_regclass('public.oem_brand_reference_art') AS ready")).rows[0].ready)
+    return oemFailure(503,"The manufacturer reference library has not been installed.");
+  if(method!=="GET" && method!=="POST")return oemFailure(405,"Unsupported method.");
+  if(method==="POST" && !canReview)return oemFailure(403,"Administrator access required.");
+  if((asset!==null || method==="POST") && (typeof brand!=="string" || !/^[a-z0-9-]{1,65}$/.test(brand)))
+    return oemFailure(400,"Choose a manufacturer.");
+  await ensureDealerArt(db);
+  if(method==="GET" && asset!==null){
+    if(!/^[0-9a-f]{64}$/.test(asset)||!["library","dealer"].includes(scope))return oemFailure(400,"Invalid artwork reference.");
+    const result=scope==="dealer"
+      ?await db.query("SELECT image FROM oem_dealer_art WHERE brand=$1 AND digest=$2",[brand,asset])
+      :await platform.query("SELECT image FROM public.oem_brand_reference_art WHERE brand=$1 AND digest=$2",[brand,asset]);
+    return result.rowCount?{status:200,image:result.rows[0].image}:oemFailure(404,"Artwork unavailable.");
+  }
+  if(method==="POST"){
+    if(!(await platform.query("SELECT 1 FROM public.oem_brand_references WHERE id=$1",[brand])).rowCount)
+      return oemFailure(404,"Manufacturer unavailable.");
+    const {revision,sourceNote,rightsNote,png}=input||{};
+    if(!Number.isSafeInteger(revision)||revision<0||typeof sourceNote!=="string"||!sourceNote.trim()||sourceNote.length>600||
+       typeof rightsNote!=="string"||!rightsNote.trim()||rightsNote.length>600||typeof png!=="string"||png.length>699052||
+       !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(png))return oemFailure(422,"Supply a PNG under 500 KB, its source and its permitted use.");
+    let bytes;try{bytes=Uint8Array.from(atob(png.slice(22)),c=>c.charCodeAt(0));}catch{return oemFailure(422,"Choose a valid PNG file.");}
+    const view=new DataView(bytes.buffer);
+    if(bytes.length<45||bytes.length>512000||view.getUint32(0)!==0x89504e47||view.getUint32(4)!==0x0d0a1a0a||
+       view.getUint32(8)!==13||view.getUint32(12)!==0x49484452||view.getUint32(bytes.length-8)!==0x49454e44||
+       ![16,20].every(offset=>view.getUint32(offset)>0&&view.getUint32(offset)<=4096))return oemFailure(422,"Choose a PNG up to 4096 pixels per side.");
+    const values=[brand,sourceNote.trim(),rightsNote.trim(),bytes,actor];
+    const saved=revision===0
+      ?await db.query(`INSERT INTO oem_dealer_art(brand,revision,source_note,rights_note,image,digest,actor)
+        VALUES($1,1,$2,$3,$4,encode(sha256($4::bytea),'hex'),$5) ON CONFLICT(brand) DO NOTHING RETURNING revision`,values)
+      :await db.query(`UPDATE oem_dealer_art SET revision=revision+1,source_note=$2,rights_note=$3,image=$4,
+        digest=encode(sha256($4::bytea),'hex'),actor=$5,recorded_at=now() WHERE brand=$1 AND revision=$6 RETURNING revision`,[...values,revision]);
+    return saved.rowCount?oemResult(200,saved.rows[0]):oemFailure(409,"Someone changed this artwork. Reopen the library before saving.");
+  }
+  const refs=(await platform.query(`SELECT r.id,r.name,r.guidance,to_char(r.reviewed,'YYYY-MM-DD') AS reviewed,
+    COALESCE((SELECT jsonb_agg(jsonb_build_object('label',a.label,'digest',a.digest,'source',a.source_url,'sourceDigest',a.source_digest) ORDER BY a.object_id)
+    FROM public.oem_brand_reference_art a WHERE a.brand=r.id),'[]'::jsonb) AS artwork
+    FROM public.oem_brand_references r ORDER BY lower(r.name)`)).rows;
+  const local=new Map((await db.query("SELECT brand,revision,source_note,rights_note,digest,recorded_at FROM oem_dealer_art")).rows.map(row=>[row.brand,row]));
+  return oemResult(200,{canReview,brands:refs.map(row=>({...row,dealerArtwork:local.get(row.id)||null}))});
+}

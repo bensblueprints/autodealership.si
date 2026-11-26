@@ -8,6 +8,8 @@ from urllib.error import HTTPError
 import psycopg
 from tenant_database import provision
 from psycopg.rows import dict_row
+import resend_connect
+import resend_routes
 
 ROOT=Path(__file__).parent
 ORIGIN="https://autodealership.si"
@@ -28,6 +30,7 @@ with connect() as db:
         CREATE TABLE IF NOT EXISTS public.client_desk_sessions(token text PRIMARY KEY,slug text NOT NULL REFERENCES public.client_sites(slug),engineer uuid REFERENCES public.client_engineers(id),expires timestamptz NOT NULL);
         CREATE TABLE IF NOT EXISTS public.engineer_sessions(token text PRIMARY KEY,engineer uuid NOT NULL REFERENCES public.client_engineers(id),expires timestamptz NOT NULL);
         ALTER TABLE public.client_sites ADD COLUMN IF NOT EXISTS engineer uuid REFERENCES public.client_engineers(id)""")
+    db.execute(resend_connect.SCHEMA)
 def digest(token):return hashlib.sha256(token.encode()).hexdigest()
 def encoded_password(password,salt):
     return hashlib.scrypt(password.encode(),salt=bytes.fromhex(salt),n=16384,r=8,p=1).hex()
@@ -77,7 +80,11 @@ class Handler(BaseHTTPRequestHandler):
                 row=db.execute("SELECT e.id FROM public.engineer_sessions s JOIN public.client_engineers e ON e.id=s.engineer WHERE token=%s AND expires>now() AND e.active",(digest(v.value),)).fetchone()
             if row:return row["id"]
         return None
+    def log_request(self, code="-", size="-"):
+        self.log_message("%s %s %s", self.command, self.path.partition("?")[0], code)
     def do_GET(self):
+        if self.path.partition("?")[0] in ("/onboarding/email","/onboarding/email/callback"):
+            return resend_routes.get(self,connect)
         if self.path.startswith("/api/v1/vin/"):
             vin=self.path.split("?",1)[0][len("/api/v1/vin/"):].upper()
             if not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}",vin):return self.reply(400,{"error":"Provide a 17-character VIN."})
@@ -113,6 +120,8 @@ class Handler(BaseHTTPRequestHandler):
             size=int(self.headers.get("Content-Length",0))
             if not 0<size<8000:raise ValueError("Invalid request.")
             data=json.loads(self.rfile.read(size))
+            if self.path.startswith("/onboarding/email/"):
+                return resend_routes.post(self,connect,self.path[len("/onboarding/email/"):],data)
             if self.path=="/onboarding/clerk-exchange":
                 from clerk_auth import verified_identity
                 try:subject,email=verified_identity(data["token"])

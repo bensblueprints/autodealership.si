@@ -1,0 +1,500 @@
+{
+  "reviewed": "2026-11-26",
+  "market": "United States",
+  "sources": {
+    "stellantis": {
+      "title": "Stellantis dealer website program",
+      "kind": "Dealer program",
+      "url": "https://www.stellantisdigitalcertified.com/Home/DealerWebsites"
+    },
+    "stellantisassets": {
+      "title": "Vehicle asset and creative services directory",
+      "kind": "Dealer program",
+      "url": "https://www.stellantisdigitalcertified.com/CreativeServices"
+    },
+    "gm": {
+      "title": "GM Dealer Digital Solution",
+      "kind": "Dealer program",
+      "url": "https://www.gmdealerdigital.com/"
+    },
+    "ford": {
+      "title": "FordDirect for Ford dealers and Lincoln retailers",
+      "kind": "Dealer program",
+      "url": "https://www.forddirect.com/"
+    },
+    "bmw": {
+      "title": "BMW dealer program resources",
+      "kind": "Dealer program",
+      "url": "https://www.bmwdealerprograms.com/Home/Resources"
+    },
+    "mini": {
+      "title": "MINI dealer program resources",
+      "kind": "Dealer program",
+      "url": "https://www.minidealerprograms.com/Home/Resources"
+    },
+    "ferrari": {
+      "title": "Ferrari Media Centre",
+      "kind": "Press resource",
+      "url": "https://www.ferrari.com/media-centre"
+    },
+    "genesis": {
+      "title": "Genesis brand overview",
+      "kind": "Brand identity",
+      "url": "https://www.genesis.com/worldwide/en/genesis/brand/brand-overview.html"
+    },
+    "genesisdealer": {
+      "title": "Genesis dealer system account setup",
+      "kind": "Dealer access",
+      "url": "https://wdcs.genesisdealerusa.com/com.sap.portal.resourcerepository/repo/PJT/com.gma.wdcs/com.gma.USERMANUAL/SELF_REGISTRATION/GMA_WEBDCS_First_Logon_Instructions.pdf"
+    },
+    "hondavi": {
+      "title": "Honda global visual identity and brand slogan",
+      "kind": "Brand identity",
+      "url": "https://global.honda/en/brandplaybook/vi_guidelines/corporate/global_brand_slogan_logo/"
+    },
+    "hondaprogram": {
+      "title": "Honda Digital Customer Experience enrollment",
+      "kind": "Dealer program",
+      "url": "https://hondaprogram.com/how-to-enroll"
+    },
+    "hondalicense": {
+      "title": "American Honda trademark licensing",
+      "kind": "Rights and licensing",
+      "url": "https://www.honda.com/licensing"
+    },
+    "hondain": {
+      "title": "American Honda Interactive Network and dealer communications",
+      "kind": "Dealer access",
+      "url": "https://hondanews.com/en-US/honda-corporate/releases/release-cc39196e84787a20ec3cb086fb006179-american-honda-establishes-new-product-sales-dealer-communications-division"
+    },
+    "hyundai": {
+      "title": "Hyundai Ad Planner",
+      "kind": "Dealer access",
+      "url": "https://www.hyundaiadplanner.com/Login/Login.aspx?ReturnUrl=%2F"
+    },
+    "nhtsalogos": {
+      "title": "Manufacturer-submitted logo sheet in NHTSA vPIC",
+      "kind": "Regulatory artwork",
+      "url": "https://vpic.nhtsa.dot.gov/mfrportal/Manufacturers/displayfile/16785?guid=4f552324-76b8-4752-a9be-8e826ea59ae2"
+    },
+    "infinitivi": {
+      "title": "INFINITI Digital Brand Guideline",
+      "kind": "Digital identity",
+      "url": "https://infinitibrand.com/digital-guideline"
+    },
+    "infiniti": {
+      "title": "INFINITI Retailer Digital Program",
+      "kind": "Dealer program",
+      "url": "https://www.infinitidigitalprogram.com/"
+    },
+    "kia": {
+      "title": "Kia Digital Program",
+      "kind": "Dealer program",
+      "url": "https://www.kiadigitalprogram.com/"
+    },
+    "lexus": {
+      "title": "Lexus Digital Solutions enrollment",
+      "kind": "Dealer access",
+      "url": "https://www.amazingdigitalexperiences.com/"
+    },
+    "lexusterms": {
+      "title": "Lexus Dealer Digital Program terms",
+      "kind": "Dealer program",
+      "url": "https://www.amazingdigitalexperiences.com/docs/EULA.pdf"
+    },
+    "maserati": {
+      "title": "Maserati legal and trademark policies",
+      "kind": "Rights and licensing",
+      "url": "https://www.maserati.com/us/en/others/legal"
+    },
+    "maseratidealer": {
+      "title": "Maserati dealer portal access manual",
+      "kind": "Dealer access",
+      "url": "https://ddp.maserati.com/DealerDataPortal_UserManual.pdf"
+    },
+    "mazda": {
+      "title": "Mazda Tier 3 website redesign style guide",
+      "kind": "Dealer website guide",
+      "url": "https://www.mazdadigitalcertified.com/docs/MazdaT3WebsiteRedesignStyleGuide.pdf"
+    },
+    "mazdaportal": {
+      "title": "Mazda Digital Certified Program",
+      "kind": "Dealer program",
+      "url": "https://www.mazdadigitalcertified.com/"
+    },
+    "mazdanew": {
+      "title": "Mazda's 2025 brand symbol update",
+      "kind": "Brand identity",
+      "url": "https://newsroom.mazda.com/en/publicity/release/2025/202510/251029a.html"
+    },
+    "mercedes": {
+      "title": "Mercedes-Benz USA legal notices",
+      "kind": "Rights and licensing",
+      "url": "https://www.mbusa.com/en/legal-notices"
+    },
+    "mitsubishi": {
+      "title": "Mitsubishi Motors North America dealer development",
+      "kind": "Dealer access",
+      "url": "https://www.mitsubishicars.com/become-a-mitsubishi-dealer"
+    },
+    "nissan": {
+      "title": "Nissan Dealer Digital Program website benefits",
+      "kind": "Dealer program",
+      "url": "https://dealerdigimarketplace.nnanet.com/docs/Nissan-Dealer-Digital-Program-Website-Program-Benefits.pdf"
+    },
+    "porsche": {
+      "title": "Porsche Design System wordmark",
+      "kind": "Digital identity",
+      "url": "https://designsystem.porsche.com/v3/components/wordmark/usage/"
+    },
+    "porscheprogram": {
+      "title": "Porsche Digital Certified Program FAQ",
+      "kind": "Dealer program",
+      "url": "https://www.porschedealerdigitalprogram.com/Home/FAQs"
+    },
+    "subaru": {
+      "title": "Subaru Certified Digital Program FAQ",
+      "kind": "Dealer program",
+      "url": "https://www.subarucertifieddigital.com/Home/FAQ"
+    },
+    "subarulicense": {
+      "title": "Subaru brand licensing",
+      "kind": "Rights and licensing",
+      "url": "https://www.subaru.co.jp/en/license/"
+    },
+    "toyota": {
+      "title": "Toyota dealership identity and website examples",
+      "kind": "Dealer website guide",
+      "url": "https://brand.toyota.com/guidelines/extensions/dealerships"
+    },
+    "toyotalogo": {
+      "title": "Toyota logo standards",
+      "kind": "Brand identity",
+      "url": "https://brand.toyota.com/guidelines/visual/logos"
+    },
+    "toyotaterms": {
+      "title": "Toyota Brand Hub terms and visual guidelines",
+      "kind": "Rights and licensing",
+      "url": "https://brand.toyota.com/guidelines/"
+    },
+    "vw": {
+      "title": "Volkswagen BrandNet",
+      "kind": "Dealer access",
+      "url": "https://www.volkswagen-marketing.com/content/public/brandnet/en.html"
+    },
+    "vwprogram": {
+      "title": "Volkswagen US Dealer Digital Program",
+      "kind": "Dealer access",
+      "url": "https://www.vwdealerdigital.com/"
+    }
+  },
+  "brands": [
+    {
+      "id": "acura",
+      "name": "Acura",
+      "sources": [
+        "hondain",
+        "hondalicense"
+      ],
+      "note": "American Honda identifies iN as its dealer communications portal. Ask the Acura dealer for the current US website packet and its approved retailer lockup."
+    },
+    {
+      "id": "alfa-romeo",
+      "name": "Alfa Romeo",
+      "sources": [
+        "stellantis",
+        "stellantisassets"
+      ],
+      "note": "The US program explains certified website providers and dealer creative services. Obtain the current divisional masthead artwork and the rules for a single-brand or multi-brand showroom."
+    },
+    {
+      "id": "bmw",
+      "name": "BMW",
+      "sources": [
+        "bmw"
+      ],
+      "note": "The BMW dealer program lists website providers and program resources. Request the current BMW North America identity packet for retailer websites."
+    },
+    {
+      "id": "buick",
+      "name": "Buick",
+      "sources": [
+        "gm"
+      ],
+      "note": "GM's program lists enrollment and dealer resources. Request the division-specific digital identity kit and co-branding rules for the dealer's location."
+    },
+    {
+      "id": "cadillac",
+      "name": "Cadillac",
+      "sources": [
+        "gm"
+      ],
+      "note": "GM's program lists enrollment and dealer resources. Request the division-specific digital identity kit and co-branding rules for the dealer's location."
+    },
+    {
+      "id": "chevrolet",
+      "name": "Chevrolet",
+      "sources": [
+        "gm"
+      ],
+      "note": "GM's program lists enrollment and dealer resources. Request the division-specific digital identity kit and co-branding rules for the dealer's location."
+    },
+    {
+      "id": "chrysler",
+      "name": "Chrysler",
+      "sources": [
+        "stellantis",
+        "stellantisassets"
+      ],
+      "note": "The US program explains certified website providers and dealer creative services. Obtain the current divisional masthead artwork and the rules for a single-brand or multi-brand showroom."
+    },
+    {
+      "id": "dodge",
+      "name": "Dodge",
+      "sources": [
+        "stellantis",
+        "stellantisassets"
+      ],
+      "note": "The US program explains certified website providers and dealer creative services. Obtain the current divisional masthead artwork and the rules for a single-brand or multi-brand showroom."
+    },
+    {
+      "id": "ferrari",
+      "name": "Ferrari",
+      "sources": [
+        "ferrari"
+      ],
+      "note": "The Media Centre covers press materials. Request the current retail website specification and dealer-specific artwork from the franchise representative."
+    },
+    {
+      "id": "fiat",
+      "name": "FIAT",
+      "sources": [
+        "stellantis",
+        "stellantisassets"
+      ],
+      "note": "The US program explains certified website providers and dealer creative services. Obtain the current divisional masthead artwork and the rules for a single-brand or multi-brand showroom."
+    },
+    {
+      "id": "ford",
+      "name": "Ford",
+      "sources": [
+        "ford"
+      ],
+      "note": "FordDirect serves Ford dealers and Lincoln retailers. Obtain the current franchise-specific website specification and authorized retailer or dealer lockup."
+    },
+    {
+      "id": "genesis",
+      "name": "Genesis",
+      "sources": [
+        "genesis",
+        "genesisdealer",
+        "nhtsalogos"
+      ],
+      "note": "Genesis describes its brand identity; the US dealer access guide identifies the retailer system. Request the current retail website artwork and version."
+    },
+    {
+      "id": "gmc",
+      "name": "GMC",
+      "sources": [
+        "gm"
+      ],
+      "note": "GM's program lists enrollment and dealer resources. Request the division-specific digital identity kit and co-branding rules for the dealer's location."
+    },
+    {
+      "id": "honda",
+      "name": "Honda",
+      "sources": [
+        "hondavi",
+        "hondaprogram",
+        "hondalicense"
+      ],
+      "note": "Honda's corporate playbook distinguishes digital and print lockups for its brand slogan. Confirm the US automobile dealer's specific identity kit."
+    },
+    {
+      "id": "hyundai",
+      "name": "Hyundai",
+      "sources": [
+        "hyundai",
+        "nhtsalogos"
+      ],
+      "note": "Hyundai Ad Planner requires a login. Obtain the current US dealer artwork and its usage conditions from the dealer's authorized account."
+    },
+    {
+      "id": "infiniti",
+      "name": "INFINITI",
+      "sources": [
+        "infinitivi",
+        "infiniti"
+      ],
+      "note": "The digital guide covers the symbol and wordmark, mobile navigation, spacing, color and typography. Check the US retailer program for local approval and offer requirements."
+    },
+    {
+      "id": "jeep",
+      "name": "Jeep",
+      "sources": [
+        "stellantis",
+        "stellantisassets"
+      ],
+      "note": "The US program explains certified website providers and dealer creative services. Obtain the current divisional masthead artwork and the rules for a single-brand or multi-brand showroom."
+    },
+    {
+      "id": "kia",
+      "name": "Kia",
+      "sources": [
+        "kia",
+        "nhtsalogos"
+      ],
+      "note": "Kia's US digital program covers dealership websites and inventory merchandising. Confirm the permitted logo variant and current dealer standards with the program."
+    },
+    {
+      "id": "lexus",
+      "name": "Lexus",
+      "sources": [
+        "lexus",
+        "lexusterms"
+      ],
+      "note": "Dealer enrollment requires an account. The public terms explain program participation and data access. Request the approved dealer identity kit from Lexus Digital Solutions."
+    },
+    {
+      "id": "lincoln",
+      "name": "Lincoln",
+      "sources": [
+        "ford"
+      ],
+      "note": "FordDirect serves Ford dealers and Lincoln retailers. Obtain the current franchise-specific website specification and authorized retailer or dealer lockup."
+    },
+    {
+      "id": "maserati",
+      "name": "Maserati",
+      "sources": [
+        "maserati",
+        "maseratidealer"
+      ],
+      "note": "Maserati publishes its US trademark policies and dealer system access instructions. Obtain the current retail identity manual through the dealer's representative."
+    },
+    {
+      "id": "mazda",
+      "name": "Mazda",
+      "sources": [
+        "mazda",
+        "mazdaportal",
+        "mazdanew"
+      ],
+      "note": "The Tier 3 website guide covers brand mark size and placement. Mazda also announced a newer mark in 2025. Confirm which revision applies to this dealer before selecting artwork."
+    },
+    {
+      "id": "mercedes-benz",
+      "name": "Mercedes-Benz",
+      "sources": [
+        "mercedes"
+      ],
+      "note": "MBUSA publishes trademark and legal notices. Obtain the US retail digital standards, star and retailer lockup from the dealer's authorized brand contact."
+    },
+    {
+      "id": "mini",
+      "name": "MINI",
+      "sources": [
+        "mini"
+      ],
+      "note": "MINI lists dealer website programs and supporting resources. Confirm the current MINI USA retailer identity requirements and supplied artwork."
+    },
+    {
+      "id": "mitsubishi",
+      "name": "Mitsubishi",
+      "sources": [
+        "mitsubishi"
+      ],
+      "note": "MMNA's dealer development page identifies its US franchise contact route. Request current Digital Solutions website standards and authorized retail artwork."
+    },
+    {
+      "id": "nissan",
+      "name": "Nissan",
+      "sources": [
+        "nissan"
+      ],
+      "note": "Nissan publishes a US website program overview on its dealer marketplace. Request the current visual standards and approval process for this rooftop."
+    },
+    {
+      "id": "porsche",
+      "name": "Porsche",
+      "sources": [
+        "porsche",
+        "porscheprogram"
+      ],
+      "note": "The Porsche Design System documents digital wordmark usage. Ask the dealer's program representative which US retail website version and assets apply."
+    },
+    {
+      "id": "ram",
+      "name": "Ram",
+      "sources": [
+        "stellantis",
+        "stellantisassets"
+      ],
+      "note": "The US program explains certified website providers and dealer creative services. Obtain the current divisional masthead artwork and the rules for a single-brand or multi-brand showroom."
+    },
+    {
+      "id": "subaru",
+      "name": "Subaru",
+      "sources": [
+        "subaru",
+        "subarulicense"
+      ],
+      "note": "The Subaru Certified Digital Program FAQ describes retailer website enrollment. Obtain Subaru of America's current website kit and applicable retailer permissions."
+    },
+    {
+      "id": "toyota",
+      "name": "Toyota",
+      "sources": [
+        "toyota",
+        "toyotalogo",
+        "toyotaterms"
+      ],
+      "note": "Toyota illustrates dealer header lockups, background contrast and avoiding duplicate staging-platform emblems. Use the authorized dealer logo kit applicable to the market."
+    },
+    {
+      "id": "volkswagen",
+      "name": "Volkswagen",
+      "sources": [
+        "vw",
+        "vwprogram"
+      ],
+      "note": "BrandNet provides a registration and sign-in process for brand resources. Enter the US Dealer Digital Program for this dealer's current website package."
+    }
+  ],
+  "artwork": {
+    "source": "nhtsalogos",
+    "sha256": "417116b993eddf8c73bc6dd820edd454aa4a1b52f64813c5ef5a99ea567a3ed6",
+    "assets": [
+      {
+        "brand": "hyundai",
+        "object": 11,
+        "label": "Stacked wordmark and emblem"
+      },
+      {
+        "brand": "hyundai",
+        "object": 12,
+        "label": "Oval emblem"
+      },
+      {
+        "brand": "kia",
+        "object": 13,
+        "label": "Wordmark"
+      },
+      {
+        "brand": "kia",
+        "object": 14,
+        "label": "Wordmark and tagline"
+      },
+      {
+        "brand": "genesis",
+        "object": 15,
+        "label": "Wings and wordmark"
+      },
+      {
+        "brand": "genesis",
+        "object": 16,
+        "label": "Winged emblem"
+      }
+    ]
+  }
+}

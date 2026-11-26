@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh dealership staff available for lead assignment
+After=network-online.target
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+EnvironmentFile=/etc/autodealership-onboarding.env
+EnvironmentFile=/etc/autodealership-clerk.env
+ExecStart=/usr/bin/python3 /opt/autodealership-onboarding/sales_roster.py
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true

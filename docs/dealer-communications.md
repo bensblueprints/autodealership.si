@@ -1,6 +1,6 @@
 # Dealer follow-up and communications pricing
 
-Proposed U.S. pilot. AutoDealership.SI would sell a managed follow-up service per dealership. Dealers would manage conversations, phone numbers, senders, allowances and spend limits in their dashboard. Their staff could work entirely in the existing PostgreSQL inbox.
+Owner-approved U.S. pilot pricing, pending implementation and dealer activation. AutoDealership.SI would sell a managed follow-up service per dealership. Dealers would manage conversations, phone numbers, senders, allowances and spend limits in their dashboard. Their staff could work entirely in the existing PostgreSQL inbox.
 
 ## What the dealer buys
 
@@ -9,14 +9,20 @@ A shopper asks about stock DJ123 and chooses email. The system reads that dealer
 | Channel | Proposed connection | Dealer experience |
 |---|---|---|
 | Text and telephone | One managed Twilio subaccount per rooftop, with dealership-specific phone numbers, Messaging Service and registered use cases. ElevenLabs handles the AI portion of calls. | The platform supplies the number or coordinates a port. A pilot can start on a new local number. Forwarding an existing voice line does not by itself move its SMS traffic. Validate both routes before advertising the number. |
-| Email | Start with Resend and verify the dealer’s sending subdomain. Use a dedicated reply subdomain, per-conversation reply address and inbound webhook. | A message can come from “Southern Ohio Auto Sales” and a verified dealer address. Replies reach the right inquiry. The dealer keeps its existing Google Workspace or Microsoft 365 mail routing. Add MX records only at the dedicated receiving subdomain. |
-| Existing provider account | Offer a dealer-owned account option after the managed pilot. The dealer pays its provider directly. | Charge for the inbox, AI workflows, reporting and support. Show which usage appears on the provider’s bill before the dealer enrolls. |
+| Email | Connect a dealer-owned Resend team through OAuth and verify the dealer’s sending subdomain. Enable receiving on a dedicated dealer subdomain and use per-conversation reply addresses and an inbound webhook. Sending and receiving can share the same dedicated subdomain. | A message can come from “Southern Ohio Auto Sales” and a verified dealer address. Replies reach the right inquiry. The dealer keeps its existing Google Workspace or Microsoft 365 mail routing. Add MX records only at the dedicated receiving subdomain. |
+| Existing provider account | Use a dealer-owned Resend team from initial onboarding. The dealer pays its provider directly. | Charge for the inbox, AI workflows, reporting and support. Show which usage appears on the provider’s bill before the dealer enrolls. |
 
 For U.S. local texting, follow Twilio’s ISV onboarding process for each customer brand and campaign. Register the actual use case. For a BHPH store, start with stock questions and requested visits. Review financial content separately before enabling it. [Twilio subaccounts](https://www.twilio.com/docs/iam/api/subaccounts) · [Twilio registration](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc) · [Restricted messaging categories](https://help.twilio.com/articles/360045004974)
 
 ## Email provider decision
 
-The engineer’s onboarding wizard should show separate **Email**, **Text** and **Telephone** connection states. Email setup asks for the display name, sending subdomain, reply subdomain and postal address, then shows the exact provider DNS records for sending authentication and receiving. Test domain authentication, an outbound message and an inbound reply before marking email ready. Text setup collects the authorized business contact, sender registration and opt-in evidence. Telephone setup verifies that a test call reaches the assigned agent and transfers to the correct staff line. Dealers can start with email while carrier registration is pending.
+Each dealership opens its own Resend account or chooses an existing team. An administrator opens **Website settings / Email connection** in the dealership workspace. Assigned engineers and platform owners can also open **Set up dealership email** for a client from onboarding. Choose and authorize the dealer's team on Resend. Each team owns its provider billing and usage. Additional teams created under an existing account require choosing a paid plan. [Resend teams](https://resend.com/blog/multiple-teams) and [OAuth](https://resend.com/docs/guides/building-a-resend-oauth-client)
+
+The setup screen finds or adds an exact sending subdomain in that team and displays its DNS records. The dealer or its DNS administrator publishes them and checks verification. The platform stores encrypted, rotating credentials against the dealership in PostgreSQL. A dealer can revoke the connection. Connecting a team enables domain setup. Shopper email dispatch, inbound threading and paid metering are separate rollout steps.
+
+The transactional Free plan lists 3,000 emails per month and a daily cap of 100. Check peak volume when choosing a plan. Dealers with their own account pay Resend directly for their selected plan. Identify any AutoDealership.SI workflow fee separately before enrollment. [Resend pricing](https://resend.com/pricing)
+
+The engineer’s onboarding wizard should show separate **Email**, **Text** and **Telephone** connection states. Email setup asks for the display name, dedicated subdomain for sending and replies, and postal address, then shows the exact provider DNS records for sending authentication and receiving. Test domain authentication, an outbound message and an inbound reply before marking email ready. Text setup collects the authorized business contact, sender registration and opt-in evidence. Telephone setup verifies that a test call reaches the assigned agent and transfers to the correct staff line. Dealers can start with email while carrier registration is pending.
 
 | Provider | Public U.S. dollar pricing | When it makes sense |
 |---|---|---|
@@ -27,17 +33,17 @@ The engineer’s onboarding wizard should show separate **Email**, **Text** and 
 
 Use a provider-neutral conversation ID and usage record from day one. Start with one working email integration. Revisit SES when the projected savings or reputation isolation justify the operating cost. For example, at 50,000 outbound emails the difference between Resend Pro and SES base sending is $15 per month before AWS extras.
 
-## Proposed pilot rate card
+## Approved pilot rate card
 
-Existing subscriptions, negotiated website fees and included voice minutes continue under their existing agreements. Offer **Managed Follow-up at $99/month per rooftop** as an optional addition. The existing $100 Southern Ohio website agreement would change only if the dealer elects the add-on. These are proposed retail rates for a U.S. pilot.
+Existing subscriptions, negotiated website fees and included voice minutes continue under their existing agreements. Offer **Managed Follow-up at $99/month per rooftop** as an optional addition. The existing $100 Southern Ohio website agreement would change only if the dealer elects the add-on. These are the pilot retail rates.
 
-| Included or metered item | Proposed dealer price | Billing rule |
+| Included or metered item | Pilot dealer price | Billing rule |
 |---|---|---|
 | Follow-up workspace | $99/month includes one standard local number, 500 SMS segments combined across both directions, and 1,000 outbound inquiry emails | Includes the shared inbox, automatic first reply, staff handoff and reporting. Disclose registration and recurring campaign fees at provisioning. |
 | SMS overage | $0.04 per additional segment | Cover standard domestic carrier costs in this rate. Count actual provider-reported segments. Show the estimate before staff send a long or Unicode message. Incoming shopper replies also use the allowance. Absorb STOP, HELP, carrier error and compliance traffic. |
-| Email overage | $5 per 1,000 additional outbound emails, prorated at $0.005 per recipient | Charge once per accepted outbound recipient. Receive customer replies without a separate retail fee. Suppress future sends on hard bounces, complaints and unsubscribes. |
+| Email overage | $5 per 1,000 additional outbound emails, prorated at $0.005 per recipient | Managed sending rate. For a dealer-owned team, disclose any separately agreed workflow charge before activation and exclude provider transport from the platform bill. Receive customer replies without a separate retail fee. Suppress future sends on hard bounces, complaints and unsubscribes. |
 | AI receptionist or website voice | Use the dealer’s agreed included minutes and existing overage tiers where applicable | Current standard tiers in billing code are $0.35, $0.30 and $0.27 per additional AI minute by volume. Bundle the standard domestic telephone leg during AI handling into the AI rate. Web-only voice incurs no telephone leg. |
-| Human-only forwarding | Proposed $0.05 per connected minute for standard domestic forwarding after handoff | Start the human-only meter when the transfer connects and AI handling ends. Preview separately priced destinations, recording or conferencing before enabling them. |
+| Human-only forwarding | $0.05 per connected minute for standard domestic forwarding after handoff | Start the human-only meter when the transfer connects and AI handling ends. Preview separately priced destinations, recording or conferencing before enabling them. |
 
 Twilio lists U.S. local SMS at $0.0083 per segment in either direction plus carrier charges. Standard local voice is $0.0085/min inbound and $0.014/min outbound with a $1.15 monthly local number. A bridged inbound call can consume both legs. ElevenLabs, models and any retained recordings add separate costs. [Twilio SMS](https://www.twilio.com/en-us/sms/pricing/us) · [Twilio Voice](https://www.twilio.com/en-us/voice/pricing/us)
 
@@ -49,6 +55,8 @@ The following examples are separate one-dealer pilots. Each carries the full $20
 |---|---:|---:|---:|
 | 500 segments and 1,000 outbound emails | $99.00 | $27.30 | $71.70 |
 | 2,500 segments and 5,000 outbound emails | $199.00 | $51.90 | $147.10 |
+
+**Fixed and shared costs.** The $51.90 example is the high-usage single-dealer scenario. A standard local number costs $1.15 per month per provisioned number. A $20 Resend account can serve multiple verified dealer domains within the subscribed limits. At ten dealers sharing the plan evenly, the email allocation is $2 per dealer. At zero traffic this gives $3.15 per enrolled dealer before applicable recurring carrier campaign fees. At 500 text segments the same model gives $9.30, and at 2,500 segments it gives $33.90. A website-only dealer with neither a provisioned number nor email service has no incremental Twilio or Resend charge from this feature. Budget separately for AI handling, voice transport, registration, extra domains and support.
 
 The remaining amount must cover AI generation, support, payment processing, registration/campaign fees, taxes where applicable and failed traffic. Measure these against real provider invoices during the pilot. For voice, a 60% contribution target at $0.35/min allows $0.14/min of direct cost. At $0.27/min the ceiling is $0.108/min. Test the actual agent, language model, call routing and transfer mix before offering volume commitments.
 

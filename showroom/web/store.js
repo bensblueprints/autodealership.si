@@ -126,9 +126,18 @@
     if(!res.ok)throw Error("Could not "+(method==="GET"?"load":"save")+" the inquiry.");
     return res.json();
   }
+  let leadRead=0;
   async function loadLeads(){
     if(window.postgresInventory && document.getElementById("leadList")){
-      try{dealerLeads=await inquiryRequest("GET");inquiryState="";}catch{inquiryState="Inquiries could not be loaded. Reopen this tab to retry.";}
+      const request=++leadRead;
+      try{
+        const rows=await inquiryRequest("GET");
+        if(request!==leadRead)return;
+        dealerLeads=rows;inquiryState="";
+      }catch{
+        if(request!==leadRead)return;
+        inquiryState="Inquiries could not be loaded. Refresh the inbox to retry.";
+      }
       window.dispatchEvent(new Event("showroom:update"));
     }
   }

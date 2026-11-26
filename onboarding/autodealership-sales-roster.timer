@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh dealership sales rosters every five minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=5min
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

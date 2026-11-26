@@ -2,6 +2,18 @@
   const id=s=>document.getElementById(s);
   async function api(op,data){const r=await (op==="me"?readDealerDesk:fetch)("/api/dealer-auth/"+op,data?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)}:{});const result=await r.json();if(!r.ok)throw Error(result.error);return result;}
   const me=await api("me");
+  const emailSetup=id("dealer-email-setup");
+  emailSetup.hidden=!me.managesEmail;
+  emailSetup.onclick=async()=>{
+    emailSetup.disabled=true;
+    try{
+      const response=await fetch("api/dealer-email/setup",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+      const data=await response.json();
+      if(!response.ok)throw Error(data.error);
+      location.assign(data.url);
+    }catch(error){id("notice").textContent=error.message||"Could not open dealership email setup.";}
+    finally{emailSetup.disabled=false;}
+  };
   id("desk-login").hidden=me.signedIn;id("desk-logout").hidden=!me.signedIn;id("desk-users").hidden=!me.managesUsers;
   id("desk-logout").onclick=async()=>{await api("logout",{});if(me.clerk){await window.dealerClerkReady;await Clerk.signOut({redirectUrl:location.origin+"/dealer-login"});return}location.assign("dealer-login");};
   id("desk-users").onclick=async()=>{

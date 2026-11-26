@@ -21,7 +21,7 @@
   function carName(c) {return [c.year,c.make,c.model].join(" ");}
   function thumb(c) {
     if (!c.image) return node("div","", "thumb");
-    const img=node("img"); img.src=c.image; img.alt=""; img.loading="lazy"; return img;
+    const img=node("img",null,"thumb"); img.src=c.image; img.alt=""; img.loading="lazy"; return img;
   }
   function empty(title,body,link=false) {
     const box=node("div",null,"empty");box.append(node("strong",title),node("div",body));
@@ -50,8 +50,10 @@
   function renderLeads(leads,list,filter) {
     list.replaceChildren();
     if(Store.inquiryState()){list.textContent=Store.inquiryState();return;}
-    const filtered=leads.filter(l=>!filter || l.status===filter);
-    if(!filtered.length) {list.append(filter ? empty("No matching inquiries","Choose another status to see more leads.") : list.id==="pending-inquiries"?empty("All caught up","No inquiries are waiting for first contact."):empty("No shopper inquiries yet","Questions about vehicles, availability requests and trade appraisals appear here."));return;}
+    let filtered=leads.filter(l=>!filter || l.status===filter);
+    const shared=!!window.postgresInventory;
+    if(shared && list.id==="leadList")filtered=LeadWorkspace.filter(filtered);
+    if(!filtered.length) {list.append((filter || (shared && list.id==="leadList" && LeadWorkspace.narrowed())) ? empty("No matching inquiries","Change the search or filters to see more inquiries.") : list.id==="pending-inquiries"?empty("All caught up","No inquiries are waiting for first contact."):empty("No shopper inquiries yet","Questions about vehicles, availability requests and trade appraisals appear here."));return;}
     for(const lead of filtered) {
       const row=node("article",null,"lead"),details=node("div",null,"grow");
       const car=lead.car || Store.cars().find(c=>c.id===lead.carId);
@@ -71,6 +73,7 @@
         details.append(node("small","Text reply requested for this inquiry"),draft);
       }
       details.append(contact,node("small",(lead.source||"Showroom inquiry")+" · "+new Date(lead.createdAt).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}),"leadtime"));
+      if(shared){LeadWorkspace.card(lead,row,details);list.append(row);continue;}
       const status=node("select");status.setAttribute("aria-label","Lead status for "+lead.name);
       for(const val of statuses)status.add(new Option(val,val,false,val===lead.status));
       status.addEventListener("change",async()=>{try{await Store.setStatus(lead.id,status.value);notice("Lead updated");}catch(e){status.value=lead.status;notice(e.message);}});
@@ -209,6 +212,7 @@
     $("brand").textContent=name;document.title="Sales desk · "+name;
     $("countCars").textContent=cars.length;
     $("countNew").textContent=Store.inquiryState()?"—":leads.filter(l=>l.status==="New").length;
+    if(window.postgresInventory)LeadWorkspace.today(leads);
     renderLeads(leads,$("leadList"),$("statusFilter").value);
     renderLeads(leads.filter(l=>l.status==="New").sort((a,b)=>a.createdAt.localeCompare(b.createdAt)),$("pending-inquiries"),"");renderInventory(Store.cars(true));
   }

@@ -62,3 +62,71 @@
   dialog.addEventListener("cancel",e=>{if(busy)e.preventDefault();});
   document.querySelector('[data-view="oem"]').addEventListener("click",()=>load());
 })();
+
+(() => {
+  const element=(tag,text)=>Object.assign(document.createElement(tag),{textContent:text});
+  const picker=document.querySelector("#brand-picker"),detail=document.querySelector("#brand-reference");
+  const status=document.querySelector("#brand-library-state"),upload=document.querySelector("#brand-upload"),add=document.querySelector("#brand-add");
+  let library,loading=false,saving=false;
+  function image(brand,digest,scope,title){
+    const img=document.createElement("img");
+    img.alt=title;img.loading="lazy";img.src="api/oem-brand-library?"+new URLSearchParams({brand,asset:digest,scope});
+    const figure=document.createElement("figure");figure.append(img,element("figcaption",title));return figure;
+  }
+  function render(){
+    const brand=library?.brands.find(row=>row.id===picker.value);
+    detail.replaceChildren();add.hidden=!(brand && library.canReview);add.open=false;
+    upload.reset();upload.querySelector("[role=status]").textContent="";
+    if(!brand)return;
+    const heading=element("h4",brand.name),sources=document.createElement("ul");
+    detail.append(heading,element("p",brand.guidance.note),element("small",brand.guidance.market+" · Sources checked "+brand.reviewed));
+    for(const s of brand.guidance.sources){
+      const li=document.createElement("li"),a=element("a",s.title);
+      a.href=s.url;a.target="_blank";a.rel="noopener noreferrer";
+      li.append(a,element("small",s.kind));sources.append(li);
+    }
+    detail.append(sources);
+    if(brand.artwork.length){
+      detail.append(element("h5","Filed logo references"),element("p","These marks come from a 2023 manufacturer filing. Confirm current retailer artwork and permissions with the brand before use."));
+      const grid=element("div","");grid.className="brand-thumbnails";
+      for(const item of brand.artwork)grid.append(image(brand.id,item.digest,"library",item.label));
+      detail.append(grid);
+    }
+    if(brand.dealerArtwork){
+      const d=brand.dealerArtwork,block=element("div","");block.className="brand-supplied";
+      block.append(element("h5","Dealership artwork"),image(brand.id,d.digest,"dealer",brand.name+" · Revision "+d.revision),
+        element("p","Source · "+d.source_note),element("p","Permitted use · "+d.rights_note));
+      detail.append(block);
+    }
+  }
+  async function load(selected=picker.value){
+    if(loading)return;
+    loading=true;picker.disabled=true;status.textContent="Loading manufacturer sources…";
+    try{
+      const r=await readDealerDesk("api/oem-brand-library",{cache:"no-store"});
+      if(!r.ok)throw Error(r.status===403?"Sign in to view manufacturer references.":"Manufacturer references are unavailable. Reopen this tab to retry.");
+      library=await r.json();picker.replaceChildren(new Option("Select a manufacturer",""));
+      for(const brand of library.brands)picker.add(new Option(brand.name,brand.id));
+      picker.value=selected;picker.disabled=false;render();
+      status.textContent=library.brands.length+" manufacturers · OEM certification coming soon";
+    }catch(e){library=null;render();status.textContent=e.message;}finally{loading=false;}
+  }
+  picker.onchange=render;
+  document.querySelector('[data-view="oem"]').addEventListener("click",()=>{if(!saving)load();});
+  upload.onsubmit=async event=>{
+    event.preventDefault();if(saving)return;
+    const brand=library?.brands.find(row=>row.id===picker.value);
+    if(!brand || !library.canReview)return;
+    const message=upload.querySelector("[role=status]"),button=upload.querySelector("button");
+    saving=true;button.disabled=true;picker.disabled=true;
+    try{
+      const file=upload.elements.logo.files[0];
+      if(!file || file.type!=="image/png" || file.size>512000)throw Error("Choose a PNG under 500 KB.");
+      const png=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error("Could not read the file."));reader.readAsDataURL(file);});
+      const response=await fetch("api/oem-brand-library?brand="+encodeURIComponent(brand.id),{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({png,sourceNote:upload.elements.source.value,rightsNote:upload.elements.rights.value,revision:brand.dealerArtwork?.revision||0})});
+      const result=await response.json();if(!response.ok)throw Error(result.error||"Could not save artwork.");
+      await load(brand.id);if(library)status.textContent="Private dealership artwork saved for "+brand.name+".";
+    }catch(e){message.textContent=e.message;}finally{saving=false;button.disabled=false;picker.disabled=!library;}
+  };
+})();

@@ -70,6 +70,7 @@ try{
   }
   await seed.query("COMMIT");
 }catch(error){await seed.query("ROLLBACK");throw error;}finally{seed.release();}
+await pool.query("CREATE TABLE IF NOT EXISTS public.dealer_sales_rosters(site text PRIMARY KEY,organization text NOT NULL,members jsonb NOT NULL,synced_at timestamptz NOT NULL)");
 const zipInventory=promisify(gzip);
 const passwordHash=promisify(scrypt);
 await pool.query(`CREATE TABLE IF NOT EXISTS public.dealer_users(site text NOT NULL,email text NOT NULL,salt text NOT NULL,hash text NOT NULL,active boolean NOT NULL DEFAULT true,PRIMARY KEY(site,email));
@@ -240,7 +241,7 @@ createServer(async(req,res)=>{
     const dealerHost=tenant && !prefix && base.hostname===tenant.slug+".autodealership.si";
     const tenantDesk=dealerHost && /(?:^|; *)__Host-client_desk=([a-zA-Z0-9_-]{43})(?:;|$)/.exec(req.headers.cookie||"");
     const desk=tenantDesk || (tenant && prefix && /(?:^|; *)client_desk=([a-zA-Z0-9_-]{43})(?:;|$)/.exec(req.headers.cookie||""));
-    const grant=desk && (await pool.query("SELECT s.engineer FROM public.client_desk_sessions s JOIN public.client_sites t USING(slug) LEFT JOIN public.client_engineers e ON e.id=s.engineer WHERE s.token=$1 AND s.slug=$2 AND s.expires>now() AND (s.engineer IS NULL OR (e.active AND t.engineer=s.engineer))",[createHash("sha256").update(desk[1]).digest("hex"),tenant.slug])).rows[0];
+    const grant=desk && (await pool.query("SELECT s.engineer,e.email FROM public.client_desk_sessions s JOIN public.client_sites t USING(slug) LEFT JOIN public.client_engineers e ON e.id=s.engineer WHERE s.token=$1 AND s.slug=$2 AND s.expires>now() AND (s.engineer IS NULL OR (e.active AND t.engineer=s.engineer))",[createHash("sha256").update(desk[1]).digest("hex"),tenant.slug])).rows[0];
     const site=tenant?.id||"demo";
     const currentToken=/(?:^|; )dealer_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie||"")?.[1];
     const tokenHash=currentToken && createHash("sha256").update(currentToken).digest("hex");
@@ -265,6 +266,15 @@ createServer(async(req,res)=>{
       body=Buffer.concat(chunks);
     }
     const route=new URL(req.url,base);
+    const emailManager=!!tenant && (!!managesUsers || clerkRole==="org:admin");
+    if(route.pathname==="/api/dealer-email/setup"){
+      const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
+      if(req.method!=="POST" || !emailManager || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"A dealership administrator must open email setup."});
+      const ticket=randomBytes(32).toString("base64url");
+      await pool.query("DELETE FROM public.dealer_email_tickets WHERE expires<=now()");
+      await pool.query("INSERT INTO public.dealer_email_tickets(token,site,expires) VALUES($1,$2,now()+interval '90 seconds')",[createHash("sha256").update(ticket).digest("hex"),site]);
+      return reply(200,{url:"https://autodealership.si/onboarding/email#"+ticket});
+    }
     if(prefix && ["/dealer","/dealer.html","/dealer-login"].includes(route.pathname) && req.method==="GET"){
       res.writeHead(302,{Location:"/onboarding/clerk-login?site="+encodeURIComponent(tenant.slug),"Cache-Control":"no-store"}).end();return;
     }
@@ -364,6 +374,25 @@ createServer(async(req,res)=>{
       if(result===null){res.writeHead(404,headers).end("Vehicle feed is not enabled.");return;}
       res.writeHead(200,{...headers,"Content-Type":feedPublic?"application/xml; charset=utf-8":"application/json"}).end(req.method==="HEAD"?undefined:feedPublic?result:JSON.stringify(result));return;
     }
+    if(route.pathname==="/api/oem-brand-library"){
+      const headers={"Content-Type":"application/json","Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","X-Robots-Tag":"noindex","Cross-Origin-Resource-Policy":"same-origin"};
+      const send=(code,value)=>res.writeHead(code,headers).end(JSON.stringify(value));
+      if(!privateAdmin)return send(403,{error:"Dealer sign-in required."});
+      const canReview=!!managesUsers||clerkRole==="org:admin";
+      let input;
+      if(req.method==="POST"){
+        if(!canReview || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return send(403,{error:"Use an administrator account in the dealer workspace."});
+        if(body.length>700000)return send(413,{error:"Choose a PNG under 500 KB."});
+        try{input=JSON.parse(body);}catch{return send(400,{error:"Invalid artwork data."});}
+      }
+      const actor=(clerkRole||platformStaff)?claims.subject:grant?(grant.engineer?"engineer:"+grant.engineer:"platform owner"):account?.email||"dealer administrator";
+      const result=await worker.oemBrandLibrary({db,platform:pool,method:req.method,brand:route.searchParams.get("brand"),
+        asset:route.searchParams.get("asset"),scope:route.searchParams.get("scope"),input,actor,canReview});
+      if(result.image){
+        res.writeHead(200,{...headers,"Content-Type":"image/png","Content-Security-Policy":"default-src 'none'; sandbox"}).end(result.image);return;
+      }
+      return send(result.status,result.data);
+    }
     if(route.pathname==="/api/oem-programs"){
       const headers={"Content-Type":"application/json","Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"};
       const send=(code,data)=>res.writeHead(code,headers).end(JSON.stringify(data));
@@ -408,7 +437,7 @@ createServer(async(req,res)=>{
     if(route.pathname.startsWith("/api/dealer-auth/")){
       const op=route.pathname.split("/").pop();
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
-      if(req.method==="GET" && op==="me")return reply(200,{signedIn:!!privateAdmin,managesUsers:clerkOrg?clerkRole==="org:admin":!!managesUsers,clerk:!!(clerkRole||platformStaff),teamUrl:clerkRole==="org:admin"?"/dealer-team":null});
+      if(req.method==="GET" && op==="me")return reply(200,{signedIn:!!privateAdmin,managesEmail:emailManager,managesUsers:clerkOrg?clerkRole==="org:admin":!!managesUsers,clerk:!!(clerkRole||platformStaff),teamUrl:clerkRole==="org:admin"?"/dealer-team":null});
       if(clerkOrg && op!=="logout")return reply(403,{error:"Use your Clerk dealership account."});
       if(req.method==="GET" && op==="users" && managesUsers)return reply(200,(await pool.query("SELECT email,active FROM public.dealer_users WHERE site=$1 ORDER BY email",[site])).rows);
       if(req.method!=="POST" || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Sign in required."});
@@ -487,9 +516,25 @@ createServer(async(req,res)=>{
         await db.query("UPDATE bhph_offers SET offer=$2,revision=revision+1 WHERE vehicle=$1 AND revision=$3 RETURNING revision",[vehicle,offer,data.revision]);
       return result.rowCount?reply(200,result.rows[0]):reply(409,{error:"Pricing changed in another session. Reopen the editor."});
     }
-    if(route.pathname==="/api/inquiries"){
+    if(route.pathname==="/api/inquiries" || route.pathname==="/api/inquiries/team" || route.pathname==="/api/inquiries/history"){
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
-      if(req.method==="GET")return privateAdmin?reply(200,(await db.query("SELECT body FROM shopper_leads ORDER BY body->>'createdAt' DESC")).rows.map(r=>r.body)):reply(403,{});
+      const currentActor=()=>{
+        if(clerkRole || platformStaff)return {id:"clerk:"+claims.subject,label:platformStaff?"Platform staff":"Dealership staff"};
+        if(grant)return grant.engineer?{id:"engineer:"+grant.engineer,label:grant.email||"Assigned engineer"}:{id:"platform:owner",label:"Platform owner"};
+        if(account?.email && account.email!=="dealer")return {id:"account:"+account.email,label:account.email};
+        return {id:"dealer",label:"Dealer administrator"};
+      };
+      const team=()=>worker.followupTeam(pool,{site,organization:clerkOrg,actor:currentActor(),manager:!!managesUsers||clerkRole==="org:admin"});
+      if(route.pathname!=="/api/inquiries"){
+        if(!privateAdmin)return reply(403,{error:"Dealer sign-in required."});
+        if(req.method!=="GET")return reply(405,{error:"Use GET."});
+        if(route.pathname.endsWith("/team"))return reply(200,await team());
+        const id=route.searchParams.get("id");
+        if(!/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(id||""))return reply(400,{error:"Invalid inquiry."});
+        const row=(await db.query("SELECT body#>'{followUp,history}' AS history FROM shopper_leads WHERE id=$1",[id])).rows[0];
+        return row?reply(200,row.history||[]):reply(404,{error:"Inquiry unavailable."});
+      }
+      if(req.method==="GET")return privateAdmin?reply(200,(await db.query("SELECT body #- '{followUp,history}' AS body FROM shopper_leads ORDER BY body->>'createdAt' DESC")).rows.map(r=>r.body)):reply(403,{});
       if(req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{});
       let input;try{input=JSON.parse(body)}catch{return reply(400,{})}
       if(req.method==="PUT"){
@@ -500,9 +545,9 @@ createServer(async(req,res)=>{
           const saved=await db.query("UPDATE shopper_leads SET body=jsonb_set(body,'{textDraft}',$2::jsonb) WHERE id=$1 AND body->'textReplyRequest'->>'version'=$3 AND COALESCE(body->'textDraft'->>'revision','')=$4 RETURNING id",[input.id,draft,worker.InquiryContact.version,input.revision]);
           return saved.rowCount?reply(200,draft):reply(409,{error:"This inquiry changed or has no text request. Reopen it to review."});
         }
-        if(!["New","Contacted","Appointment set","Closed"].includes(input.status)|| !/^[0-9a-f-]{36}$/i.test(input.id))return reply(400,{});
-        const result=await db.query("UPDATE shopper_leads SET body=jsonb_set(body,'{status}',to_jsonb($2::text)) WHERE id=$1",[input.id,input.status]);
-        return reply(result.rowCount?200:404,{});
+        if(input?.action && input.action!=="save-follow-up")return reply(400,{error:"Unknown inquiry action."});
+        const result=await worker.updateInquiry(db,input,await team(),!input?.action);
+        return reply(result.status,result.data);
       }
       if(req.method!=="POST")return reply(405,{});
       const voiceInquiry=input?.source==="Voice concierge";
