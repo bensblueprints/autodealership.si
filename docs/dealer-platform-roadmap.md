@@ -156,6 +156,8 @@ Standards and access: [STAR Sales Lead API](https://www.starstandard.org/index.p
 
 ## 7 | AI text-back and the dealership inbox
 
+The [managed communications pilot and rate card](dealer-communications.md) covers two-way email, Twilio numbers, staff takeover, per-rooftop consent and the proposed Whop usage wallet. It includes provider costs and pilot acceptance tests.
+
 **This release.** The vehicle inquiry, availability and trade forms let shoppers explicitly request a text concerning that inquiry. The server stores the disclosure and version, normalized number, channel, purpose and time with the lead. Authorized staff can edit and save a reply draft with conflict detection. A phone number, legacy lead or voice callback alone does not activate texting. The starter reply uses an editable template with the car and stock.
 
 **Example.** “Is stock DJ123 available with $1,500 down?” The future reply agent checks the current stock record and exact published schedule. If the amount exceeds the shopper’s budget, it gives the dealer’s amount, offers eligible alternatives, or hands off. A sales rep can take over immediately. A signed lender decision is the authority for credit approval.
