@@ -24,7 +24,7 @@
     const id=escape(car.id), favorite=saved.includes(String(car.id));
     const monthly=!exists(car.price) || Facets.paymentMode==='cash' ? null : Facets.amount(car);
     const payment=monthly===null ? '' : '<div class="monthly-estimate">Est. '+currency(monthly)+'/mo · '+escape(Facets.paymentMode)+'</div>';
-    return '<article class="card"><a class="carlink" href="vehicle.html?stock='+encodeURIComponent(car.id)+'" data-car="'+id+'">'+(car.image?'<img loading="lazy" src="'+escape(car.image)+'" alt="">':'<div class="photo-missing"><svg aria-hidden="true"><use href="assets/inventory-icons.svg#car-side"></use></svg><span>Photo unavailable</span></div>')+'<div class="cardinfo">'+(car.imageType==='stock'?'<small>Representative photo</small>':'')+'<h4>'+escape(title(car))+'</h4><div class="spec">'+escape(specs(car))+'</div><div class="card-identifiers"><span>Stock # <b>'+escape(car.stock || "Unavailable")+'</b></span><span>VIN <b>'+escape(car.vin || "Unavailable")+'</b></span></div><strong>'+(car.bhph?'Cash '+BHPH.money(car.bhph.cash):currency(car.price))+'</strong>'+(car.bhph?'<p>Buy Here Pay Here '+BHPH.money(car.bhph.price)+' · '+BHPH.money(car.bhph.down)+' down</p>':'')+payment+'</div></a><button class="save" aria-label="'+(favorite?'Unsave ':'Save ')+escape(title(car))+'" aria-pressed="'+favorite+'" data-save="'+id+'">'+(favorite?'♥':'♡')+'</button>'+(window.Retail?.card(car) || '')+'</article>';
+    return '<article class="card"><a class="carlink" href="vehicle.html?stock='+encodeURIComponent(car.id)+'" data-car="'+id+'">'+(car.image?'<img loading="lazy" src="'+escape(car.image)+'" alt="">':'<div class="photo-missing"><svg aria-hidden="true"><use href="assets/inventory-icons.svg#car-side"></use></svg><span>Photo unavailable</span></div>')+'<div class="cardinfo">'+(car.imageType==='stock'?'<small>Representative photo</small>':'')+'<h4>'+escape(title(car))+'</h4><div class="spec">'+escape(specs(car))+'</div><div class="card-identifiers"><span>Stock # <b>'+escape(car.stock || "Unavailable")+'</b></span><span>VIN <b>'+escape(car.vin || "Unavailable")+'</b></span></div><strong>'+(car.bhph?'Cash '+BHPH.money(car.bhph.cash):currency(car.price))+'</strong>'+(car.bhph?'<p>Buy Here Pay Here '+BHPH.money(car.bhph.price)+' · '+BHPH.money(car.bhph.down)+' down</p>':'')+payment+'<span class="inventory-offer" data-offer-vin="'+id+'" hidden></span></div></a><button class="save" aria-label="'+(favorite?'Unsave ':'Save ')+escape(title(car))+'" aria-pressed="'+favorite+'" data-save="'+id+'">'+(favorite?'♥':'♡')+'</button>'+(window.Retail?.card(car) || '')+'</article>';
   }
   const pageSize=24;
   const initialParams=new URLSearchParams(location.search);
@@ -136,6 +136,7 @@
     $('inventoryPage').textContent='Page '+(page+1)+' of '+pages;
     $('inventoryPrev').disabled=page===0;
     $('inventoryNext').disabled=page+1>=pages;
+    window.WebsiteOffers?.cards();
     window.Retail?.sync();
     $('rowtitle').textContent=savedOnly?'Your saved vehicles':category||'Inventory';
     $('resultcount').textContent=filtered.length+' vehicle'+(filtered.length===1?'':'s');

@@ -1,0 +1,8 @@
+#website-offers:empty{display:none}
+.dealer-offer{margin:14px 0;padding:16px 18px;background:var(--card);color:var(--ink);border:1px solid var(--hair);border-inline-start:3px solid var(--accent,currentColor);border-radius:10px;overflow-wrap:anywhere}
+.dealer-offer header{display:flex;justify-content:space-between;gap:6px 14px;flex-wrap:wrap;align-items:baseline}
+.dealer-offer header small{font-size:.8rem;font-weight:700}.dealer-offer header span{font-size:.82rem}
+.dealer-offer h2{font-size:clamp(1.15rem,2vw,1.5rem);line-height:1.24;letter-spacing:-.02em;margin:8px 0}
+.dealer-offer p{white-space:pre-line;font-size:.95rem;line-height:1.5;margin:8px 0 0;color:inherit}
+.offer-vehicles{list-style:none;margin:12px 0 0;padding:0}.offer-vehicles li+li{margin-top:6px}.offer-vehicles a{text-decoration:underline;text-underline-offset:3px;color:inherit}
+.inventory-offer:not([hidden]){display:block;margin-top:7px;font-size:.85rem;font-weight:600;text-decoration:underline;text-underline-offset:3px;color:var(--ink)}

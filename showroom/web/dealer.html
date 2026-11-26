@@ -39,8 +39,17 @@
     <label>Source bulletin or brand-program reference<input name="source" maxlength="1000" required></label><label>Source version<input name="version" maxlength="100" required></label>
     <div class="formgrid"><label>First day<input type="date" name="startsOn" required></label><label>Last day (inclusive)<input type="date" name="endsOn" required></label></div>
     <label>Public offer disclosure<textarea name="disclosure" rows="3" required maxlength="3000"></textarea></label>
+
+    <fieldset id="oem-placement"><legend>Website offer</legend>
+      <label class="oem-choice"><input type="checkbox" name="useWebsiteOffer">Publish this offer on the dealership website</label>
+      <div id="oem-web-fields" hidden><label>Shopper-facing headline<input name="offerHeadline" maxlength="140"></label>
+      <label>Specials page<select name="offerPage"></select></label><small id="oem-page-status"></small>
+      <fieldset><legend>Eligible vehicles</legend><label for="oem-stock-search">Find by stock number, VIN, or model</label>
+      <input type="search" id="oem-stock-search" autocomplete="off" placeholder="Search inventory">
+      <div id="oem-stock-list"></div><p id="oem-stock-count" aria-live="polite"></p></fieldset></div>
+    </fieldset>
     <label>Written OEM acceptance reference (if obtained)<input name="acceptance" maxlength="1000"></label>
-    <p id="oem-revision-note"></p><label id="oem-attest"><input type="checkbox" name="checked"> I reviewed this saved revision against the source for this brand and market.</label>
+    <p id="oem-revision-note"></p><label id="oem-attest"><input type="checkbox" name="checked"> I checked the public copy, disclosure, dates and any selected vehicles against the source for this brand and market.</label>
     <p role="status" id="oem-form-status"></p><div class="campaign-actions"><button type="submit" class="primary">Save draft</button><button type="button" id="oem-approve">Approve program</button><button type="button" id="oem-withdraw">Withdraw program</button></div>
   </form></dialog>
 </section>

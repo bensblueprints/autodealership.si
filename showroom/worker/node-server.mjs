@@ -431,6 +431,12 @@ createServer(async(req,res)=>{
         fingerprint:value=>createHash("sha256").update(value).digest("hex"),uuid:randomUUID});
       return send(result.status,result.data);
     }
+    if(route.pathname==="/api/website-offers"){
+      const headers={"Content-Type":"application/json","Cache-Control":"private, no-store","X-Robots-Tag":"noindex"};
+      if(req.method!=="GET"){res.writeHead(405,{...headers,Allow:"GET"}).end();return;}
+      const offers=(await worker.websiteOffers(db,!!tenant)).map(({id,...publicOffer})=>publicOffer);
+      res.writeHead(200,headers).end(JSON.stringify(offers));return;
+    }
     if(route.pathname==="/api/oem-programs"){
       const headers={"Content-Type":"application/json","Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"};
       const send=(code,data)=>res.writeHead(code,headers).end(JSON.stringify(data));
@@ -443,7 +449,7 @@ createServer(async(req,res)=>{
       }
       const actor=(clerkRole||platformStaff)?claims.subject:grant?(grant.engineer?"engineer:"+grant.engineer:"platform owner"):account?.email||"dealer administrator";
       const exportId=route.searchParams.get("export");
-      const result=await worker.oemProgramsApi({db,method:req.method,input,actor,canReview:!!managesUsers||clerkRole==="org:admin",exportId});
+      const result=await worker.oemProgramsApi({db,method:req.method,input,actor,canReview:!!managesUsers||clerkRole==="org:admin",exportId,tenant:!!tenant});
       if(req.method==="GET" && exportId && result.status===200)headers["Content-Disposition"]='attachment; filename="oem-program-'+exportId+'.json"';
       return send(result.status,result.data);
     }
@@ -673,7 +679,7 @@ createServer(async(req,res)=>{
         const config=row?.config??{enabled:false,slides:[]};
         const settings=(await db.query("SELECT settings->'profile'->>'siteTemplate' AS template,settings->'profile'->>'driveTimezone' AS timezone FROM client_profile WHERE id=1")).rows[0]||{};
         const franchise=settings.template==="franchise",timezone=settings.timezone||"America/Chicago";
-        const checked=await worker.governedSlides(db,config.slides||[],franchise,timezone);
+        const checked=await worker.governedSlides(db,config.slides||[],franchise,timezone,!!tenant);
         if(editor){
           const art=(await pool.query("SELECT id,layout,title FROM public.template_hero_art ORDER BY layout,title,id")).rows;
           return reply(200,{...config,art,revision:row?.revision??0,franchise,timezone,states:checked.map(row=>row.status)});
@@ -793,6 +799,14 @@ createServer(async(req,res)=>{
       if((clerkRole || platformStaff || tenantDesk) && response.headers.get("content-type").includes("html") && ["/dealer","/dealer.html"].includes(route.pathname))content=content.replace("</head>",clerkScript+'<script>window.dealerClerkReady=Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});window.dealerClerkReady.catch(()=>{});</script></head>');
       if(prefix)content=content.replace(/(["'`])\/(?!\/)(?=(?:api\/|dealer-login|bhph\.|banner|inventory|index\.html))/g,"$1"+prefix+"/");
       if(tenant && response.headers.get("content-type").includes("html"))content=content.replaceAll("Capital City CDJR",tenant.name.replace(/[&<>"]/g,x=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[x])));
+      let publishedOfferHtml="";
+      if(vehicleFacts || page?.group==="Specials"){
+        const offers=await worker.websiteOffers(db,!!tenant);
+        const kind=vehicleFacts?"vehicle":"page",key=vehicleFacts?.vin||page.key;
+        const slot='<div id="website-offers"></div>';
+        publishedOfferHtml=worker.WebsiteOffers.markup(offers,kind,key);
+        content=content.replace(slot,()=>'<div id="website-offers">'+publishedOfferHtml+'</div>');
+      }
       if(vehicleFacts){
         const {label,vin,car}=vehicleFacts;
         const facts=[["VIN",vin],["Stock number",car.stock],["Body style",car.body],["Fuel",car.fuel],["Transmission",car.transmission],["Exterior color",car.color],["Mileage",car.miles!=null?car.miles+" mi":null],["Cash price",showCash && Number(car.price)>0?Number(car.price).toLocaleString("en-US",{style:"currency",currency:"USD"}):null]].filter(([,value])=>value);
@@ -806,7 +820,7 @@ createServer(async(req,res)=>{
           try{const u=new URL(car.image,origin+"/");if(u.protocol==="https:" && !u.username && !u.password)photo=u.href;}catch{}
         }
         const initial=photo?'<img class="initial-photo" src="'+esc(photo)+'" alt="'+esc(label)+'" fetchpriority="high">'+(car.image_type==="stock"?'<small>Representative manufacturer photo</small>':''):'';
-        const summary='<section class="page-section" id="vehicle-facts"><h1>'+esc(label)+'</h1>'+initial+'<dl class="overview-grid">'+facts.map(([key,value])=>'<div><dt>'+esc(key)+'</dt><dd>'+esc(value)+'</dd></div>').join("")+'</dl></section>';
+        const summary='<section class="page-section" id="vehicle-facts"><h1>'+esc(label)+'</h1>'+initial+publishedOfferHtml+'<dl class="overview-grid">'+facts.map(([key,value])=>'<div><dt>'+esc(key)+'</dt><dd>'+esc(value)+'</dd></div>').join("")+'</dl></section>';
         const data={"@context":"https://schema.org","@type":"Vehicle",name:label,url:origin+seo.path,vehicleIdentificationNumber:vin};
         for(const [key,value] of Object.entries({model:car.model,vehicleModelDate:car.year,sku:car.stock,bodyType:car.body,fuelType:car.fuel,vehicleTransmission:car.transmission})){
           if(value)data[key]=value;

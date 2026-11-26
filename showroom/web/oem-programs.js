@@ -4,11 +4,41 @@
   const states={draft:"Draft",approved:"Approved internally",withdrawn:"Withdrawn"};
   const el=(tag,value)=>Object.assign(document.createElement(tag),{textContent:value});
   let current,canReview=false,busy=false,loadVersion=0;
+  const web=form.elements.useWebsiteOffer,headline=form.elements.offerHeadline,page=form.elements.offerPage;
+  const search=byId("oem-stock-search"),choices=byId("oem-stock-list");
+  const selected=new Set();
   function read(){
-    return Object.fromEntries(fields.map(k=>[k,form.elements.namedItem(k).value.trim()]));
+    const result=Object.fromEntries(fields.map(k=>[k,form.elements.namedItem(k).value.trim()]));
+    if(web.checked)result.websiteOffer={headline:headline.value.trim(),page:page.value,vins:[...selected].sort()};
+    return result;
   }
+  function showStock(){
+    const cars=Store.cars(),listed=new Map(cars.map(c=>[c.vin,c])),q=search.value.trim().toLowerCase();
+    const title=c=>[c.stock?"Stock "+c.stock:"",c.year,c.make,c.model,c.vin].filter(Boolean).join(" · ");
+    const offered=cars.filter(c=>/^[A-HJ-NPR-Z0-9]{17}$/.test(c.vin) && !["sold","deleted","reserved"].includes(String(c.status||"").toLowerCase()) && !selected.has(c.vin) && title(c).toLowerCase().includes(q));
+    choices.replaceChildren();
+    for(const vin of [...selected,...offered.slice(0,12).map(c=>c.vin)]){
+      const car=listed.get(vin),label=el("label",""),check=document.createElement("input");
+      label.className="oem-choice";check.type="checkbox";check.checked=selected.has(vin);check.value=vin;
+      check.disabled=!check.checked && selected.size>=50;
+      check.onchange=()=>{if(check.checked)selected.add(vin);else selected.delete(vin);showStock();buttons();choices.querySelector('input[value="'+vin+'"]')?.focus();};
+      label.append(check,car?title(car):"Unavailable vehicle · "+vin);choices.append(label);
+    }
+    byId("oem-stock-count").textContent=selected.size?selected.size+" selected. The offer appears on these listings and leaves the website if all become unavailable.":
+      "With no vehicles selected, this offer appears only on its published specials page.";
+    if(!offered.length && !selected.size)choices.append(el("p","No matching available vehicles."));
+  }
+  function placement(){
+    byId("oem-web-fields").hidden=!web.checked;headline.required=web.checked;
+    const visible=DealerPages.list().some(p=>p.key===page.value && p.enabled);
+    byId("oem-page-status").textContent=visible?"This specials page is published.":"This specials page is hidden. Enable it in Website pages to display offers there.";
+    if(web.checked)showStock();
+  }
+  search.oninput=showStock;page.onchange=web.onchange=()=>{placement();buttons();};
   function buttons(){
-    const unchanged=current && fields.every(k=>read()[k]===current.details[k]);
+    const values=read(),saved=current?.details.websiteOffer;
+    const unchanged=current && fields.every(k=>values[k]===current.details[k]) && (web.checked?
+      saved && saved.headline===headline.value.trim() && saved.page===page.value && JSON.stringify(saved.vins)===JSON.stringify(values.websiteOffer.vins):!saved);
     const reviewing=canReview && current?.state==="draft";
     byId("oem-attest").hidden=byId("oem-approve").hidden=!reviewing;
     byId("oem-withdraw").hidden=!canReview || !current || current.state==="withdrawn";
@@ -20,6 +50,10 @@
   function open(row){
     current=row;newId=row?.program_id||crypto.randomUUID();form.reset();
     for(const k of fields)form.elements.namedItem(k).value=row?.details[k]||"";
+    const offer=row?.details.websiteOffer;web.checked=!!offer;headline.value=offer?.headline||"";search.value="";
+    page.replaceChildren(...DealerSitePages.catalog.filter(p=>p.group==="Specials").map(p=>new Option(p.title,p.key)));
+    page.value=offer?.page||"new-specials";selected.clear();for(const vin of offer?.vins||[])selected.add(vin);placement();
+    Promise.all([Store.profileReady,Store.inventoryReady]).then(()=>{if(dialog.open)placement();});
     byId("oem-heading").textContent=row?states[row.state]+" · Revision "+row.revision:"New OEM program";
     byId("oem-revision-note").textContent=row?.state==="approved"?"Saving a new draft or withdrawing this revision removes its linked offers from the storefront.":"Offer dates use the dealership’s configured time zone.";
     byId("oem-form-status").textContent="";buttons();dialog.showModal();
@@ -32,10 +66,21 @@
       if(!r.ok)throw Error("Sign in to view programs or reopen this tab to retry.");
       const data=await r.json();if(serial!==loadVersion)return;
       canReview=data.canReview;byId("oem-new").disabled=false;list.replaceChildren();
-      if(!data.programs.length)list.append(el("p","Add the manufacturer's offer bulletin to prepare a reviewed homepage promotion."));
+      if(!data.programs.length)list.append(el("p","Add the manufacturer's offer bulletin to prepare a website promotion for review."));
       for(const row of data.programs){
         const card=el("article",""),summary=el("div",""),actions=el("div",""),d=row.details;
         summary.append(el("strong",d.title),el("p",d.brand+" · "+d.market+" · "+d.startsOn+" to "+d.endsOn),el("small",states[row.state]+" · Revision "+row.revision+" · "+d.version));
+        if(row.website){
+          const report=el("p",""),status=el("strong",row.website.status);
+          status.className="oem-publication-state";status.dataset.live=String(row.website.status==="Live");report.append(status);
+          if(row.website.status==="Live"){
+            const destinations=[];
+            if(row.website.page)destinations.push(DealerSitePages.catalog.find(p=>p.key===row.website.page)?.title);
+            if(row.website.vehicles)destinations.push(row.website.vehicles+" vehicle listing"+(row.website.vehicles===1?"":"s"));
+            report.append(" "+destinations.filter(Boolean).join(" · "));
+          }else if(row.website.status==="No eligible placement")report.append(" Check page visibility, available stock and financing settings.");
+          summary.append(report);
+        }
         const edit=el("button",row.state==="draft" && canReview?"Review draft":"Open program");edit.onclick=()=>open(row);
         const evidence=el("a","Download evidence");evidence.href="api/oem-programs?export="+encodeURIComponent(row.program_id);evidence.download="";
         actions.className="campaign-actions";actions.append(edit,evidence);card.append(summary,actions);list.append(card);
@@ -50,7 +95,7 @@
       const response=await fetch("api/oem-programs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
         action,id:newId,revision:current?.revision||0,details:read(),checked:form.elements.namedItem("checked").checked})});
       const result=await response.json();if(!response.ok)throw Error(result.error||"Unable to save the program.");
-      dialog.close();await load({save:"Draft saved.",approve:"Program approved. Review the linked artwork in Homepage banners.",withdraw:"Program withdrawn. Its banners are no longer eligible to display."}[action]);
+      dialog.close();await load({save:"Draft saved.",approve:"Program approved. Website offers follow the saved dates. Homepage artwork has a separate review.",withdraw:"Program withdrawn. Its offers have been removed from the website."}[action]);
       window.dispatchEvent(new Event("oem-programs-changed"));
     }catch(error){byId("oem-form-status").textContent=error.message;}
     finally{busy=false;buttons();}

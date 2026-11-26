@@ -24,6 +24,14 @@ function oemDetails(value){
     result[key]=value[key].trim();
     if(!result[key] && key!=="acceptance")return;
   }
+  if(value.websiteOffer!=null){
+    const offer=value.websiteOffer;
+    if(typeof offer.headline!=="string" || !offer.headline.trim() || offer.headline.length>140 ||
+      !DealerSitePages.catalog.some(item=>item.group==="Specials" && item.key===offer.page) ||
+      !Array.isArray(offer.vins) || offer.vins.length>50 || !offer.vins.every(v=>typeof v==="string" && /^[A-HJ-NPR-Z0-9]{17}$/.test(v)) ||
+      new Set(offer.vins).size!==offer.vins.length)return;
+    result.websiteOffer={headline:offer.headline.trim(),page:offer.page,vins:[...offer.vins].sort()};
+  }
   if(!oemDay(result.startsOn)||!oemDay(result.endsOn)||result.startsOn>result.endsOn)return;
   return result;
 }
@@ -40,7 +48,7 @@ async function oemDigest(slide){
   const bytes=new TextEncoder().encode(JSON.stringify([slide.program.id,slide.program.revision,slide.image,slide.alt,slide.link]));
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes)),b=>b.toString(16).padStart(2,"0")).join("");
 }
-export async function governedSlides(db,slides,franchise,timezone){
+export async function governedSlides(db,slides,franchise,timezone,tenant=true){
   const results=slides.map(slide=>({slide,status:slide.program?"Program needs approval":"Standard banner"}));
   const linked=results.filter(row=>oemBinding(row.slide));
   if(linked.length){
@@ -62,11 +70,16 @@ export async function governedSlides(db,slides,franchise,timezone){
       if(now<+new Date(p.starts)){row.status="Scheduled";return;}
       row.status="Approved";row.disclosure=p.details.disclosure;row.expiresAt=new Date(p.ends).toISOString();
     });
+    const scoped=linked.filter(row=>row.status==="Approved" && byId.get(row.slide.program.id)?.details.websiteOffer);
+    if(scoped.length){
+      const active=new Set((await websiteOffers(db,tenant)).map(offer=>offer.id));
+      for(const row of scoped)if(!active.has(row.slide.program.id))row.status="No eligible website placement";
+    }
   }
   for(const row of results)if(!row.slide.program && franchise)row.status="Program required";
   return results;
 }
-export async function oemProgramsApi({db,method,input,actor,canReview,exportId}){
+export async function oemProgramsApi({db,method,input,actor,canReview,exportId,tenant=true}){
   await ensureOemTables(db);
   if(method==="GET"){
     if(exportId!==null && exportId!==undefined){
@@ -76,7 +89,20 @@ export async function oemProgramsApi({db,method,input,actor,canReview,exportId})
       const approvals=(await db.query("SELECT * FROM oem_banner_reviews WHERE program_id=$1 ORDER BY approved_at,digest",[exportId])).rows;
       return oemResult(200,{exportedAt:new Date().toISOString(),revisions,approvals});
     }
-    return oemResult(200,{programs:await listPrograms(db),canReview});
+    const programs=await listPrograms(db);
+    if(programs.some(row=>row.details.websiteOffer)){
+      const live=new Map((await websiteOffers(db,tenant)).map(offer=>[offer.id,offer]));
+      const {today}=(await db.query(`SELECT to_char(now() AT TIME ZONE coalesce(
+        (SELECT settings->'profile'->>'driveTimezone' FROM client_profile WHERE id=1),'America/Chicago'),'YYYY-MM-DD') AS today`)).rows[0];
+      for(const row of programs){
+        if(!row.details.websiteOffer)continue;
+        const offer=live.get(row.program_id);
+        const status=row.state==="draft"?"Awaiting approval":row.state==="withdrawn"?"Withdrawn":
+          today<row.details.startsOn?"Scheduled":today>row.details.endsOn?"Expired":offer?"Live":"No eligible placement";
+        row.website={status,page:offer?.page||null,vehicles:offer?.cars.length||0};
+      }
+    }
+    return oemResult(200,{programs,canReview});
   }
   if(method!=="POST")return oemFailure(405,"Unsupported method.");
   if(!input || typeof input.id!=="string" || !oemUUID.test(input.id) || !Number.isSafeInteger(input.revision) || input.revision<0)return oemFailure(400,"Invalid program or revision.");
@@ -102,10 +128,47 @@ export async function oemProgramsApi({db,method,input,actor,canReview,exportId})
   if(!details)return oemFailure(422,"Complete the brand, market, source, version, dates and public disclosure.");
   if(action==="approve" && (current?.state!=="draft" || input.checked!==true))return oemFailure(422,"Review the saved draft and confirm the source before approving.");
   if(action==="withdraw" && (!current || current.state==="withdrawn"))return oemFailure(409,"This program cannot be withdrawn.");
+  if((action==="save" || action==="approve") && details.websiteOffer?.vins.length){
+    const selected=await offerInventory(db,details.websiteOffer.vins);
+    if(selected.length!==details.websiteOffer.vins.length)return oemFailure(422,"One or more selected vehicles are unavailable. Review the stock list.");
+  }
   const state={save:"draft",approve:"approved",withdraw:"withdrawn"}[action];
   const saved=await db.query(`INSERT INTO oem_program_revisions(program_id,revision,state,details,actor) VALUES($1,$2,$3,$4,$5)
     ON CONFLICT(program_id,revision) DO NOTHING RETURNING revision,state`,[id,revision+1,state,details,actor]);
   return saved.rowCount?oemResult(200,saved.rows[0]):oemFailure(409,"Another editor saved this program. Refresh to review their changes.");
+}
+
+
+async function offerInventory(db,vins){
+  if(!vins.length)return [];
+  return (await db.query(`SELECT vin,body->>'stock' AS stock,concat_ws(' ',body->>'year',body->>'make',body->>'model') AS label,
+    coalesce(body->>'financingEnabled','true')<>'false' AND coalesce(body->>'aprFinancingEnabled','true')<>'false' AS apr
+    FROM client_cars c WHERE vin=ANY($1::text[]) AND NOT EXISTS(SELECT 1 FROM inventory_status s WHERE s.vin=c.vin)
+    AND lower(coalesce(body->>'status','')) NOT IN ('sold','deleted','reserved') ORDER BY vin`,[vins])).rows;
+}
+
+export async function websiteOffers(db,tenant){
+  if(!(await db.query("SELECT to_regclass('oem_program_revisions') AS present")).rows[0].present)return [];
+  const settings=(await db.query(`SELECT settings->'profile'->>'siteTemplate' AS template,settings->'profile'->>'driveTimezone' AS zone,
+    settings->'pages' AS pages,settings->>'financingEnabled' AS finance,settings->'options'->>'aprFinancingEnabled' AS apr
+    FROM client_profile WHERE id=1`)).rows[0]||{};
+  const apr=settings.finance!=="false" && settings.apr!=="false";
+  const visible=new Set(DealerSitePages.list({pages:settings.pages,profile:{siteTemplate:settings.template}},tenant,apr).filter(p=>p.enabled).map(p=>p.key));
+  const programs=(await db.query(`SELECT program_id AS id,details->'websiteOffer' AS offer,details->>'disclosure' AS disclosure,
+    details->>'endsOn' AS day,(((details->>'endsOn')::date+1)::timestamp AT TIME ZONE $1) AS expires
+    FROM (SELECT DISTINCT ON(program_id) program_id,state,details FROM oem_program_revisions ORDER BY program_id,revision DESC) latest
+    WHERE state='approved' AND details ? 'websiteOffer' AND (now() AT TIME ZONE $1)::date BETWEEN
+    (details->>'startsOn')::date AND (details->>'endsOn')::date ORDER BY expires,program_id`,[settings.zone||"America/Chicago"])).rows;
+  const selected=await offerInventory(db,[...new Set(programs.flatMap(row=>row.offer.vins))]);
+  const inventory=new Map(selected.map(car=>[car.vin,car]));
+  return programs.flatMap(({id,offer,disclosure,day,expires})=>{
+    const financing=DealerSitePages.requiresApr.has(offer.page);
+    if(financing && !apr)return [];
+    const cars=offer.vins.map(v=>inventory.get(v)).filter(car=>car && (!financing || car.apr)).map(({vin,stock,label})=>({vin,stock,label}));
+    const page=visible.has(offer.page)?offer.page:null;
+    if((offer.vins.length && !cars.length) || (!page && !cars.length))return [];
+    return [{id,headline:offer.headline,disclosure,day,expiresAt:expires.toISOString(),page,cars}];
+  });
 }
 
 const rooftopArtTable="oem_dealer_art";
