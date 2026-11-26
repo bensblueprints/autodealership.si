@@ -17,7 +17,7 @@
     if (!Facets.matches(car)) return false;
     if(selectedIds)return selectedIds.has(String(car.id)) && (!category || car.body===category);
     const words = query.trim().toLowerCase();
-    const haystack=[title(car),car.trim,car.body,car.id,car.stock,car.vin,car.miles,miles(car),car.price,currency(car.price),car.fuel,car.transmission,car.engine,car.color,car.doors,car.location,car.status,...(car.features || [])].join(' ').toLowerCase();
+    const haystack=[title(car),car.trim,car.body,car.id,car.stock,car.vin,car.miles,miles(car),car.price,currency(car.price),car.fuel,car.transmission,car.engine,car.color,car.interior,InventorySearch.drivetrain(car),car.doors,car.location,car.status,...(car.features || [])].join(' ').toLowerCase();
     return (!savedOnly || saved.includes(String(car.id))) && (!category || car.body===category) && (!words || words.split(/\s+/).every(word => haystack.includes(word)));
   }
   function card(car) {
@@ -28,15 +28,71 @@
   }
   const pageSize=24;
   const initialParams=new URLSearchParams(location.search);
-  let page=0,previousResults='',landingReady=!pageFilter && !window.postgresInventory;
-  if(pageFilter){query=initialParams.get("search")||"";$("search").value=query;}
-  function pageLocation(){
-    if(!pageFilter)return;
-    const url=new URL(location.href);
-    if(page>0)url.searchParams.set("p",page+1);else url.searchParams.delete("p");
-    if(query.trim())url.searchParams.set("search",query.trim());else url.searchParams.delete("search");
-    history.replaceState(history.state,"",url);
+  let page=0,previousResults=null,landingReady=false,pageToOpen=Number(initialParams.get("p"))||1;
+  let scrollToSearch=false, projectedHash="", chipSignature="", restoredState=null;
+  function readLocation(){
+    const incoming=InventorySearch.read(location.hash,Facets.fields);
+    savedOnly=false;selectedIds=null;category="";previousResults=null;
+    if(incoming){Facets.restore(incoming);restoredState=incoming;query=incoming.query;pageToOpen=incoming.page;scrollToSearch=true;}
+    else{
+      Facets.reset();query=pageFilter?new URLSearchParams(location.search).get("search")||"":"";
+      pageToOpen=pageFilter?Number(new URLSearchParams(location.search).get("p"))||1:1;
+    }
+    $("search").value=query;
   }
+  readLocation();
+  function updateSearch(){
+    const share=$("share-search"),url=new URL(location.href);
+    const shareable=!savedOnly && !selectedIds;
+    const state={...Facets.searchState(),query,page:1};
+    const criteria=shareable && InventorySearch.write(state);
+    projectedHash=shareable?InventorySearch.write({...state,page:page+1}):"";
+    share.hidden=!projectedHash;
+    if(criteria || (!pageFilter && projectedHash)){
+      url.hash=projectedHash;url.searchParams.delete("search");url.searchParams.delete("p");
+    }else{
+      if(url.hash.startsWith("#inventory?"))url.hash="inventory";
+      if(pageFilter){
+        url.searchParams.delete("search");
+        if(page>0)url.searchParams.set("p",page+1);else url.searchParams.delete("p");
+      }
+    }
+    if(url.href!==location.href){try{history.replaceState(history.state,"",url);}catch{/* The explicit copy action also works when browser history updates are limited. */}}
+    if(restoredState){
+      const prior=restoredState;restoredState=null;
+      if(prior.selected.some(([key])=>!state.selected.some(([k])=>k===key)) || prior.equipment.length>state.equipment.length || prior.mode!==state.mode || (prior.bhph && !state.bhph) || (prior.down!==null && state.down==="") || (prior.frequency && !state.frequency) || (prior.installment!==null && state.installment==="") || (prior.maximum!==null && state.maximum===null) || (prior.minimum!==null && state.minimum===null)){
+        $("search-feedback").textContent="Some filters in this link are disabled by the dealership. The applied filters are shown below.";
+      }
+    }
+    const chips=Facets.chips();
+    if(query.trim() && shareable)chips.unshift(["q","Search · "+query.trim()]);
+    const signature=JSON.stringify(chips);
+    if(signature!==chipSignature){
+      chipSignature=signature;
+      const group=$("active-search");group.hidden=!chips.length;group.replaceChildren();
+      for(const [key,label] of chips){
+        const b=document.createElement("button");b.type="button";b.dataset.remove=key;b.textContent=label+" ×";b.setAttribute("aria-label","Remove "+label);group.append(b);
+      }
+    }
+    if(!$("search-link-fallback").hidden && $("search-link-fallback").querySelector("input").value!==shareUrl())$("search-link-fallback").hidden=true;
+  }
+  function shareUrl(){return projectedHash?location.origin+location.pathname+projectedHash:"";}
+  $("share-search").onclick=async()=>{
+    const url=shareUrl();if(!url)return;
+    try{await navigator.clipboard.writeText(url);$("search-feedback").textContent="Search link copied.";}
+    catch{const box=$("search-link-fallback"),input=box.querySelector("input");input.value=url;box.hidden=false;input.focus();input.select();$("search-feedback").textContent="Select and copy the search link.";}
+  };
+  $("active-search").onclick=e=>{
+    const button=e.target.closest("[data-remove]");if(!button)return;
+    const index=[...button.parentElement.children].indexOf(button);
+    if(button.dataset.remove==="q"){query="";$("search").value="";}else Facets.remove(button.dataset.remove);
+    render();
+    const children=$("active-search").children;
+    (children[Math.min(index,children.length-1)]||$("search")).focus({preventScroll:true});
+  };
+  window.addEventListener("hashchange",e=>{
+    if([e.oldURL,e.newURL].some(h=>new URL(h).hash.startsWith("#inventory?"))){readLocation();render();}
+  });
   function showLotContact(){
     const strip=$("lot-contact"),profile=Store.settings().profile||{};
     strip.replaceChildren();strip.hidden=!document.body.classList.contains("compact-lot");if(strip.hidden)return;
@@ -124,10 +180,10 @@
     Facets.sync(active);
     const shelf=(name,records)=>'<section class="shelf"><div class="shelfheading"><h3>'+escape(name)+'</h3><div><button data-scroll="-1" aria-label="Scroll '+escape(name)+' left">←</button><button data-scroll="1" aria-label="Scroll '+escape(name)+' right">→</button></div></div><div class="rail">'+records.map(card).join('')+'</div></section>';
     const signature=filtered.map(car=>car.id).join('|')+Facets.layout;
-    if(previousResults!==signature){page=previousResults||!pageFilter?0:Math.max(0,(Number(initialParams.get('p'))||1)-1);previousResults=signature;}
+    if(previousResults!==signature){page=previousResults===null && Number.isSafeInteger(pageToOpen)?Math.max(0,pageToOpen-1):0;previousResults=signature;}
     const pages=Math.ceil(filtered.length/pageSize);
     page=Math.max(0,Math.min(page,pages-1));
-    if(pageFilter)pageLocation();
+    updateSearch();
     const batch=filtered.slice(page*pageSize,(page+1)*pageSize);
     const budget=filtered.filter(car=>exists(car.price)&&car.price<30000).slice(0,8);
     const utility=filtered.filter(car=>['SUV','Truck'].includes(car.body)).slice(0,8);
@@ -155,6 +211,7 @@
       $('herospec').textContent=[hero.trim,miles(hero),currency(hero.price),hero.imageType==="stock"?"Representative photo":""].filter(Boolean).join('  ·  ');
       $('slidecount').textContent=String(slide%list.length+1).padStart(2,'0')+' / '+String(list.length).padStart(2,'0');
     }
+    if(scrollToSearch){scrollToSearch=false;requestAnimationFrame(()=>$('inventory').scrollIntoView({block:'start'}));}
     return filtered;
   }
   function jump() { $('inventory').scrollIntoView({behavior:'smooth'}); }
@@ -202,7 +259,7 @@
   $('assistantlaunch').onclick=()=>window.dispatchEvent(new Event('open-assistant'));
   window.addEventListener('showroom:update',render);
   window.addEventListener('storage',render);
-  if(!landingReady)Promise.all([Store.inventoryReady,Store.profileReady]).then(()=>{landingReady=true;render();});else render();
+  Promise.all([Store.inventoryReady,Store.profileReady]).then(()=>{landingReady=true;render();});
   const initialCar = new URLSearchParams(location.search).get('vehicle');
   if (initialCar) location.replace("vehicle.html?stock="+encodeURIComponent(initialCar));
 })();

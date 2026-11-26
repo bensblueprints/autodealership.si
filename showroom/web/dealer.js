@@ -4,7 +4,7 @@
   const fmt = new Intl.NumberFormat("en-US");
   const statuses=["New","Contacted","Appointment set","Closed"];
   const form=$("carForm");
-  const textFields=["stock","make","model","trim","body","fuel","transmission","engine","color","interior","location","status","condition","vin"];
+  const textFields=["stock","make","model","trim","body","fuel","transmission","engine","color","interior","drivetrain","location","status","condition","vin"];
   const optionalNumbers=["doors","msrp","adminFee"];
   let editing=null,noticeTimer;
   function node(tag,text,cls) {

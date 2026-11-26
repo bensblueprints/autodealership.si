@@ -51,7 +51,7 @@ function validateProfile(input){
     pages[key]=entry;
   }
   const options={};
-  for(const key of "year make model trim features fuel transmission miles engine color body doors location status price cash finance lease compare pricing payment trade availability financingEnabled aprFinancingEnabled".split(" ")){
+  for(const key of "year make model trim features fuel transmission miles engine color interior drivetrain body doors location status price cash finance lease compare pricing payment trade availability financingEnabled aprFinancingEnabled".split(" ")){
     if(typeof input.options?.[key]==="boolean")options[key]=input.options[key];
   }
   const tradeUrl=input.tradeUrl||"";

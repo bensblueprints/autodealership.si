@@ -556,7 +556,7 @@ createServer(async(req,res)=>{
         schedules.push({...{frequency:choice.frequency,months:choice.months},count,payment,final:balance-payment*(count-1)});
       }
       const offer=JSON.stringify({enabled:data.enabled,cash:data.cash,price:data.price,down:data.down,override:data.override,balance,schedules});
-      const result=data.revision===0?await db.query("INSERT INTO bhph_offers VALUES($1,1,$2) ON CONFLICT DO NOTHING RETURNING revision",[vehicle,offer]):
+      const result=data.revision===0?await db.query("INSERT INTO bhph_offers(vehicle,revision,offer) VALUES($1,1,$2) ON CONFLICT DO NOTHING RETURNING revision",[vehicle,offer]):
         await db.query("UPDATE bhph_offers SET offer=$2,revision=revision+1 WHERE vehicle=$1 AND revision=$3 RETURNING revision",[vehicle,offer,data.revision]);
       return result.rowCount?reply(200,result.rows[0]):reply(409,{error:"Pricing changed in another session. Reopen the editor."});
     }

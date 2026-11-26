@@ -16,7 +16,7 @@
 #lot-contact a{color:inherit;font-weight:700}
 body[data-inventory-page] .hero,body[data-inventory-page] #lot-contact,body[data-inventory-page] #sale-slides{display:none}
 .inventory-page-title{font-size:clamp(1.7rem,4vw,3rem);line-height:1.1;letter-spacing:-.04em;margin:.5rem 0}.inventory-page-intro{max-width:65ch;color:var(--muted);white-space:pre-line}
-.compact-lot #inventory .shelftop .eyebrow,.compact-lot:not(:has(#filterpanel[open])) #featurestrip,.compact-lot .layout-switch{display:none}
+.compact-lot #inventory .shelftop .eyebrow,.compact-lot:not(:has(#filterpanel[open])) #featurestrip,.compact-lot .layout-switch [data-layout="browse"]{display:none}
 .compact-lot #cards:not(.list-layout){display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));align-items:start}
 .compact-lot .hero{min-height:clamp(260px,48vh,540px)}
 .retail-actions a.drive-link{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:6px 10px;background:var(--acid);color:#101610;border-radius:6px;font-weight:700;text-decoration:none;font-size:.85rem}

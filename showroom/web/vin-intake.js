@@ -18,7 +18,7 @@
     const engine=[size>0 && size.toFixed(1)+" L",cylinders>0 && cylinders+"-cylinder",clean(r.EngineModel)].filter(Boolean).join(" · ");
     const standard={BlindSpotMon:"Blind spot monitoring",RearVisibilitySystem:"Backup camera",AdaptiveCruiseControl:"Adaptive cruise control",LaneDepartureWarning:"Lane departure warning",ForwardCollisionWarning:"Forward collision warning",ABS:"Anti-lock brakes",ESC:"Electronic stability control"};
     const features=[clean(r.DriveType),...Object.entries(standard).filter(([key])=>r[key]==="Standard").map(([,label])=>label)].filter(Boolean);
-    return {year:r.ModelYear,make:r.Make,model:r.Model,trim:r.Trim,body,fuel:[clean(r.FuelTypePrimary),clean(r.FuelTypeSecondary)].filter(Boolean).join(" / "),transmission:r.TransmissionStyle,engine,doors:r.Doors,features:features.join("\n")};
+    return {year:r.ModelYear,make:r.Make,model:r.Model,trim:r.Trim,body,drivetrain:clean(r.DriveType),fuel:[clean(r.FuelTypePrimary),clean(r.FuelTypeSecondary)].filter(Boolean).join(" / "),transmission:r.TransmissionStyle,engine,doors:r.Doors,features:features.join("\n")};
   }
   window.applyStickerFields=(record)=>{
     if(record.vin!==normalize(fields.vin.value))return;

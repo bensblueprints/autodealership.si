@@ -16,4 +16,10 @@
 #bhph-filter label{display:grid;gap:.3rem;color:var(--muted);font-size:.77rem}
 #bhph-filter .bhph-check{display:flex;align-items:center;gap:.5rem}
 #bhph-filter :is(input:not([type=checkbox]),select){width:100%;min-width:0;background:var(--surface);color:var(--ink);border:1px solid var(--hair);border-radius:.35rem;padding:.4rem}
+#active-search:not([hidden]){display:flex;flex-wrap:wrap;gap:.45rem;margin:0 0 1rem}
+#active-search button,#share-search{border:1px solid var(--hair);border-radius:.5rem;background:var(--card);color:var(--ink);font:inherit;font-size:.81rem;padding:.46rem .72rem}
+#active-search button{border-radius:2rem;overflow-wrap:anywhere;text-align:left}
+#active-search button:focus-visible,#share-search:focus-visible{outline:2px solid var(--acid);outline-offset:2px}
+#search-feedback:empty{display:none}#search-feedback,#search-link-fallback{font-size:.85rem;color:var(--ink)}
+#search-link-fallback:not([hidden]){display:grid;gap:.4rem;margin-bottom:.8rem}#search-link-fallback input{width:100%;color:var(--ink);background:var(--control)}
 @media(max-width:760px){#shopping-shortcuts:not([hidden]){flex-wrap:nowrap;overflow:auto}#shopping-shortcuts :is(a,button){white-space:nowrap}}

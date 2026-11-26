@@ -3,7 +3,7 @@
   const fields = {
     year: "Year", make: "Make", model: "Model", trim: "Trim", features: "Features",
     fuel: "Fuel type", transmission: "Transmission", miles: "Mileage", engine: "Engine",
-    color: "Color", body: "Body style", doors: "Doors", location: "Location", status: "Status"
+    color: "Exterior color", interior: "Interior", drivetrain: "Drivetrain", body: "Body style", doors: "Doors", location: "Location", status: "Status"
   };
   const iconNames = {
     "year": "clock-outline",
@@ -17,6 +17,8 @@
     "engine": "engine",
     "color": "format-color-fill",
     "body": "car-side",
+    "interior": "car-seat",
+    "drivetrain": "axis-arrow",
     "doors": "car-door",
     "location": "map-marker",
     "status": "car-connected",
@@ -69,6 +71,42 @@
     selected.clear();
     equipment.clear();
     minimum = maximum = null;
+    mode="cash";sort="recommended";
+  }
+  const facetValue=(car,key)=>key==="drivetrain"?InventorySearch.drivetrain(car):String(car[key]??"").trim();
+  function searchState(){
+    return {selected:[...selected],equipment:[...equipment],mode,minimum,maximum,sort,layout,
+      bhph:get("bhph-only").checked,down:get("max-cash-down").value,frequency:get("bhph-frequency").value,installment:get("bhph-installment").value};
+  }
+  function restore(s){
+    reset();
+    for(const [key,value] of s.selected)selected.set(key,value);
+    for(const key of s.equipment)equipment.add(key);
+    ({mode,minimum,maximum,sort,layout}=s);
+    get("bhph-only").checked=s.bhph;get("max-cash-down").value=s.down??"";
+    get("bhph-frequency").value=s.frequency;get("bhph-installment").value=s.installment??"";
+  }
+  function chips(){
+    const items=[...selected].map(([key,v])=>[key,fields[key]+" · "+(key==="miles"?"Up to "+Number(v).toLocaleString("en-US")+" mi":v)]);
+    for(const key of equipment)items.push(["feature:"+key,featureCatalog.get(key)||key]);
+    if(minimum!==null)items.push(["min","Minimum "+modes[mode]+" · $"+minimum.toLocaleString("en-US")]);
+    if(maximum!==null)items.push(["max","Maximum "+modes[mode]+" · $"+maximum.toLocaleString("en-US")]);
+    if(get("bhph-only").checked)items.push(["bhph-only","Buy Here Pay Here"]);
+    if(get("max-cash-down").value)items.push(["max-cash-down","Down payment ≤ $"+get("max-cash-down").value]);
+    if(get("bhph-frequency").value)items.push(["bhph-frequency",get("bhph-frequency").value+" payments"]);
+    if(get("bhph-installment").value)items.push(["bhph-installment","Installment ≤ $"+get("bhph-installment").value]);
+    return items;
+  }
+  function remove(key){
+    if(key==="min")minimum=null;
+    else if(key==="max")maximum=null;
+    else if(key==="bhph-only")get(key).checked=false;
+    else if(["max-cash-down","bhph-frequency","bhph-installment"].includes(key))get(key).value="";
+    else if(key.startsWith("feature:"))equipment.delete(key.slice(8));
+    else{
+      selected.delete(key);
+      if(key==="make")selected.delete("model");
+    }
   }
   function isNarrowed() {
     return get("bhph-only").checked || !!get("bhph-frequency").value || !!get("bhph-installment").value || !!get("max-cash-down").value || selected.size > 0 || equipment.size > 0 || minimum !== null || maximum !== null;
@@ -90,7 +128,7 @@
         if (car.miles === null || car.miles === undefined || car.miles === "" || Number(car.miles)>Number(value)) return false;
       } else if (key === "make" || key === "model") {
         if (VehicleCatalog.key(car[key]) !== VehicleCatalog.key(value)) return false;
-      } else if (String(car[key] ?? "") !== value) return false;
+      } else if (facetValue(car,key).toLowerCase() !== value.toLowerCase()) return false;
     }
     if (equipment.size) {
       const features = new Set((car.features || []).map(featureKey));
@@ -153,8 +191,8 @@
     }
     indexFeatures(cars);
     const catalog = featureCatalog;
-    for (const key of equipment) if (!catalog.has(key)) equipment.delete(key);
-    const downPanel=document.getElementById("bhph-filter");downPanel.hidden=!cars.some(car=>car.bhph);if(downPanel.hidden)resetBhph();
+    if(window.clientSite?.bhph===false || Store.settings().options?.financingEnabled===false)resetBhph();
+    const downPanel=document.getElementById("bhph-filter");downPanel.hidden=!cars.some(car=>car.bhph) && !get("bhph-only").checked && !get("bhph-frequency").value && !get("bhph-installment").value && !get("max-cash-down").value;
     renderBudget(cars);
     const fieldHtml = [];
     for (const [key,label] of Object.entries(fields)) {
@@ -188,11 +226,14 @@
         let scope = selected.has("year") ? cars.filter(c=>String(c.year)===selected.get("year")) : cars;
         if ((key === "model" || key === "trim") && selected.has("make")) scope=scope.filter(c=>VehicleCatalog.key(c.make)===VehicleCatalog.key(selected.get("make")));
         if (key === "trim" && selected.has("model")) scope=scope.filter(c=>VehicleCatalog.key(c.model)===VehicleCatalog.key(selected.get("model")));
-        const values = [...new Set(scope.map(c=>String(c[key] ?? "").trim()).filter(Boolean))];
+        const byValue=new Map();
+        for(const car of scope){const v=facetValue(car,key);if(v && !byValue.has(v.toLowerCase()))byValue.set(v.toLowerCase(),v);}
+        const values=[...byValue.values()];
+        if(["drivetrain","interior"].includes(key) && !values.length && !selected.has(key))continue;
         values.sort((a,b)=>key==="year" ? Number(b)-Number(a) : a.localeCompare(b,undefined,{numeric:true}));
         choices = values.map(v=>[v,v]);
-        if (selected.has(key) && !values.includes(selected.get(key))) selected.delete(key);
       }
+      if(selected.has(key) && !choices.some(([value])=>value===selected.get(key)))choices=[[selected.get(key),selected.get(key)],...choices];
       const placeholder = key==="features" ? (equipment.size ? "Selected ("+equipment.size+")" : "Any feature") : "Any";
       fullChoices.set(key,choices);
       choices=filteredChoices(key);
@@ -206,7 +247,7 @@
     const keys = [...new Set([...equipment,...featuredKeys.filter(key=>catalog.has(key))])];
     const strip = get("featurestrip");
     strip.hidden = !enabled("features") || !keys.length;
-    strip.innerHTML=keys.map(key=>'<button data-feature="'+escape(key)+'" aria-pressed="'+equipment.has(key)+'">'+icon(key)+escape(catalog.get(key))+'</button>').join("");
+    strip.innerHTML=keys.map(key=>'<button data-feature="'+escape(key)+'" aria-pressed="'+equipment.has(key)+'">'+icon(key)+escape(catalog.get(key)||key)+'</button>').join("");
   }
   function renderBudget(cars) {
     const box = get("budget");
@@ -224,7 +265,7 @@
   function sync(active) {
     get("clearFilters").hidden = !(active || isNarrowed());
     get("sortInventory").value = sort;
-    section.querySelectorAll("[data-layout]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.layout===layout)));
+    section.querySelectorAll("[data-layout]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.layout===(compactLot && layout==="browse"?"grid":layout))));
   }
   function toggleFeature(value) { if(equipment.has(value))equipment.delete(value);else equipment.add(value); }
   function change() { window.renderShowroom(); }
@@ -280,6 +321,6 @@
   const mobile=window.matchMedia("(max-width: 760px)");
   get("filterpanel").open=!mobile.matches;
   mobile.addEventListener("change",e=>get("filterpanel").open=!e.matches);
-  window.Facets={prepare,matches,order,sync,reset,isNarrowed,amount,get paymentMode(){return enabled("price") && enabled(mode) ? mode : "cash"},get layout(){return layout},get sorted(){return sort!=="recommended"}};
+  window.Facets={fields,searchState,restore,chips,remove,prepare,matches,order,sync,reset,isNarrowed,amount,get paymentMode(){return enabled("price") && enabled(mode) ? mode : "cash"},get layout(){return layout},get sorted(){return sort!=="recommended"}};
 })();
 
