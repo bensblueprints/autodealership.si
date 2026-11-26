@@ -58,6 +58,14 @@ function validateProfile(input){
   if(tradeUrl){const u=new URL(tradeUrl);if(u.protocol!=="https:" || u.username || u.password || tradeUrl.length>4096)throw Error("Enter a valid trade provider URL.");}
   return {options,tradeUrl,dealerName:input.dealerName.trim(),financingEnabled:input.financingEnabled!==false,profile,pages};
 }
+function pageOverrides(value){
+  return Array.isArray(value)?Object.fromEntries(value.filter(p=>p?.key).map(p=>[p.key,p])):value??{};
+}
+function samePageOverrides(first,second){
+  // Preserve the distinction between an inherited field and an explicit override.
+  const signature=pages=>JSON.stringify(Object.keys(pages).sort().map(key=>[key,...["title","body","url","enabled"].map(k=>pages[key]?.[k]??null)]));
+  return signature(first)===signature(second);
+}
 async function dealershipProfile(request,env){
   const bucket=env?.BUCKET;
   if(!bucket)return profileReply({error:"Shared profile storage is unavailable."},503);
@@ -71,7 +79,18 @@ async function dealershipProfile(request,env){
   if(Number(request.headers.get("content-length"))>2000000)return profileReply({error:"Logo is too large."},413);
   try{
     const bytes=await request.text();if(bytes.length>2000000)return profileReply({error:"Logo is too large."},413);
-    const input=JSON.parse(bytes),settings=validateProfile(input),revision=input.revision;
+    const input=JSON.parse(bytes),revision=input.revision;
+    const previous=await bucket.get(profileKey);
+    if((previous?.etag??"0")!==revision)return profileReply({error:"Another edit was saved. Reopen settings to review it."},409);
+    const prior=previous?await previous.json():{};
+    const wasFranchise=prior.profile?.siteTemplate==="franchise",willBeFranchise=input.profile?.siteTemplate==="franchise";
+    let settings;
+    if(env.canReviewPages!==undefined && (wasFranchise || willBeFranchise)){
+      if(wasFranchise!==willBeFranchise && !env.canReviewPages)return profileReply({error:"A dealership administrator must change the franchise template."},403);
+      const current=pageOverrides(prior.pages);
+      if(input.pages!==undefined && !samePageOverrides(current,pageOverrides(input.pages)))return profileReply({error:"Review and publish franchise page changes in Website pages."},409);
+      settings=validateProfile({...input,pages:{}});settings.pages=current;
+    }else settings=validateProfile(input);
     if(typeof revision!=="string" || !revision)return profileReply({error:"Reload the profile before saving."},409);
     const object=await bucket.put(profileKey,JSON.stringify(settings),{onlyIf:revision==="0"?{etagDoesNotMatch:"*"}:{etagMatches:revision}});
     if(!object)return profileReply({error:"Another edit was saved. Reopen settings to review it."},409);

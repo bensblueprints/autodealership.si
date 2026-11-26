@@ -36,16 +36,49 @@
     }
     if(!grouped.size)index.append(control("p","No matching pages."));
   }
+  let queueRead=0;
+  async function refreshQueue(){
+    const n=++queueRead, box=$("pageQueueItems");
+    try{
+      const response=await readDealerDesk("/api/website-pages?view=review-queue",{cache:"no-store"});
+      if(!response.ok)throw Error();
+      const data=await response.json();if(n!==queueRead)return;
+      box.replaceChildren();
+      for(const item of data.pages){
+        const button=control("button","");button.type="button";button.dataset.reviewKey=item.key;
+        button.append(control("strong",item.title),control("small",(item.state==="pending"?"Awaiting review":"Changes requested")+" · "+date(item.at)));
+        box.append(button);
+      }
+      if(!data.pages.length)box.append(control("p","No pages waiting for review or revision."));
+    }catch{if(n===queueRead)box.textContent="Review queue unavailable. Reopen Website pages to retry.";}
+  }
+  $("refreshPageQueue").onclick=refreshQueue;
+  $("pageQueueItems").onclick=e=>{
+    const button=e.target.closest("[data-review-key]");if(!button||busy)return;
+    remember();openPage(button.dataset.reviewKey);
+  };
   const missingContent=()=>doc.requiresBody && fields.enabled.checked && !fields.body.value.trim();
   function updateControls(){
     if(!doc)return;
     $("pageControls").disabled=busy;
-    $("savePageDraft").disabled=conflicted || (!dirty() && !doc.draft?.stale);
+    const pending=doc.review?.state==="pending", returned=doc.review?.state==="returned", governed=doc.franchise||pending;
+    for(const k of ["title","body","url"])fields[k].readOnly=pending;
+    fields.enabled.disabled=pending;
+    $("savePageDraft").disabled=pending||conflicted || (!dirty() && !doc.draft?.stale);
+    $("discardPage").hidden=pending;
+    $("submitPage").hidden=pending || (doc.franchise && doc.manager && !returned);
+    $("submitPage").disabled=busy||dirty()||conflicted||!doc.draft||doc.draft.stale||returned||missingContent();
+    $("withdrawPage").hidden=!doc.canWithdraw;
+    $("pageCheckWrap").hidden=!(governed && doc.manager && doc.draft);
+    $("pageReturnWrap").hidden=!(pending && doc.manager);
+    $("returnPage").disabled=busy||conflicted||!$("pageReturnNote").value.trim();
+    $("publishPage").hidden=governed && !doc.manager;
+    $("publishPage").textContent=governed?"Approve and publish":"Publish saved draft";
     $("discardPage").disabled=!dirty() && !doc.draft;
     $("discardPage").textContent=dirty()?"Undo unsaved edits":"Discard saved draft";
     $("pageRefresh").hidden=!conflicted;
-    $("publishPage").disabled=busy||dirty()||conflicted||!doc.draft||doc.draft.stale||missingContent();
-    $("pageRevisions").querySelectorAll("button").forEach(button=>button.disabled=busy||conflicted||!!dirty());
+    $("publishPage").disabled=(governed && (!doc.manager || !$("pageChecked").checked))||returned||busy||dirty()||conflicted||!doc.draft||doc.draft.stale||missingContent();
+    $("pageRevisions").querySelectorAll("button").forEach(button=>button.disabled=pending||busy||conflicted||!!dirty());
   }
   function fill(values){
     for(const field of ["title","body","url"])fields[field].value=values[field];
@@ -63,7 +96,7 @@
   }
   async function openPage(key,message=""){
     const n=++generation;active=key;doc=null;conflicted=false;
-    form.hidden=true;$("pageHistory").hidden=true;$("pageRefresh").hidden=true;$("pagePreview").hidden=true;
+    form.hidden=true;$("pageHistory").hidden=true;$("pageDecisions").hidden=true;$("pageRefresh").hidden=true;$("pagePreview").hidden=true;
     const item=catalog().find(p=>p.key===key);
     $("pageEditHeading").textContent=item.title;$("pageRoute").textContent=item.group+" · "+item.path;
     status.textContent="Loading page…";redrawIndex();
@@ -77,6 +110,18 @@
       $("pageEditHeading").textContent=doc.live.title;$("pagePreview").href=DealerPages.href(key);$("pagePreview").hidden=!doc.visible;
       $("pageLiveState").textContent=doc.visible?"Public page":"Hidden from shoppers";
       $("pageDraftState").textContent=doc.draft?"Draft saved "+date(doc.draft.at):"No saved draft";
+      $("pageDecision").hidden=!doc.franchise && !["pending","returned"].includes(doc.review?.state);
+      $("pageDecision").textContent=doc.review?.state==="pending"?"Awaiting manager review · Requested by "+doc.review.by:
+        doc.review?.state==="returned"?"Changes requested by "+doc.review.by+" · "+doc.review.note:
+        doc.franchise?"A dealership administrator reviews and publishes franchise pages.":"";
+      $("pageChecked").checked=false;$("pageReturnNote").value="";
+      const log=$("pageDecisionsList");log.replaceChildren();$("pageDecisions").hidden=!doc.events?.length;
+      const verbs={submit:"Requested review",withdraw:"Withdrew request",return:"Requested changes",approve:"Approved and published",publish:"Published"};
+      for(const event of doc.events||[]){
+        const item=control("article",""),caption=control("div","");
+        caption.append(control("strong",verbs[event.action]||event.action),control("small",event.actor+" · "+date(event.at)+(event.edition?" · Version "+event.edition:"")));
+        if(event.note)caption.append(control("p",event.note));item.append(caption);log.append(item);
+      }
       renderHistory();updateControls();redrawIndex();
       status.textContent=conflicted?"Your unsaved text is preserved. Copy it before reloading the changed page.":message||
         (doc.draft?.stale?"The live content changed. Review both versions and save the draft again.":edits?"Unsaved changes":"");
@@ -87,7 +132,7 @@
   async function act(action,extra={}){
     if(busy||!doc||conflicted)return;
     const key=active;busy=true;updateControls();
-    const message={draft:"Draft saved. Your live page is unchanged.",restore:"Revision loaded as a draft. Review it before publishing.",discard:"Saved draft discarded.",publish:"Changes published."}[action];
+    const message={draft:"Draft saved. Your live page is unchanged.",restore:"Revision loaded as a draft. Review it before publishing.",discard:"Saved draft discarded.",publish:"Changes published.",submit:"Page sent for manager review.",withdraw:"Review request withdrawn.",return:"Draft returned to the editor."}[action];
     try{
       const response=await fetch("/api/website-pages?key="+encodeURIComponent(key),{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({action,version:doc.version,...extra})});
@@ -95,7 +140,7 @@
       if(!response.ok){if(response.status===409)conflicted=true;throw Error(result.error||"Could not save this change.");}
       buffer.delete(key);if(dialog.open)dialog.close();
       if(action==="publish")await Store.loadProfile().catch(()=>{});
-      await openPage(key,message);
+      await Promise.all([openPage(key,message),refreshQueue()]);
     }catch(error){status.textContent=error.message;$("pageReviewStatus").textContent=error.message;}
     finally{busy=false;updateControls();}
   }
@@ -109,17 +154,32 @@
   $("reviewPage").onclick=()=>{
     preview($("pageBefore"),doc.live,true);preview($("pageAfter"),read());updateControls();
     $("pageReviewStatus").textContent=missingContent()?"Add page content before publishing this page.":dirty()?"Save your edits as a draft before publishing.":doc.draft?.stale?"Save the reviewed draft again before publishing.":doc.draft?"Publishing applies this saved draft to your dealership website.":"There is no draft to publish.";
-    dialog.showModal();
+    if(doc.review?.state==="pending")$("pageReviewStatus").textContent=doc.manager?"Approve the saved draft or return it with a note.":"This saved draft is awaiting a dealership administrator.";
+    else if(doc.review?.state==="returned")$("pageReviewStatus").textContent="Revise the draft to address the manager’s note.";
+    else if(doc.franchise && !doc.manager && doc.draft)$("pageReviewStatus").textContent="Request manager review from the editor after saving your draft.";
+    $("pageChecked").checked=false;$("pageReturnNote").value="";updateControls();dialog.showModal();
   };
   $("closePageReview").onclick=()=>dialog.close();
-  $("publishPage").onclick=()=>act("publish");
-  $("pageRefresh").onclick=()=>{if(!busy){buffer.delete(active);openPage(active);}};
+  $("publishPage").onclick=()=>act("publish",{checked:$("pageChecked").checked});
+  $("pageChecked").onchange=updateControls;$("pageReturnNote").oninput=updateControls;
+  $("submitPage").onclick=()=>act("submit");$("withdrawPage").onclick=()=>act("withdraw");
+  $("returnPage").onclick=()=>act("return",{note:$("pageReturnNote").value.trim()});
+  $("exportPageReview").onclick=async()=>{
+    const key=active,button=$("exportPageReview");button.disabled=true;
+    try{
+      const r=await readDealerDesk("/api/website-pages?key="+encodeURIComponent(key)+"&export=review-history",{cache:"no-store"});
+      if(!r.ok)throw Error();
+      const url=URL.createObjectURL(new Blob([JSON.stringify(await r.json(),null,2)],{type:"application/json"}));
+      const a=document.createElement("a");a.href=url;a.download=key+"-page-review.json";a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
+    }catch{status.textContent="Could not download the page review record.";}finally{button.disabled=false;}
+  };
+  $("pageRefresh").onclick=()=>{if(!busy){buffer.delete(active);refreshQueue();openPage(active);}};
   $("pageFilter").oninput=redrawIndex;
   $("pageIndex").onclick=event=>{const button=event.target.closest("[data-page]");if(!button||busy||button.dataset.page===active)return;remember();openPage(button.dataset.page);};
   $("discardPage").onclick=()=>{if(dirty()){fill(saved());buffer.delete(active);status.textContent="Unsaved edits cleared.";updateControls();}else act("discard");};
   form.oninput=()=>{status.textContent="Unsaved changes";updateControls();};
   form.onsubmit=e=>{e.preventDefault();act("draft",{values:read()});};
   document.querySelector('[data-view="pages"]').addEventListener("click",async()=>{
-    await Store.profileReady;if(busy)return;remember();openPage(active||catalog()[0].key);
+    await Store.profileReady;if(busy)return;remember();refreshQueue();openPage(active||catalog()[0].key);
   });
 })();

@@ -94,23 +94,27 @@
 <section id="pages" hidden>
 <div class="sectionhead"><div><h2>Website pages</h2><p>Prepare page changes privately, review them, and publish to your dealership website.</p></div></div>
 <div class="page-workspace">
-<div class="page-library"><label for="pageFilter">Find a page</label><input id="pageFilter" type="search" placeholder="Search by page or department"><div id="pageIndex" aria-label="Website pages"></div></div>
+<div class="page-library"><section id="pageReviewQueue" aria-labelledby="pageQueueTitle"><div class="page-queue-heading"><h3 id="pageQueueTitle">Page reviews</h3><button type="button" class="quiet" id="refreshPageQueue">Refresh</button></div><div id="pageQueueItems" aria-live="polite">Loading reviews…</div></section><label for="pageFilter">Find a page</label><input id="pageFilter" type="search" placeholder="Search by page or department"><div id="pageIndex" aria-label="Website pages"></div></div>
 <section class="page-document" aria-labelledby="pageEditHeading">
 <header class="page-editor-heading"><div><small id="pageRoute"></small><h3 id="pageEditHeading">Page editor</h3></div><a class="showlink" id="pagePreview" hidden target="_blank" rel="noopener noreferrer">View live page ↗</a></header>
 <p id="pageSaveStatus" role="status"></p><button type="button" class="quiet" id="pageRefresh" hidden>Reload current version</button>
 <form id="pageEditor" hidden><fieldset id="pageControls">
-<div class="page-state"><span id="pageLiveState"></span><span id="pageDraftState"></span></div>
+<div class="page-state"><span id="pageLiveState"></span><span id="pageDraftState"></span></div><p id="pageDecision" hidden></p>
 <label>Page title<input name="title" required maxlength="150"></label>
 <label>Page content<textarea name="body" rows="7" maxlength="12000"></textarea></label>
 <label>External action link (optional)<input type="url" name="url" maxlength="4096" placeholder="https://"></label>
 <label class="page-enabled"><input type="checkbox" name="enabled">Show this page to shoppers when published</label>
-<div class="page-editor-buttons"><button class="primary" type="submit" id="savePageDraft">Save draft</button><button class="quiet" id="reviewPage" type="button">Review changes</button><button class="quiet" id="discardPage" type="button">Discard edits</button></div>
+<div class="page-editor-buttons"><button class="primary" type="submit" id="savePageDraft">Save draft</button><button class="quiet" id="reviewPage" type="button">Review changes</button><button class="quiet" id="submitPage" type="button" hidden>Request manager review</button><button class="quiet" id="withdrawPage" type="button" hidden>Withdraw request</button><button class="quiet" id="discardPage" type="button">Discard edits</button></div>
 </fieldset></form>
 <details class="page-history" id="pageHistory" hidden><summary>Publication history</summary><div id="pageRevisions"></div></details>
+<details class="page-history" id="pageDecisions" hidden><summary>Review history</summary><div id="pageDecisionsList"></div><button type="button" class="quiet" id="exportPageReview">Download review record</button></details>
 </section></div></section>
 <dialog id="pageReviewDialog" aria-labelledby="page-review-heading"><header class="modalhead"><h2 id="page-review-heading">Review page changes</h2><button type="button" class="close" id="closePageReview" aria-label="Close preview">×</button></header>
 <div class="page-compare"><section><h3>Live version</h3><div id="pageBefore"></div></section><section><h3>Proposed version</h3><div id="pageAfter"></div></section></div>
-<p id="pageReviewStatus" role="status"></p><button type="button" class="primary" id="publishPage">Publish saved draft</button></dialog>
+<p id="pageReviewStatus" role="status"></p>
+<label class="page-review-check" id="pageCheckWrap" hidden><input type="checkbox" id="pageChecked">I reviewed the copy, visibility and destination for this dealership.</label>
+<button type="button" class="primary" id="publishPage">Publish saved draft</button>
+<div id="pageReturnWrap" hidden><label for="pageReturnNote">Changes the editor needs to make</label><textarea id="pageReturnNote" rows="2" maxlength="1000"></textarea><button type="button" class="quiet" id="returnPage">Return for changes</button></div></dialog>
 </main>
 <dialog id="lot-delete" aria-labelledby="lot-delete-title"><h2 id="lot-delete-title">Delete vehicle?</h2><p id="lot-delete-message"></p><div class="page-editor-buttons"><button type="button" class="quiet" id="lot-delete-cancel" autofocus>Keep vehicle</button><button type="button" id="lot-delete-confirm">Delete vehicle</button></div></dialog>
 <dialog id="editor"><div class="modalhead"><h2 id="editTitle">Add vehicle</h2><button class="close" aria-label="Close">×</button></div><form id="carForm"><section class="vin-intake"><label>VIN lookup<input name="vin" placeholder="Paste a 17-character VIN" spellcheck="false" autocapitalize="characters" autocomplete="off"></label><button type="button" class="quiet" id="decodeVin">Look up VIN</button><small id="vinStatus" role="status">Paste a VIN to fill available vehicle specifications.</small><small id="stickerStatus" role="status"></small><details id="stickerUpload"><summary>Import a factory PDF</summary><label>Factory window sticker for this VIN<input id="stickerFile" type="file" accept=".pdf,application/pdf"></label></details><div id="stickerPreview" class="factory-sticker"></div></section><div class="formgrid">

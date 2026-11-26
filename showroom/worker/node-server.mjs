@@ -427,7 +427,10 @@ createServer(async(req,res)=>{
         try{input=JSON.parse(body);}catch{return send(400,{error:"Invalid page data."});}
       }
       const actor=(clerkRole||platformStaff)?claims.subject:grant?(grant.email||"Platform owner"):account?.email||"Dealer administrator";
-      const result=await worker.pageWorkflow({db,key:route.searchParams.get("key"),method:req.method,input,tenant,actor,
+      if(req.method==="GET" && route.searchParams.get("view")==="review-queue"){
+        const result=await worker.pageReviewQueue(db);return send(result.status,result.data);
+      }
+      const result=await worker.pageWorkflow({db,key:route.searchParams.get("key"),method:req.method,input,tenant,actor,manager:!!managesUsers||clerkRole==="org:admin",exportHistory:route.searchParams.get("export")==="review-history",
         fingerprint:value=>createHash("sha256").update(value).digest("hex"),uuid:randomUUID});
       return send(result.status,result.data);
     }
@@ -801,7 +804,7 @@ createServer(async(req,res)=>{
       }
     }
     if(!seo)res.setHeader("X-Robots-Tag","noindex");
-    const response=await worker.default.fetch(new Request(new URL(assetUrl,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,offerSnapshot,visitByConfirmation,visitByNote,clientHasVin:async vin=>(await db.query("SELECT 1 FROM client_cars WHERE vin=$1",[vin])).rowCount>0});
+    const response=await worker.default.fetch(new Request(new URL(assetUrl,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,canReviewPages:!!managesUsers||clerkRole==="org:admin",offerSnapshot,visitByConfirmation,visitByNote,clientHasVin:async vin=>(await db.query("SELECT 1 FROM client_cars WHERE vin=$1",[vin])).rowCount>0});
     if((tenant || (demoBrowse && seo)) && /html|javascript/.test(response.headers.get("content-type")||"") && req.method==="GET"){
       let content=await response.text();
       if(!clerkOrg && ["/dealer-login","/dealer-signin.html"].includes(route.pathname))content=content.replace("</main>",platformSignIn(tenant.slug)+"</main>");

@@ -12,6 +12,7 @@ TABLES = {
     "bhph_offers": "vehicle text PRIMARY KEY,revision integer NOT NULL,offer jsonb NOT NULL",
     "homepage_banners": "id integer PRIMARY KEY,revision integer NOT NULL,config jsonb NOT NULL",
     "client_cars": "vin text PRIMARY KEY,body jsonb NOT NULL",
+    "website_page_review_events": "id uuid PRIMARY KEY,page_key text NOT NULL,action text NOT NULL,draft_stamp text NOT NULL,actor text NOT NULL,note text NOT NULL,content jsonb NOT NULL,edition integer,recorded_at timestamptz NOT NULL DEFAULT now()",
     "website_page_editions": "page_key text NOT NULL,edition integer NOT NULL,content jsonb NOT NULL,stamp text NOT NULL,actor text NOT NULL,recorded_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(page_key,edition)",
     "client_profile": "id integer PRIMARY KEY,settings jsonb NOT NULL,etag text NOT NULL",
     "vehicle_photo_assets": "site text NOT NULL,digest text NOT NULL,jpeg bytea NOT NULL,PRIMARY KEY(site,digest)",
@@ -37,7 +38,7 @@ def provision(control, site_id, name, legacy=False, template="independent"):
                 continue
             if table == "vehicle_photo_assets":
                 source = sql.SQL("SELECT * FROM public.vehicle_photo_assets WHERE site={}").format(sql.Literal(str(site_id)))
-            elif table in ("marketing_campaigns","oem_program_revisions","oem_banner_reviews","website_page_editions","inventory_lot_dates") and not control.execute(
+            elif table in ("marketing_campaigns","oem_program_revisions","oem_banner_reviews","website_page_editions","website_page_review_events","inventory_lot_dates") and not control.execute(
                 "SELECT to_regclass(%s) AS name", (database + "." + table,)
             ).fetchone()["name"]:
                 continue
