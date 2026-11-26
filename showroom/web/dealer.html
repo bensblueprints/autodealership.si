@@ -19,7 +19,7 @@
     <p><a class="quiet" href="api/conversions.csv" download>Download conversion events (CSV)</a> <span id="booking-channels"></span></p>
     <section class="feed-desk" aria-labelledby="feed-title"><div class="sectionhead"><div><h3 id="feed-title">Google vehicle feed</h3><p id="feed-summary" role="status"></p></div><button type="button" id="feed-settings">Feed settings</button></div>
     <label id="feed-address" hidden>Scheduled fetch URL<input readonly id="feed-url"></label>
-    <details id="feed-diagnostics" hidden><summary id="feed-reasons"></summary><ul id="feed-issues"></ul></details></section>
+    <details id="feed-diagnostics" hidden><summary id="feed-reasons"></summary><label>Find a vehicle or issue<input type="search" id="feed-query" placeholder="Stock number, VIN or missing field"></label><ul id="feed-issues"></ul><div class="campaign-actions"><button type="button" id="feed-prev">Previous</button><span id="feed-range" role="status"></span><button type="button" id="feed-next">Next</button></div></details></section>
     <div class="sectionhead"><h3>Campaign review queue</h3><button type="button" id="marketing-new" class="primary">New campaign</button></div>
     <div id="marketing-list"></div>
   </div>

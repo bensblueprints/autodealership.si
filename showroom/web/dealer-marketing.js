@@ -6,6 +6,26 @@
   const endpoint = "api/dealer-marketing";
   const states = {draft:"Draft",review:"Awaiting review",changes:"Changes requested",approved:"Approved copy"};
   const decisions = {save:"Draft saved",submit:"Submitted for review",approve:"Copy approved",return:"Changes requested"};
+  let excluded=[],feedPage=0;
+  function renderFeedIssues(){
+    const query=byId("feed-query").value.trim().toLowerCase(),size=25;
+    const matches=excluded.filter(row=>[row.vin,row.stock,...row.issues].join(" ").toLowerCase().includes(query));
+    const start=feedPage*size,end=Math.min(start+size,matches.length);
+    byId("feed-issues").replaceChildren(...matches.slice(start,end).map(row=>{
+      const item=node("li",""),link=node("button",row.stock||row.vin);
+      link.type="button";link.setAttribute("aria-label","Find "+row.vin+" in inventory");
+      link.onclick=()=>{
+        document.querySelector('[data-view="inventory"]').click();
+        const search=byId("inventorySearch");search.value=row.vin;search.dispatchEvent(new Event("input"));search.focus();
+      };
+      item.append(link,node("span",row.issues.join(" · ")));return item;
+    }));
+    byId("feed-range").textContent=matches.length?(start+1)+"–"+end+" of "+matches.length:"No matching vehicles";
+    byId("feed-prev").disabled=feedPage===0;byId("feed-next").disabled=end>=matches.length;
+  }
+  byId("feed-query").addEventListener("input",()=>{feedPage=0;renderFeedIssues();});
+  byId("feed-prev").onclick=()=>{feedPage--;renderFeedIssues();};
+  byId("feed-next").onclick=()=>{feedPage++;renderFeedIssues();};
   let data, active, loading = 0, feedRequest = 0, busy = false;
   const node = (tag, value) => Object.assign(document.createElement(tag), {textContent:value});
   function brief() {
@@ -94,7 +114,7 @@
       if(feed.enabled){byId("feed-url").value=feed.url;address.hidden=false;}
       diagnostics.hidden=!feed.excluded.length;
       byId("feed-reasons").textContent=feed.excluded.length+" vehicles need attention";
-      byId("feed-issues").replaceChildren(...feed.excluded.map(row=>node("li",(row.stock||row.vin)+" · "+row.issues.join(", "))));
+      excluded=feed.excluded;feedPage=0;renderFeedIssues();
     }catch{if(version===loading && request===feedRequest)summary.textContent="Could not check the feed. Select Refresh to retry.";}
   }
   byId("feed-settings").addEventListener("click",()=>byId("brandSettings").click());
