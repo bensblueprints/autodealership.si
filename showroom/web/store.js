@@ -142,6 +142,7 @@
     if (!name || !(email || phone)) throw new Error("Please enter a name and an email or phone number.");
     const lead={id:crypto.randomUUID(),createdAt:new Date().toISOString(),status:"New",carId:car.id,car:{id:car.id,vin:car.vin,year:car.year,make:car.make,model:car.model,stock:car.stock,image:car.image?.startsWith("data:")?"":car.image||""},name,email,phone,message:String(input.message || "").trim(),source:String(input.source || "Showroom inquiry")};
     if(window.postgresInventory)return inquiryRequest("POST",input);
+    lead.textReplyRequest=InquiryContact.request(input,lead.createdAt);
     write("lead:"+lead.id,lead);
     return lead;
   }

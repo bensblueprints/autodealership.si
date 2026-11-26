@@ -29,7 +29,7 @@ function validateProfile(input){
     } else if(value.length>200)throw Error("One of the address or phone fields is too long.");
     profile[key]=value;
   }
-  const pageKeys=new Set("new-vehicles pre-owned certified-pre-owned under-20k service-department schedule-service parts-catalog finance-center apply-financing payment-calculator value-trade about contact staff testimonials why-service".split(" "));
+  const pageKeys=new Map(DealerSitePages.catalog.map(page=>[page.key,page]));
   const pages={};
   for(const [key,page] of Object.entries(input.pages??{})){
     if(!pageKeys.has(key)||!page || typeof page!=="object")throw Error("Invalid page.");
@@ -42,6 +42,7 @@ function validateProfile(input){
       if(field==="url" && entry.url){const u=new URL(entry.url);if(u.username||u.password)throw Error("Invalid destination URL.");}
     }
     if("enabled" in page){if(typeof page.enabled!=="boolean")throw Error("Invalid page visibility.");entry.enabled=page.enabled;}
+    if(pageKeys.get(key).editorial && entry.enabled!==false && !entry.body)throw Error("Add dealership content before publishing this page.");
     pages[key]=entry;
   }
   const options={};

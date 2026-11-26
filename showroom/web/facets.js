@@ -59,15 +59,19 @@
   const featureKey = feature => aliases[keyFor(feature)] || keyFor(feature);
   let mode = "cash", minimum = null, maximum = null, layout = "browse", sort = "recommended", options = {};
   const enabled = key => options[key] !== false && (!["finance","lease"].includes(key)||Store.aprAllowed());
+  function resetBhph(){
+    get("bhph-only").checked=false;
+    for(const id of ["max-cash-down","bhph-frequency","bhph-installment"])get(id).value="";
+  }
   function reset() {
-    const down=document.getElementById("max-cash-down");if(down)down.value="";
+    resetBhph();
     searchTerms.clear();
     selected.clear();
     equipment.clear();
     minimum = maximum = null;
   }
   function isNarrowed() {
-    return !!document.getElementById("max-cash-down")?.value || selected.size > 0 || equipment.size > 0 || minimum !== null || maximum !== null;
+    return get("bhph-only").checked || !!get("bhph-frequency").value || !!get("bhph-installment").value || !!get("max-cash-down").value || selected.size > 0 || equipment.size > 0 || minimum !== null || maximum !== null;
   }
   function amount(car) {
     const value = window.Retail?.amount(car,mode) ?? (mode === "cash" ? car.price : null);
@@ -77,6 +81,10 @@
     if(mode!=="cash" && !Store.aprAllowed(car))return false;
     const down=document.getElementById("max-cash-down")?.value;
     if(down && (!car.bhph || car.bhph.down>Math.round(Number(down)*100)))return false;
+    if(get("bhph-only").checked && !car.bhph)return false;
+    const frequency=get("bhph-frequency").value,budget=get("bhph-installment").value;
+    if((frequency||budget) && !car.bhph?.schedules.some(s=>
+      (!frequency||s.frequency===frequency) && (!budget||Math.max(s.payment,s.final)<=Math.round(Number(budget)*100))))return false;
     for (const [key,value] of selected) {
       if (key === "miles") {
         if (car.miles === null || car.miles === undefined || car.miles === "" || Number(car.miles)>Number(value)) return false;
@@ -135,7 +143,6 @@
     const compact=Boolean(window.clientSite && cars.length<=12);
     if(compact!==compactLot){
       compactLot=compact;document.body.classList.toggle("compact-lot",compact);
-      get("filterpanel").open=!compact && !mobile.matches;
     }
     options = window.Store.settings().options || {};
     for (const field of selected.keys()) if (!enabled(field)) selected.delete(field);
@@ -147,7 +154,7 @@
     indexFeatures(cars);
     const catalog = featureCatalog;
     for (const key of equipment) if (!catalog.has(key)) equipment.delete(key);
-    const downPanel=document.getElementById("bhph-filter");downPanel.hidden=!cars.some(car=>car.bhph);if(downPanel.hidden)downPanel.querySelector("input").value="";
+    const downPanel=document.getElementById("bhph-filter");downPanel.hidden=!cars.some(car=>car.bhph);if(downPanel.hidden)resetBhph();
     renderBudget(cars);
     const fieldHtml = [];
     for (const [key,label] of Object.entries(fields)) {
@@ -194,7 +201,7 @@
 
     }
     get("facetfields").innerHTML=fieldHtml.join("");
-    get("filterpanel").parentElement.hidden = !fieldHtml.length && get("budget").hidden;
+    get("filterpanel").parentElement.hidden = !fieldHtml.length && get("budget").hidden && downPanel.hidden;
     section.querySelector(".inventory-layout").classList.toggle("no-sidebar",get("filterpanel").parentElement.hidden);
     const keys = [...new Set([...equipment,...featuredKeys.filter(key=>catalog.has(key))])];
     const strip = get("featurestrip");
@@ -245,7 +252,7 @@
     if (bound) section.querySelector('[data-budget="'+bound+'"]').value = event.target.value;
   });
   section.addEventListener("change",event=>{
-    if(event.target.id==="max-cash-down"){change();return;}
+    if(event.target.closest("#bhph-filter")){change();return;}
     const target=event.target, field=target.dataset.facet, value=target.value;
     if(field){
       searchTerms.delete(field);
@@ -272,7 +279,7 @@
   section.addEventListener("click",event=>{if(event.target.closest("[data-retry-catalog]"))VehicleCatalog.retry();});
   const mobile=window.matchMedia("(max-width: 760px)");
   get("filterpanel").open=!mobile.matches;
-  mobile.addEventListener("change",e=>get("filterpanel").open=!compactLot && !e.matches);
+  mobile.addEventListener("change",e=>get("filterpanel").open=!e.matches);
   window.Facets={prepare,matches,order,sync,reset,isNarrowed,amount,get paymentMode(){return enabled("price") && enabled(mode) ? mode : "cash"},get layout(){return layout},get sorted(){return sort!=="recommended"}};
 })();
 

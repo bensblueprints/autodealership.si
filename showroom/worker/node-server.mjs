@@ -430,6 +430,12 @@ createServer(async(req,res)=>{
       let input;try{input=JSON.parse(body)}catch{return reply(400,{})}
       if(req.method==="PUT"){
         if(!privateAdmin)return reply(403,{});
+        if(input?.action==="save-text-draft"){
+          if(!/^[0-9a-f-]{36}$/i.test(input.id) || typeof input.text!=="string" || !input.text.trim() || input.text.length>1000 || typeof input.revision!=="string")return reply(400,{error:"Check the draft and reopen the inquiry."});
+          const draft={text:input.text.trim(),revision:randomUUID(),updatedAt:new Date().toISOString()};
+          const saved=await db.query("UPDATE shopper_leads SET body=jsonb_set(body,'{textDraft}',$2::jsonb) WHERE id=$1 AND body->'textReplyRequest'->>'version'=$3 AND COALESCE(body->'textDraft'->>'revision','')=$4 RETURNING id",[input.id,draft,worker.InquiryContact.version,input.revision]);
+          return saved.rowCount?reply(200,draft):reply(409,{error:"This inquiry changed or has no text request. Reopen it to review."});
+        }
         if(!["New","Contacted","Appointment set","Closed"].includes(input.status)|| !/^[0-9a-f-]{36}$/i.test(input.id))return reply(400,{});
         const result=await db.query("UPDATE shopper_leads SET body=jsonb_set(body,'{status}',to_jsonb($2::text)) WHERE id=$1",[input.id,input.status]);
         return reply(result.rowCount?200:404,{});
@@ -451,6 +457,8 @@ createServer(async(req,res)=>{
       const lead={id:voiceInquiry?input.requestId:randomUUID(),createdAt:new Date().toISOString(),status:"New",carId:car.id,
         car:Object.fromEntries(["id","vin","year","make","model","stock","image"].map(k=>[k,car[k]]))};
       for(const k of ["name","email","phone","message","source"])lead[k]=String(input[k]||"").slice(0,2000);
+      try{const preference=worker.InquiryContact.request(input,lead.createdAt);if(preference)lead.textReplyRequest=preference;}
+      catch(err){return reply(400,{error:err.message});}
       const saved=await db.query("INSERT INTO shopper_leads VALUES($1,$2) ON CONFLICT(id) DO NOTHING",[lead.id,lead]);
       if(!saved.rowCount){
         const prior=(await db.query("SELECT body FROM shopper_leads WHERE id=$1",[lead.id])).rows[0]?.body;
@@ -539,37 +547,72 @@ createServer(async(req,res)=>{
       res.end("{}");return;
     }
     const publicDealer=tenant && !prefix && ["GET","HEAD"].includes(req.method);
+    const demoBrowse=base.hostname==="demo.autodealership.si" && ["GET","HEAD"].includes(req.method);
     const esc=value=>String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-    const origin=publicDealer?"https://"+(tenant.verified_domain || tenant.slug+".autodealership.si"):"";
+    const origin=publicDealer?"https://"+(tenant.verified_domain || tenant.slug+".autodealership.si"):demoBrowse?"https://demo.autodealership.si":"";
     const available=" FROM client_cars c WHERE NOT EXISTS (SELECT 1 FROM inventory_status s WHERE s.vin=c.vin)";
-    let seo;
-    if(publicDealer){
+    let seo,page,sitePages=[],pageTools="",assetUrl=req.url;
+    if(publicDealer || demoBrowse){
+      let displayName=tenant?.name||"Capital City CDJR";
+      if(demoBrowse)res.setHeader("X-Robots-Tag","noindex");
+      const registry=worker.DealerSitePages;
+      const legacy=route.pathname==="/page.html";
+      const path=route.pathname.endsWith("/")?route.pathname:route.pathname+"/";
+      const template=legacy?registry.catalog.find(item=>item.key===(route.searchParams.get("page")||"about")):registry.catalog.find(item=>item.path===path);
+      if(template || legacy || ["/","/index.html","/vehicle.html","/sitemap.xml"].includes(route.pathname)){
+        const settings=(await db.query("SELECT settings->>'dealerName' AS name, settings->'pages' AS pages, settings->'financingEnabled' AS finance, settings->'options'->'aprFinancingEnabled' AS apr FROM client_profile WHERE id=1")).rows[0]||{};
+        displayName=settings.name||displayName;
+        sitePages=registry.list(settings,!!tenant,settings.finance!==false && settings.apr!==false).filter(item=>item.enabled);
+      }
+      if(template || legacy){
+        page=sitePages.find(item=>item.key===template?.key);
+        if(!page){res.writeHead(404,{"Content-Type":"text/plain","X-Robots-Tag":"noindex","Cache-Control":"no-store"}).end("Page unavailable");return;}
+        if(legacy || page.path!==route.pathname){
+          const params=new URLSearchParams(route.search);params.delete("page");
+          res.writeHead(301,{Location:page.path+(params.size?"?"+params:""),"Cache-Control":"no-cache"}).end();return;
+        }
+        assetUrl="/page.html";
+        seo={title:page.title+" | "+displayName,description:(page.body||page.title).slice(0,240),path:page.path};
+        const filter=registry.inventoryFilters[page.key];
+        if(filter){
+          assetUrl="/index.html";
+          const rows=await db.query("SELECT vin,body->>'stock' AS stock,body->>'year' AS year,body->>'make' AS make,body->>'model' AS model,body->>'trim' AS trim,body->>'condition' AS condition,COALESCE(((SELECT (offer->>'cash')::numeric/100 FROM bhph_offers WHERE vehicle=c.vin))::text,body->>'price') AS price,body->>'status' AS status,body->>'fuel' AS fuel"+available+" ORDER BY "+(tenant?"vin":"position"));
+          const words=(route.searchParams.get("search")||"").trim().toLowerCase().split(/\s+/).filter(Boolean);
+          const matches=rows.rows.filter(car=>filter(car) && words.every(w=>[car.year,car.make,car.model,car.trim,car.vin,car.stock].join(" ").toLowerCase().includes(w)));
+          const number=Number(route.searchParams.get("p")||1),last=Math.max(1,Math.ceil(matches.length/24));
+          if(!Number.isSafeInteger(number)||number<1||number>last){res.writeHead(404,{"X-Robots-Tag":"noindex"}).end("Page unavailable");return;}
+          if(number>1)seo.path+="?p="+number;
+          if(words.length)res.setHeader("X-Robots-Tag","noindex,follow");
+          const next=new URLSearchParams(route.search);next.set("p",String(number+1));
+          pageTools='<p>'+matches.length+' vehicles</p><ul>'+matches.slice((number-1)*24,number*24).map(car=>'<li><a href="/vehicle.html?stock='+encodeURIComponent(car.vin)+'">'+esc([car.year,car.make,car.model,car.trim].filter(Boolean).join(" "))+'</a></li>').join("")+'</ul>'+(number<last?'<a href="'+esc(page.path+"?"+next)+'">Next page</a>':"");
+        }
+      }
       if(route.pathname==="/robots.txt"){
         res.writeHead(200,{"Content-Type":"text/plain"}).end("User-agent: *\nDisallow: /dealer\nDisallow: /api/\nSitemap: "+origin+"/sitemap.xml\n");return;
       }
       if(route.pathname==="/sitemap.xml"){
         const cars=await db.query("SELECT vin"+available+" ORDER BY vin");
-        const urls=["/",...cars.rows.map(c=>"/vehicle.html?stock="+encodeURIComponent(c.vin))];
+        const urls=["/",...sitePages.map(page=>page.path),...cars.rows.map(c=>"/vehicle.html?stock="+encodeURIComponent(c.vin))];
         res.writeHead(200,{"Content-Type":"application/xml"}).end('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+urls.map(p=>"<url><loc>"+esc(origin+p)+"</loc></url>").join("")+"</urlset>");return;
       }
       if(["/","/index.html"].includes(route.pathname)){
-        seo={title:tenant.name+" | Vehicle Inventory",description:"Browse available vehicles at "+tenant.name+", explore vehicle details and schedule a test drive.",path:"/"};
+        seo={title:displayName+" | Vehicle Inventory",description:"Browse available vehicles at "+displayName+", explore vehicle details and schedule a test drive.",path:"/"};
       }else if(route.pathname==="/vehicle.html"){
         const vin=route.searchParams.get("stock")||"";
         const car=(await db.query("SELECT body->>'year' AS year, body->>'make' AS make, body->>'model' AS model, body->>'trim' AS trim"+available+" AND c.vin=$1",[vin])).rows[0];
         if(!car){res.writeHead(404,{"Content-Type":"text/plain","X-Robots-Tag":"noindex"}).end("Vehicle unavailable");return;}
         const label=[car.year,car.make,car.model,car.trim].filter(Boolean).join(" ")||vin;
-        seo={title:label+" | "+tenant.name,description:"View the "+label+" at "+tenant.name+". VIN "+vin+". Explore its features and request a test drive.",path:"/vehicle.html?stock="+encodeURIComponent(vin)};
+        seo={title:label+" | "+displayName,description:"View the "+label+" at "+displayName+". VIN "+vin+". Explore its features and request a test drive.",path:"/vehicle.html?stock="+encodeURIComponent(vin)};
       }
     }
     if(!seo)res.setHeader("X-Robots-Tag","noindex");
-    const response=await worker.default.fetch(new Request(new URL(req.url,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,offerSnapshot,clientHasVin:async vin=>(await db.query("SELECT 1 FROM client_cars WHERE vin=$1",[vin])).rowCount>0});
-    if(tenant && /html|javascript/.test(response.headers.get("content-type")||"") && req.method==="GET"){
+    const response=await worker.default.fetch(new Request(new URL(assetUrl,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,offerSnapshot,clientHasVin:async vin=>(await db.query("SELECT 1 FROM client_cars WHERE vin=$1",[vin])).rowCount>0});
+    if((tenant || (demoBrowse && seo)) && /html|javascript/.test(response.headers.get("content-type")||"") && req.method==="GET"){
       let content=await response.text();
       if(!clerkOrg && ["/dealer-login","/dealer-signin.html"].includes(route.pathname))content=content.replace("</main>",platformSignIn(tenant.slug)+"</main>");
       if((clerkRole || platformStaff || tenantDesk) && response.headers.get("content-type").includes("html") && ["/dealer","/dealer.html"].includes(route.pathname))content=content.replace("</head>",clerkScript+'<script>window.dealerClerkReady=Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});window.dealerClerkReady.catch(()=>{});</script></head>');
       if(prefix)content=content.replace(/(["'`])\/(?!\/)(?=(?:api\/|dealer-login|bhph\.|banner|inventory|index\.html))/g,"$1"+prefix+"/");
-      if(response.headers.get("content-type").includes("html"))content=content.replaceAll("Capital City CDJR",tenant.name.replace(/[&<>"]/g,x=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[x])));
+      if(tenant && response.headers.get("content-type").includes("html"))content=content.replaceAll("Capital City CDJR",tenant.name.replace(/[&<>"]/g,x=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[x])));
       if(seo?.path==="/" && req.method==="GET"){
         const cars=(await db.query("SELECT vin,body->>'year' AS year,body->>'make' AS make,body->>'model' AS model,body->>'stock' AS stock,body->>'image' AS image"+available+" ORDER BY vin LIMIT 24")).rows;
         const cards=cars.map(car=>{
@@ -578,6 +621,22 @@ createServer(async(req,res)=>{
           return '<article class="card"><a class="carlink" href="vehicle.html?stock='+encodeURIComponent(car.vin)+'">'+photo+'<div class="cardinfo"><h4>'+esc(title)+'</h4><div class="card-identifiers">Stock # '+esc(car.stock||"Unavailable")+' &middot; VIN '+esc(car.vin)+'</div></div></a></article>';
         }).join("");
         content=content.replace('<div class="cards" id="cards"></div>',()=>'<div class="cards" id="cards">'+(cards||'<p>No vehicles currently listed.</p>')+'</div>');
+      }
+      if(page && assetUrl==="/index.html"){
+        content=content.replace("<head>",'<head><base href="/">').replace("<body>",()=>'<body data-inventory-page="'+esc(page.key)+'">')
+          .replace('href="#dealer-contact"',()=> 'href="'+esc(page.path)+'#dealer-contact"')
+          .replace('href="#top"','href="/"').replace('<h2>Explore inventory<span>.</span></h2>',()=>'<h1 class="inventory-page-title">'+esc(page.title)+'</h1><p class="inventory-page-intro">'+esc(page.body)+'</p>'+(page.url?'<a href="'+esc(page.url)+'">More from the dealership</a>':""))
+          .replace('<div class="cards" id="cards"></div>',()=>'<div class="cards" id="cards">'+pageTools+'</div>');
+      }else if(page){
+        content=content.replace("<head>",'<head><base href="/">').replace('href="#dealer-contact"',()=> 'href="'+esc(page.path)+'#dealer-contact"')
+          .replace('<h1 id="heading"></h1>',()=>'<h1 id="heading">'+esc(page.title)+'</h1>')
+          .replace('<p id="intro"></p>',()=>'<p id="intro">'+esc(page.body)+'</p>')
+          .replace('<div id="tools"></div>',()=>'<div id="tools">'+pageTools+'</div>');
+      }
+      if(seo && sitePages.length){
+        const groups=[...new Set(sitePages.map(p=>p.group))];
+        const links=groups.map(g=>'<section><h3>'+esc(g)+'</h3><ul>'+sitePages.filter(p=>p.group===g).map(p=>'<li><a href="'+esc(p.path)+'">'+esc(p.title)+'</a></li>').join("")+'</ul></section>').join("");
+        content=content.replace('</body>',()=>'<footer id="dealer-page-links"><nav aria-label="Dealership pages"><div class="dealer-page-groups">'+links+'</div></nav></footer></body>');
       }
       if(seo)content=content.replace(/<title>.*?<[/]title>/i,()=>"<title>"+esc(seo.title)+"</title>").replace("</head>",()=>'<meta name="description" content="'+esc(seo.description)+'"><link rel="canonical" href="'+esc(origin+seo.path)+'"></head>');
       res.writeHead(response.status,{"Content-Type":response.headers.get("content-type"),"Cache-Control":"no-store"}).end(content);return;

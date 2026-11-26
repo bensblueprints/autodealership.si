@@ -7,3 +7,13 @@
 .inventory-icon{display:inline-block;width:19px;height:19px;fill:currentColor;flex:none}.facet-field{background:var(--control);border:1px solid var(--hair);border-radius:7px;padding:8px 5px;text-align:center;justify-items:center}.facet-field .inventory-icon{color:var(--ink)}.facet-field select{text-align:center}#featurestrip button{display:inline-flex;align-items:center;gap:6px}#featurestrip .inventory-icon{width:17px;height:17px}
 
 .facet-field input[type=search]{width:100%;min-width:0;padding:6px 3px;border:1px solid var(--hair);border-radius:5px;background:var(--surface);color:var(--ink);font:inherit}.facet-field input:focus-visible{outline:2px solid var(--acid)}
+#shopping-shortcuts:not([hidden]){display:flex;flex-wrap:wrap;gap:.6rem;padding:1rem clamp(16px,5vw,84px);border-block:1px solid var(--hair);background:var(--card)}
+#shopping-shortcuts :is(a,button){display:inline-flex;align-items:center;justify-content:space-between;gap:1.25rem;min-height:44px;padding:.5rem 1rem;border:1px solid var(--hair);border-radius:8px;background:var(--surface);color:var(--ink);font:inherit;font-weight:650;text-decoration:none;cursor:pointer}
+#shopping-shortcuts :is(a,button)::after{content:"↗";color:currentColor}
+#shopping-shortcuts :is(a,button):is(:hover,:focus-visible){border-color:var(--acid)}
+#bhph-filter:not([hidden]){display:grid;gap:.65rem;margin:1rem 0;padding:.75rem;border:1px solid var(--hair);border-radius:8px;min-width:0}
+#bhph-filter legend{font-size:.85rem;font-weight:700}
+#bhph-filter label{display:grid;gap:.3rem;color:var(--muted);font-size:.77rem}
+#bhph-filter .bhph-check{display:flex;align-items:center;gap:.5rem}
+#bhph-filter :is(input:not([type=checkbox]),select){width:100%;min-width:0;background:var(--surface);color:var(--ink);border:1px solid var(--hair);border-radius:.35rem;padding:.4rem}
+@media(max-width:760px){#shopping-shortcuts:not([hidden]){flex-wrap:nowrap;overflow:auto}#shopping-shortcuts :is(a,button){white-space:nowrap}}

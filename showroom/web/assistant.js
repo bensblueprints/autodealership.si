@@ -336,7 +336,7 @@
         return true;
       }
     }
-    const url=new URL("vehicle.html",location.href);
+    const url=new URL("vehicle.html",document.baseURI);
     url.searchParams.set("stock",car.id);
     if(book)url.searchParams.set("book","1");
     if(!listing){

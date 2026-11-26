@@ -187,7 +187,7 @@
   const driveThumb=get("drive-thumb");
   if(car.image){driveThumb.onload=()=>{driveThumb.hidden=false;};driveThumb.src=car.image;}
   get("drive-car").textContent=title+(car.stock?" · Stock "+car.stock:" · VIN "+car.vin);
-  if(car.bhph)BHPH.show(car);
+  if(car.bhph){BHPH.show(car);get("bhph-jump").hidden=false;}
   const bookingUrl="/api/test-drives?vin="+encodeURIComponent(car.vin);
   async function loadTimes(){
     const select=get("leadform").elements.slot;
@@ -252,8 +252,9 @@
       form.hidden=true;get("drive-title").textContent="Test drive scheduled";
     }catch(error){get("drive-status").textContent=error.message || "Your reservation could not be saved. Please try again.";button.disabled=false;}
   };
+  if(window.clientSite && DealerPages.list().some(p=>p.key==="all-inventory"&&p.enabled))get("back").href=DealerPages.href("all-inventory");
   const previous=document.referrer && new URL(document.referrer);
-  if(previous && previous.origin===location.origin && ["/","/index.html"].includes(previous.pathname)){
+  if(previous && previous.origin===location.origin && (["/","/index.html"].includes(previous.pathname)||previous.pathname.startsWith("/inventory/"))){
     get("back").onclick=event=>{event.preventDefault();history.back();};
   }
 })();

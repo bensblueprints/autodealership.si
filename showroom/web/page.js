@@ -1,16 +1,10 @@
 (() => {
   "use strict";
   const byId=id=>document.getElementById(id);
-  const pageKey=new URL(location.href).searchParams.get("page")||"about";
+  const pageKey=DealerPages.currentKey();
   const usd=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0});
   const lower=value=>String(value||"").trim().toLowerCase();
-  const preowned=car=>/used|pre.?owned/.test(lower(car.condition));
-  const predicates={
-    "new-vehicles":car=>lower(car.condition)==="new",
-    "pre-owned":preowned,
-    "certified-pre-owned":car=>preowned(car)&&lower(car.condition).includes("certified"),
-    "under-20k":car=>preowned(car)&&typeof car.price==="number"&&car.price>0&&car.price<20000
-  };
+  const predicates=DealerSitePages.inventoryFilters;
   const links={
     "service-department":"Explore service offerings","schedule-service":"Open online scheduler","parts-catalog":"Open parts catalog",
     "apply-financing":"Start credit application","finance-center":"Visit financing center","value-trade":"Start trade appraisal","contact":"Contact the dealership",
@@ -58,7 +52,7 @@
       for(const c of matches.slice((page-1)*perPage,page*perPage)){
         const a=anchor("","vehicle.html?stock="+encodeURIComponent(c.id));a.className="result-card";
         const missing=()=>el("div","Photo unavailable","missing-img");
-        if(c.image && (DealerPages.safeUrl(c.image)||/^data:image\/(jpeg|png|webp);base64,/i.test(c.image))){
+        if(c.image && (DealerPages.safeUrl(c.image)||/^(?:assets\/|\/api\/vehicle-photos\/)/.test(c.image)||/^data:image\/(jpeg|png|webp);base64,/i.test(c.image))){
           const img=el("img");img.alt=c.imageType==="stock"?"Representative image":"";img.loading="lazy";img.src=c.image;
           img.onerror=()=>img.replaceWith(missing());a.append(img);
         }else a.append(missing());
@@ -128,7 +122,7 @@
     }
     if(predicates[page.key])inventory(tools,predicates[page.key]);
     if(page.key==="payment-calculator")calculator(tools);
-    if(page.key==="contact")contact(tools,Store.settings().profile||{});
+    if(["contact","directions"].includes(page.key))contact(tools,Store.settings().profile||{});
     const group=el("nav",undefined,"page-related");group.setAttribute("aria-label","Related pages");
     for(const key of related[page.key]||[]){
       const other=all.find(p=>p.key===key&&p.enabled);if(other)group.append(anchor(other.title,DealerPages.href(other.key)));

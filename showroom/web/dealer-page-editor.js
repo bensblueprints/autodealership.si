@@ -44,7 +44,7 @@
     for(const field of ["title","body","url"])fields[field].value=values[field];
     fields.enabled.checked=values.enabled;
     byId("pageEditHeading").textContent=stored(key).title;
-    const preview=byId("pagePreview");preview.href="page.html?page="+encodeURIComponent(key);
+    const preview=byId("pagePreview");preview.href=DealerPages.href(key);
     preview.hidden=!stored(key).enabled;
     status.textContent=draft?"Unsaved edits":"";
     form.hidden=false;redrawIndex();

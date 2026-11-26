@@ -3,7 +3,7 @@
   const frequencies=["Weekly","Biweekly","Monthly"],terms=[12,18,24,36];
   const summary=(o,s)=>`BHPH price ${money(o.price)}, cash down ${money(o.down)}, remaining ${money(o.balance)}. ${s.months} months, ${s.frequency.toLowerCase()}: ${s.count-1} payments of ${money(s.payment)}, then ${money(s.final)}.`;
   function show(car){
-    const offer=car.bhph,section=document.createElement("section");section.className="bhph-offer";
+    const offer=car.bhph,section=document.createElement("section");section.className="bhph-offer";section.id="vehicle-payment-schedules";
     section.innerHTML='<h2>Buy Here Pay Here</h2><p></p><label>Payment schedule <select><option value="">Choose a schedule</option></select></label><p role="status"></p>';
     section.querySelector("p").textContent=`Cash price ${money(offer.cash)} · BHPH price ${money(offer.price)} · Cash down ${money(offer.down)} · Remaining ${money(offer.balance)}`;
     const select=section.querySelector("select");

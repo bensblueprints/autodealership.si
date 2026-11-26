@@ -4,7 +4,9 @@
   const miles = car => exists(car.miles) ? Number(car.miles).toLocaleString('en-US')+' mi' : '';
   const currency = value => !exists(value) ? 'Contact for price' : Number(value).toLocaleString('en-US', {style:'currency', currency:'USD', maximumFractionDigits:0});
   const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-  const cars = () => window.Store.cars();
+  const categoryPage=document.body.dataset.inventoryPage;
+  const pageFilter=categoryPage && DealerSitePages.inventoryFilters[categoryPage];
+  const cars=()=>pageFilter?Store.cars().filter(pageFilter):Store.cars();
   const find = id => cars().find(car => String(car.id) === String(id));
   const title = car => [car.year,car.make,car.model].filter(Boolean).join(' ');
   const specs = car => [...new Set([car.trim,car.body,miles(car)].filter(Boolean))].join(' · ');
@@ -25,7 +27,16 @@
     return '<article class="card"><a class="carlink" href="vehicle.html?stock='+encodeURIComponent(car.id)+'" data-car="'+id+'">'+(car.image?'<img loading="lazy" src="'+escape(car.image)+'" alt="">':'<div class="photo-missing"><svg aria-hidden="true"><use href="assets/inventory-icons.svg#car-side"></use></svg><span>Photo unavailable</span></div>')+'<div class="cardinfo">'+(car.imageType==='stock'?'<small>Representative photo</small>':'')+'<h4>'+escape(title(car))+'</h4><div class="spec">'+escape(specs(car))+'</div><div class="card-identifiers"><span>Stock # <b>'+escape(car.stock || "Unavailable")+'</b></span><span>VIN <b>'+escape(car.vin || "Unavailable")+'</b></span></div><strong>'+(car.bhph?'Cash '+BHPH.money(car.bhph.cash):currency(car.price))+'</strong>'+(car.bhph?'<p>Buy Here Pay Here '+BHPH.money(car.bhph.price)+' · '+BHPH.money(car.bhph.down)+' down</p>':'')+payment+'</div></a><button class="save" aria-label="'+(favorite?'Unsave ':'Save ')+escape(title(car))+'" aria-pressed="'+favorite+'" data-save="'+id+'">'+(favorite?'♥':'♡')+'</button>'+(window.Retail?.card(car) || '')+'</article>';
   }
   const pageSize=24;
-  let page=0,previousResults='';
+  const initialParams=new URLSearchParams(location.search);
+  let page=0,previousResults='',landingReady=!pageFilter;
+  if(pageFilter){query=initialParams.get("search")||"";$("search").value=query;}
+  function pageLocation(){
+    if(!pageFilter)return;
+    const url=new URL(location.href);
+    if(page>0)url.searchParams.set("p",page+1);else url.searchParams.delete("p");
+    if(query.trim())url.searchParams.set("search",query.trim());else url.searchParams.delete("search");
+    history.replaceState(history.state,"",url);
+  }
   function showLotContact(){
     const strip=$("lot-contact"),profile=Store.settings().profile||{};
     strip.replaceChildren();strip.hidden=!document.body.classList.contains("compact-lot");if(strip.hidden)return;
@@ -45,21 +56,43 @@
     }
     strip.hidden=!strip.children.length;
   }
+  let shortcutSignature="";
+  function showShoppingLinks(list){
+    const bar=$("shopping-shortcuts");
+    if(categoryPage || !bar)return;
+    const pages=DealerPages.list().filter(p=>p.enabled);
+    const inventory=pages.find(p=>p.key==="all-inventory");
+    const bhph=list.some(car=>car.bhph);
+    const services=["value-trade","schedule-service","directions","contact"].map(key=>pages.find(p=>p.key===key)).filter(Boolean);
+    const signature=JSON.stringify([inventory?.key,bhph,services.map(p=>[p.key,p.title])]);
+    if(signature===shortcutSignature)return;shortcutSignature=signature;bar.replaceChildren();
+    function link(title,href){const a=document.createElement("a");a.href=href;a.textContent=title;bar.append(a);}
+    if(inventory)link("Shop all vehicles",DealerPages.href(inventory.key));
+    if(bhph){
+      const btn=document.createElement("button");btn.type="button";btn.textContent="Shop Buy Here Pay Here";
+      btn.onclick=()=>{window.filterCars("");$("bhph-only").checked=true;$("filterpanel").open=true;render();jump();};bar.append(btn);
+    }
+    for(const service of services)link(service.title,DealerPages.href(service.key));
+    bar.hidden=!bar.childElementCount;
+  }
   function render() {
+    if(!landingReady)return [];
     const list=cars();
-    Facets.prepare(list);showLotContact();
+    Facets.prepare(list);showLotContact();showShoppingLinks(list);
     const filtered=Facets.order(list.filter(matches));
     $('brandname').textContent=window.Store.settings?.()?.dealerName || 'Capital City CDJR';
-    document.title=$('brandname').textContent+' · Showroom';
+    if(!pageFilter)document.title=$('brandname').textContent+' · Showroom';
     const active=Boolean(selectedIds || query.trim() || category || savedOnly);
-    const browse=!document.body.classList.contains("compact-lot") && !active && !Facets.isNarrowed() && !Facets.sorted && Facets.layout==="browse" && filtered.length>3;
+    const browse=!pageFilter && !document.body.classList.contains("compact-lot") && !active && !Facets.isNarrowed() && !Facets.sorted && Facets.layout==="browse" && filtered.length>3;
     $('cards').classList.toggle('browse',browse);
     $('cards').classList.toggle('list-layout',Facets.layout==="list");
     Facets.sync(active);
     const shelf=(name,records)=>'<section class="shelf"><div class="shelfheading"><h3>'+escape(name)+'</h3><div><button data-scroll="-1" aria-label="Scroll '+escape(name)+' left">←</button><button data-scroll="1" aria-label="Scroll '+escape(name)+' right">→</button></div></div><div class="rail">'+records.map(card).join('')+'</div></section>';
     const signature=filtered.map(car=>car.id).join('|')+Facets.layout;
-    if(previousResults!==signature){page=0;previousResults=signature;}
+    if(previousResults!==signature){page=previousResults||!pageFilter?0:Math.max(0,(Number(initialParams.get('p'))||1)-1);previousResults=signature;}
     const pages=Math.ceil(filtered.length/pageSize);
+    page=Math.max(0,Math.min(page,pages-1));
+    if(pageFilter)pageLocation();
     const batch=filtered.slice(page*pageSize,(page+1)*pageSize);
     const budget=filtered.filter(car=>exists(car.price)&&car.price<30000).slice(0,8);
     const utility=filtered.filter(car=>['SUV','Truck'].includes(car.body)).slice(0,8);
@@ -125,7 +158,7 @@
   $('search').oninput=e=>{selectedIds=null;query=e.target.value;render();};
   $('reset').onclick=()=>window.filterCars('');
   $('savednav').onclick=()=>{Facets.reset();selectedIds=null;savedOnly=true;category='';query='';$('search').value='';render();jump();};
-  document.querySelector('a[href="#inventory"]').onclick=()=>window.filterCars('');
+  document.querySelector('a[href="#inventory"]').onclick=e=>{e.preventDefault();window.filterCars('');};
   $('prev').onclick=()=>{slide=(slide+cars().length-1)%cars().length;render();};
   $('next').onclick=()=>{slide=(slide+1)%cars().length;render();};
   $('details').onclick=()=>window.showCar(cars()[slide%cars().length]?.id);
@@ -133,7 +166,7 @@
   $('assistantlaunch').onclick=()=>window.dispatchEvent(new Event('open-assistant'));
   window.addEventListener('showroom:update',render);
   window.addEventListener('storage',render);
-  render();
+  if(pageFilter)Promise.all([Store.inventoryReady,Store.profileReady]).then(()=>{landingReady=true;render();});else render();
   const initialCar = new URLSearchParams(location.search).get('vehicle');
   if (initialCar) location.replace("vehicle.html?stock="+encodeURIComponent(initialCar));
 })();

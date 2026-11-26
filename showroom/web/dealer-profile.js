@@ -126,7 +126,7 @@
   const menu=element("nav");
   menu.id="dealership-page-menu";menu.setAttribute("aria-label","Dealership pages");menu.hidden=true;
   document.querySelector(".top").after(menu);
-  const footer=element("footer");
+  const footer=document.getElementById("dealer-page-links")||element("footer");
   footer.id="dealer-page-links";
   document.getElementById("dealer-contact").after(footer);
   function close(returnFocus=false){
@@ -155,14 +155,14 @@
     if(previous===signature)return;
     previous=signature;
     const grid=element("div");grid.className="dealer-page-groups";
-    for(const name of ["Inventory","Service","Financing","About"]){
+    for(const name of new Set(pages.map(page=>groupNames[page.group]||page.group))){
       const entries=pages.filter(page=>(groupNames[page.group]||page.group)===name);
       if(!entries.length)continue;
       const section=element("section"),list=element("ul");
       for(const page of entries){
         const item=element("li"),link=element("a",page.title);
         link.href=DealerPages.href(page.key);
-        if(location.pathname.endsWith("page.html")&&new URLSearchParams(location.search).get("page")===page.key)link.setAttribute("aria-current","page");
+        if((location.pathname===page.path || location.pathname.endsWith("page.html"))&&DealerPages.currentKey()===page.key)link.setAttribute("aria-current","page");
         item.append(link);list.append(item);
       }
       section.append(element("h3",name),list);grid.append(section);
