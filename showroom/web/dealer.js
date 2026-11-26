@@ -189,7 +189,7 @@
     const settings=Store.settings(),profile=settings.profile||{},pages=DealerPages.list().filter(p=>p.enabled);
     const checks=[
       ["Brand identity",!!profile.logo && !!profile.logoLightBackground,"Upload both logo variants in Store settings."],
-      ["Sales contact",!!(profile.salesPhone && profile.street && profile.city),"Enter the sales number and showroom address."],
+      ["Sales contact",!!(DealerLocation.dial(profile.salesPhone) && profile.street && profile.city),"Enter the sales number and showroom address."],
       ["Published hours",!!profile.salesHours,"Publish the sales department’s opening hours."],
       ["Live inventory",Store.cars().length>0,"Publish an available vehicle."],
     ];
@@ -432,10 +432,19 @@
     const profile=settings.profile||{};
     const zone=$("drive-zone");zone.replaceChildren(...["America/New_York","America/Chicago","America/Denver","America/Phoenix","America/Los_Angeles","America/Anchorage","Pacific/Honolulu"].map(z=>new Option(z.replaceAll("_"," "),z)));zone.value=profile.driveTimezone||"America/Chicago";
     fillHours($("drive-hours"),profile.driveHours);
-    fillHours($("sales-hours"),profile.salesHours);
-    const salesToggle=$("publish-sales-hours");salesToggle.checked=Boolean(profile.salesHours);
-    salesToggle.onchange=()=>{$("sales-hours").hidden=!salesToggle.checked;$("sales-hours").querySelectorAll("input[type=time]").forEach(input=>input.required=salesToggle.checked);};
-    salesToggle.onchange();
+    for (const key of ["sales","service","parts"]) {
+      const grid=$(key+"-hours"), toggle=$("publish-"+key+"-hours");
+      fillHours(grid,profile[key+"Hours"] || {});
+      toggle.checked=Boolean(profile[key+"Hours"]);
+      toggle.onchange=()=>{
+        grid.hidden=!toggle.checked;
+        for (const row of grid.children) {
+          const active=row.querySelector("input[type=checkbox]").checked;
+          for (const time of row.querySelectorAll("input[type=time]")) time.disabled=!toggle.checked || !active;
+        }
+      };
+      toggle.onchange();
+    }
     for(const key of [...profileFields,...socialFields])fields[key].value=profile[key]||"";
     darkLogo.load(profile.logo);lightLogo.load(profile.logoLightBackground);
     const groups=$("shopOptions");
@@ -474,7 +483,7 @@
       profile.driveTimezone=$("drive-zone").value;
       const readHours=id=>Object.fromEntries(Array.from($(id).children,row=>[row.dataset.day,row.querySelector("input").checked?Array.from(row.querySelectorAll("input[type=time]"),t=>t.value):null]));
       profile.driveHours=readHours("drive-hours");
-      profile.salesHours=$("publish-sales-hours").checked?readHours("sales-hours"):null;
+      for (const key of ["sales","service","parts"]) profile[key+"Hours"]=$("publish-"+key+"-hours").checked?readHours(key+"-hours"):null;
       for(const key of profileFields)profile[key]=fields[key].value.trim();
       for(const key of socialFields)profile[key]=httpsUrl(fields[key].value.trim(),key);
       await Store.saveSettings({dealerName,tradeUrl,options,profile});

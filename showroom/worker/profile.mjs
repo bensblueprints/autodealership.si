@@ -11,7 +11,7 @@ function validateProfile(input){
   const code=input.profile.googleStoreCode||"";
   if(typeof code!=="string" || !/^[A-Za-z0-9_-]{0,64}$/.test(code))throw Error("Enter a valid Google Business Profile store code (up to 64 characters).");
   profile.googleStoreCode=code;
-  for(const key of ["driveHours","salesHours"]){
+  for(const key of ["driveHours","salesHours","serviceHours","partsHours"]){
     if(input.profile[key]==null)continue;
     const zone=input.profile.driveTimezone;
     if(typeof zone!=="string" || !["America/New_York","America/Chicago","America/Denver","America/Phoenix","America/Los_Angeles","America/Anchorage","Pacific/Honolulu"].includes(zone))throw Error("Select a dealership time zone.");

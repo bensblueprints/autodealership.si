@@ -50,6 +50,12 @@ The channel mix follows the public Acura program benchmark. Each OEM's current d
 
 The feed is generated from the current dealership database on every fetch. Sold and deleted vehicles are removed, and an eligible vehicle marked available again returns. A configured empty lot emits a valid empty feed. Google refreshes its copy on its own schedule. Each item uses the VIN, a store-specific vehicle landing link, and the same cash price as the detail page, including a BHPH cash override when applicable.
 
+### Dealership location in search
+
+In **Website settings → Branding & store settings**, enter the storefront address and department phone numbers. Under **Published department hours**, choose which weekly schedules to publish. The dealership time zone applies to all three. Test-drive hours continue to control the booking calendar.
+
+The homepage and public vehicle pages show these details in the contact footer. On a published **Contact Us** or **Hours and directions** page, shoppers see expanded schedules and a directions link. The homepage and those two pages also include AutoDealer structured data when the dealer supplies a street and city. A service or parts department gets its own hours and phone number when supplied. Search engines decide whether to display the information. [Google local business documentation](https://developers.google.com/search/docs/appearance/structured-data/local-business)
+
 ### Reconcile native conversions
 
 Use **Marketing → Download conversion events** to export the last 30 rolling days for the signed-in dealership. Each row has an event ID, type, UTC timestamp, VIN and channel. One committed test-drive confirmation produces one booking conversion. Web and concierge booking requests reuse a request key on retry. Repeating a request with matching details returns the original receipt. Competing shoppers receive one successful booking for the slot. The export also includes saved shopper inquiries, each identified by its persisted inquiry ID. Earlier bookings retain their original timestamp and show an unrecorded channel. The export omits shopper names, email addresses, phone numbers and private booking tokens.

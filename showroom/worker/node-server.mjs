@@ -643,7 +643,7 @@ createServer(async(req,res)=>{
     const esc=value=>String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
     const origin=publicDealer?"https://"+(tenant.verified_domain || tenant.slug+".autodealership.si"):demoBrowse?"https://demo.autodealership.si":"";
     const available=" FROM client_cars c WHERE NOT EXISTS (SELECT 1 FROM inventory_status s WHERE s.vin=c.vin)";
-    let seo,page,vehicleFacts,storefront="classic",showCash=true,sitePages=[],pageTools="",assetUrl=req.url;
+    let publicLocation,publicName,seo,page,vehicleFacts,storefront="classic",showCash=true,sitePages=[],pageTools="",assetUrl=req.url;
     if(publicDealer || demoBrowse){
       let displayName=tenant?.name||"Capital City CDJR";
       if(demoBrowse)res.setHeader("X-Robots-Tag","noindex");
@@ -652,8 +652,10 @@ createServer(async(req,res)=>{
       const path=route.pathname.endsWith("/")?route.pathname:route.pathname+"/";
       const template=legacy?registry.catalog.find(item=>item.key===(route.searchParams.get("page")||"about")):registry.catalog.find(item=>item.path===path);
       if(template || legacy || ["/","/index.html","/vehicle.html","/sitemap.xml"].includes(route.pathname)){
-        const settings=(await db.query("SELECT settings->>'dealerName' AS name, settings->'pages' AS pages, jsonb_build_object('siteTemplate',settings->'profile'->>'siteTemplate') AS profile,settings->'options' AS options, settings->'financingEnabled' AS finance, settings->'options'->'aprFinancingEnabled' AS apr FROM client_profile WHERE id=1")).rows[0]||{};
+        const settings=(await db.query("SELECT settings->>'dealerName' AS name, settings->'pages' AS pages, (settings->'profile') - '{logo,logoLightBackground}'::text[] AS profile,settings->'options' AS options, settings->'financingEnabled' AS finance, settings->'options'->'aprFinancingEnabled' AS apr FROM client_profile WHERE id=1")).rows[0]||{};
         displayName=settings.name||displayName;
+        publicName=displayName;
+        publicLocation=worker.DealerLocation.facts(settings.profile||{});
         storefront=registry.templateKey(settings.profile?.siteTemplate);
         showCash=settings.options?.cash!==false && settings.options?.pricing!==false;
         sitePages=registry.list(settings,!!tenant,settings.finance!==false && settings.apr!==false).filter(item=>item.enabled);
@@ -740,6 +742,23 @@ createServer(async(req,res)=>{
           .replace('<p id="intro"></p>',()=>'<p id="intro">'+esc(page.body)+'</p>')
           .replace('<div id="tools"></div>',()=>'<div id="tools">'+pageTools+'</div>');
       }
+      if(seo && publicLocation){
+        const dedicated=["contact","directions"].includes(page?.key);
+        const card=worker.DealerLocation.card(publicLocation,dedicated);
+        const sales=publicLocation.teams.find(team=>team.key==="sales" && team.phone);
+        if(sales)content=content.replace("</header>",()=>'<a class="header-sales-phone" aria-label="'+esc("Call sales at "+sales.number)+'" href="'+esc(sales.phone)+'">'+esc(sales.number)+'</a></header>');
+        const fullFooter=card && !dedicated ? '<h2>Contact '+esc(publicName)+'</h2>'+card : "";
+        content=content.replace(/<footer id="dealer-contact"[^>]* hidden><\/footer>/,()=>'<footer id="dealer-contact" data-server-location aria-label="Dealership contact information"'+(fullFooter?"":" hidden")+'>'+fullFooter+'</footer>');
+        if(dedicated)content=content.replace('<div id="page-location"></div>',()=>'<div id="page-location">'+card+'</div>');
+        if(card){
+          const target=(page?.path||"")+(dedicated?"#page-location":"#dealer-contact");
+          content=content.replace(/data-contact-nav href="[^"]*" hidden/,()=>'data-contact-nav href="'+esc(target)+'"');
+        }
+        if(seo.path==="/" || dedicated){
+          const data=worker.DealerLocation.schema(publicLocation,publicName,origin);
+          if(data)content=content.replace("</head>",()=>'<script type="application/ld+json">'+JSON.stringify(data).replaceAll("<","\\u003c")+'</script></head>');
+        }
+      }
       if(seo && storefront!=="classic"){
         content=content.replace(/<body(?=[\s>])/i,()=>'<body data-store-template="'+storefront+'"');
         if(seo.path==="/"){
@@ -751,7 +770,7 @@ createServer(async(req,res)=>{
       if(seo && sitePages.length){
         const groups=[...new Set(sitePages.map(p=>p.group))];
         const links=groups.map(g=>'<section><h3>'+esc(g)+'</h3><ul>'+sitePages.filter(p=>p.group===g).map(p=>'<li><a href="'+esc(p.path)+'">'+esc(p.title)+'</a></li>').join("")+'</ul></section>').join("");
-        content=content.replace('</body>',()=>'<footer id="dealer-page-links"><nav aria-label="Dealership pages"><div class="dealer-page-groups">'+links+'</div></nav></footer></body>');
+        content=content.replace('<footer aria-label="Dealer access"',()=>'<footer id="dealer-page-links"><nav aria-label="Dealership pages"><div class="dealer-page-groups">'+links+'</div></nav></footer><footer aria-label="Dealer access"');
       }
       if(seo)content=content.replace(/<title>.*?<[/]title>/i,()=>"<title>"+esc(seo.title)+"</title>").replace("</head>",()=>'<meta name="description" content="'+esc(seo.description)+'"><link rel="canonical" href="'+esc(origin+seo.path)+'"></head>');
       res.writeHead(response.status,{"Content-Type":response.headers.get("content-type"),"Cache-Control":"no-store"}).end(content);return;

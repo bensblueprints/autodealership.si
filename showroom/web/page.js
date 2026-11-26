@@ -97,19 +97,6 @@
     form.addEventListener("input",calculate);form.onsubmit=e=>e.preventDefault();
     form.append(output,el("small","Estimate before taxes and fees. Your lender determines the final terms."));calculate();parent.append(form);
   }
-  function contact(parent,profile){
-    const block=el("address",undefined,"page-contact");
-    const address=[profile.street,profile.city,profile.region,profile.postal,profile.country].filter(Boolean).join(", ");
-    if(address){block.append(el("p",address),anchor("Get directions","https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(address),true));}
-    for(const [key,title] of [["salesPhone","Sales"],["servicePhone","Service"],["partsPhone","Parts"]]){
-      const phone=String(profile[key]||"").trim();
-      if(!phone)continue;
-      const line=el("p",title+" · "),digits=phone.replace(/\D/g,"");
-      line.append(/^\+?[\d ().-]+$/.test(phone)&&digits.length>=7&&digits.length<=15?anchor(phone,"tel:"+(phone.startsWith("+")?"+":"")+digits):document.createTextNode(phone));
-      block.append(line);
-    }
-    if(block.childElementCount)parent.append(block);
-  }
   function render(){
     const all=DealerPages.list(), page=all.find(p=>p.key===pageKey&&p.enabled);
     byId("tools").replaceChildren();byId("related").replaceChildren();
@@ -122,7 +109,6 @@
     }
     if(predicates[page.key])inventory(tools,predicates[page.key]);
     if(page.key==="payment-calculator")calculator(tools);
-    if(["contact","directions"].includes(page.key))contact(tools,Store.settings().profile||{});
     const group=el("nav",undefined,"page-related");group.setAttribute("aria-label","Related pages");
     for(const key of related[page.key]||[]){
       const other=all.find(p=>p.key===key&&p.enabled);if(other)group.append(anchor(other.title,DealerPages.href(other.key)));

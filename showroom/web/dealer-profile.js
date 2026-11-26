@@ -5,12 +5,16 @@
   const brand = document.querySelector(".brand");
   const image = brand.querySelector("[data-dealer-logo]");
   const wordmark = document.getElementById("brandname");
-  const salesLink=document.createElement("a");
-  salesLink.className="header-sales-phone";
-  salesLink.hidden=true;
-  brand.closest("header").append(salesLink);
+  const header=brand.closest("header");
+  const salesLink=header.querySelector(".header-sales-phone") || document.createElement("a");
+  if (!salesLink.isConnected) {
+    salesLink.className="header-sales-phone";
+    salesLink.hidden=true;
+    header.append(salesLink);
+  }
   let rendered = "";
   let lastLogo = "";
+  let lastContact = "";
 
   const text = value => typeof value === "string" ? value.trim() : "";
   function create(tag, content) {
@@ -23,28 +27,6 @@
       const url = new URL(text(value));
       return url.protocol === "https:" && !url.username && !url.password ? url.href : "";
     } catch { return ""; }
-  }
-  function link(label, href, external = false) {
-    const anchor = create("a", label);
-    anchor.href = href;
-    if (external) {
-      anchor.target = "_blank";
-      anchor.rel = "noopener noreferrer";
-    }
-    return anchor;
-  }
-  function dial(value) {
-    const match = /^([+\d().\s-]+?)(?:\s*(?:ext\.?|x|#)\s*(\d+))?$/i.exec(value);
-    if (!match) return "";
-    const digits = match[1].replace(/\D/g, "");
-    return digits.length >= 7 && digits.length <= 15
-      ? "tel:" + (match[1].trim().startsWith("+") ? "+" : "") + digits + (match[2] ? ";ext=" + match[2] : "")
-      : "";
-  }
-  function group(label) {
-    const section = create("section");
-    section.append(create("h3", label));
-    return section;
   }
   function updateLogo(name, source) {
     wordmark.textContent = name;
@@ -59,6 +41,7 @@
     image.src = logo;
   }
   function render() {
+    if (footer.hasAttribute("data-server-location") && !Store.profileLoaded()) return;
     const settings = Store.settings(), profile = settings.profile || {};
     const name = text(settings.dealerName) || "Dealership";
     const signature = JSON.stringify([name,profile,document.documentElement.dataset.skin]);
@@ -66,48 +49,37 @@
     rendered = signature;
     const light=["pearl","sand"].includes(document.documentElement.dataset.skin||profile.skin);
     updateLogo(name,text(light?(profile.logoLightBackground||profile.logo):(profile.logo||profile.logoLightBackground)));
-    const number=text(profile.salesPhone), phoneHref=dial(number);
+    const number=text(profile.salesPhone), phoneHref=DealerLocation.dial(number);
     salesLink.hidden=!phoneHref;
     if(phoneHref){
       salesLink.href=phoneHref;
       salesLink.textContent=number;
       salesLink.setAttribute("aria-label","Call sales at "+number);
     }else salesLink.removeAttribute("href");
-    const grid = create("div");
-    grid.className = "contact-grid";
-    const phones = group("Call a department");
-    for (const [label, key] of [["Sales","salesPhone"],["Parts","partsPhone"],["Service","servicePhone"]]) {
-      const number = text(profile[key]), href = dial(number);
-      if (!href) continue;
-      const anchor = link("",href);
-      anchor.className = "department-phone";
-      anchor.append(create("span",label),create("strong",number));
-      phones.append(anchor);
-    }
-    if (phones.childElementCount > 1) grid.append(phones);
-
-    const locality=[text(profile.city),[text(profile.region),text(profile.postal)].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-    const lines=[text(profile.street),locality,text(profile.country)].filter(Boolean);
-    if (text(profile.street) || locality) {
-      const locations = group("Visit the dealership"), address=create("address");
-      lines.forEach(line=>address.append(create("span",line)));
-      const location = lines.join(", ");
-      locations.append(address,link("Get directions ↗","https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(location),true));
-      grid.append(locations);
-    }
-    const socials=group("Follow us"), socialList=create("div");
-    socialList.className="social-links";
-    for(const [label,key] of [["Facebook","facebook"],["Instagram","instagram"],["YouTube","youtube"],["TikTok","tiktok"],["X","x"],["LinkedIn","linkedin"]]){
-      const href=safeUrl(profile[key]);
-      if (href) socialList.append(link(label,href,true));
-    }
-    if(socialList.childElementCount){socials.append(socialList);grid.append(socials);}
-    footer.replaceChildren();
-    footer.hidden = !grid.childElementCount;
-    nav.hidden = footer.hidden;
-    if (!footer.hidden) {
-      const title=create("h2","Contact " + name);
-      footer.append(title,grid);
+    const page = document.getElementById("page-location");
+    const dedicated = page && ["contact","directions"].includes(DealerPages.currentKey());
+    const facts = DealerLocation.facts(profile);
+    const contactKey = JSON.stringify([name,facts,Boolean(dedicated)]);
+    if (lastContact === contactKey) return;
+    lastContact = contactKey;
+    const card = DealerLocation.card(facts,dedicated);
+    const container = dedicated ? page : footer;
+    const hours = () => container.querySelectorAll("details[data-department]");
+    const opened = new Map(Array.from(hours(),item=>[item.dataset.department,item.open]));
+    const focused = document.activeElement?.closest("details[data-department]")?.dataset.department;
+    footer.hidden = !card || dedicated;
+    nav.hidden = !card;
+    if (dedicated) {
+      if (page.innerHTML !== card) page.innerHTML = card;
+      nav.hash = "page-location";
+    } else if (card) {
+      footer.replaceChildren(create("h2","Contact "+name));
+      footer.insertAdjacentHTML("beforeend",card);
+    } else footer.replaceChildren();
+    for (const item of hours()) {
+      const key=item.dataset.department;
+      if (opened.has(key)) item.open=opened.get(key);
+      if (key===focused) item.querySelector("summary").focus({preventScroll:true});
     }
   }
   window.addEventListener("showroom:skin",render);
