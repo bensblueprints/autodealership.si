@@ -43,23 +43,25 @@ def digest(text):
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def cipher():
-    return Fernet(os.environ["RESEND_TOKEN_KEY"].encode())
+def cipher(prefix="RESEND_"):
+    return Fernet(os.environ[prefix+"TOKEN_KEY"].encode())
 
 
-def call(path, form=None, *, method=None, bearer=None, data=None):
+def call(path, form=None, *, method=None, bearer=None, data=None, prefix="RESEND_", idempotency=None):
     headers = {"User-Agent": "AutoDealership.SI/1", "Accept": "application/json"}
     payload = None
     if form is not None:
         payload = urlencode(form).encode()
         headers["Content-Type"] = "application/x-www-form-urlencoded"
-        auth = os.environ["RESEND_CLIENT_ID"] + ":" + os.environ["RESEND_CLIENT_SECRET"]
+        auth = os.environ[prefix+"CLIENT_ID"] + ":" + os.environ[prefix+"CLIENT_SECRET"]
         headers["Authorization"] = "Basic " + base64.b64encode(auth.encode()).decode()
     elif data is not None:
         headers["Content-Type"] = "application/json"
         payload = json.dumps(data).encode()
     if bearer:
         headers["Authorization"] = "Bearer " + bearer
+    if idempotency:
+        headers["Idempotency-Key"] = idempotency
     try:
         with urlopen(Request(BASE + path, data=payload, method=method, headers=headers), timeout=10) as res:
             return json.loads(res.read() or "{}")
@@ -68,8 +70,10 @@ def call(path, form=None, *, method=None, bearer=None, data=None):
             error = json.loads(exc.read(8192))
         except ValueError:
             error = {}
+        if path == "/emails" and exc.code in (400,403,422):
+            raise Problem(422, "Resend declined the message. Check the sending domain, recipient and account sending permissions in Resend.") from exc
         if error.get("error") == "invalid_grant" or (bearer and exc.code in (401,403)):
-            raise Problem(401, "Reconnect this dealership’s Resend team to continue.") from exc
+            raise Problem(401, "Reconnect the Resend team to continue.") from exc
         if exc.code == 429:
             raise Problem(429, "Resend is handling too many requests. Try again shortly.") from exc
         if exc.code in (400, 409, 422) and path.startswith("/domains"):
@@ -125,12 +129,12 @@ def begin(db, site, token):
         "redirect_uri":CALLBACK, "state":state, "code_challenge_method":"S256","code_challenge":challenge})}
 
 
-def seal(tokens):
-    if not tokens.get("access_token") or not tokens.get("refresh_token") or tokens.get("token_type","").lower() != "bearer" or SCOPE not in tokens.get("scope","").split():
-        raise Problem(502, "Resend did not grant the requested domain permissions.")
+def seal(tokens, scope=SCOPE, prefix="RESEND_"):
+    if not tokens.get("access_token") or not tokens.get("refresh_token") or tokens.get("token_type","").lower() != "bearer" or scope not in tokens.get("scope","").split():
+        raise Problem(502, "Resend did not grant the requested permissions.")
     plain = {"access":tokens["access_token"], "refresh":tokens["refresh_token"],
              "expires":time.time()+int(tokens["expires_in"])}
-    return cipher().encrypt(json.dumps(plain).encode()).decode()
+    return cipher(prefix).encrypt(json.dumps(plain).encode()).decode()
 
 
 def finish(db, site, token, params):

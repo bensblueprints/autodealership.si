@@ -10,6 +10,8 @@ from tenant_database import provision
 from psycopg.rows import dict_row
 import resend_connect
 import resend_routes
+import platform_mail
+import platform_mail_routes
 
 ROOT=Path(__file__).parent
 ORIGIN="https://autodealership.si"
@@ -31,6 +33,7 @@ with connect() as db:
         CREATE TABLE IF NOT EXISTS public.engineer_sessions(token text PRIMARY KEY,engineer uuid NOT NULL REFERENCES public.client_engineers(id),expires timestamptz NOT NULL);
         ALTER TABLE public.client_sites ADD COLUMN IF NOT EXISTS engineer uuid REFERENCES public.client_engineers(id)""")
     db.execute(resend_connect.SCHEMA)
+    db.execute(platform_mail.SCHEMA)
 def digest(token):return hashlib.sha256(token.encode()).hexdigest()
 def encoded_password(password,salt):
     return hashlib.scrypt(password.encode(),salt=bytes.fromhex(salt),n=16384,r=8,p=1).hex()
@@ -83,6 +86,8 @@ class Handler(BaseHTTPRequestHandler):
     def log_request(self, code="-", size="-"):
         self.log_message("%s %s %s", self.command, self.path.partition("?")[0], code)
     def do_GET(self):
+        if self.path.partition("?")[0] in (platform_mail.PATH,platform_mail.PATH+"/callback",platform_mail_routes.UNSUB):
+            return platform_mail_routes.get(self)
         if self.path.partition("?")[0] in ("/onboarding/email","/onboarding/email/callback"):
             return resend_routes.get(self,connect)
         if self.path.startswith("/api/v1/vin/"):
@@ -114,12 +119,16 @@ class Handler(BaseHTTPRequestHandler):
             rows=db.execute("SELECT slug,name,rate,domain,verified_domain,bhph,voice,agent_state,engineer,clerk_org_id FROM public.client_sites "+("" if who=="owner" else "WHERE engineer=%s ")+"ORDER BY created_at DESC",() if who=="owner" else (who,)).fetchall()
         self.reply(200,rows)
     def do_POST(self):
+        if self.path.partition("?")[0]==platform_mail_routes.UNSUB:
+            return platform_mail_routes.leave(self,connect)
         who=self.identity()
         if self.headers.get("Origin")!=ORIGIN or self.headers.get_content_type()!="application/json":return self.reply(403,{})
         try:
             size=int(self.headers.get("Content-Length",0))
             if not 0<size<8000:raise ValueError("Invalid request.")
             data=json.loads(self.rfile.read(size))
+            if self.path.startswith(platform_mail.PATH+"/"):
+                return platform_mail_routes.post(self,connect,data,who)
             if self.path.startswith("/onboarding/email/"):
                 return resend_routes.post(self,connect,self.path[len("/onboarding/email/"):],data)
             if self.path=="/onboarding/clerk-exchange":

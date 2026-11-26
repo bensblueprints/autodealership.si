@@ -1,0 +1,10 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><meta name="referrer" content="no-referrer"><title>Connect platform email</title>
+<main style="max-width:40rem;margin:10vh auto;padding:1rem;font:18px/1.5 system-ui"><h1>Platform email</h1><p role="status">Checking authorization…</p><a href="/onboarding/sales-email">Return to platform email</a></main>
+<script>
+(async()=>{const params=new URLSearchParams(location.search);
+history.replaceState(null,"","/onboarding/sales-email/callback");
+const r=await fetch("/onboarding/sales-email/finish",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({state:params.get("state")||"",code:params.get("code")||"",error:params.get("error")||""})});
+const d=await r.json();if(!r.ok)throw Error(d.error||"Could not complete authorization.");
+location.replace("/onboarding/sales-email?result="+(d.canceled?"canceled":"connected"));
+})().catch(e=>document.querySelector("[role=status]").textContent=e.message);
+</script></html>

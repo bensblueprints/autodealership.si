@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><meta name="referrer" content="no-referrer"><title>Sales email | AutoDealership.SI</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:16px/1.55 system-ui,sans-serif;color:#1c3040;background:#f3f6f7}header{padding:14px max(5vw,18px);background:#101d2c;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:16px}header img{width:144px;max-width:38vw}header a{color:inherit}main{max-width:1080px;margin:32px auto;padding:0 20px 60px}h1{font-size:clamp(2rem,5vw,3rem);letter-spacing:-.05em;line-height:1.05;margin:12px 0 22px}h2{font-size:1.25rem;margin:0 0 10px}p{margin:8px 0 18px}.layout{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,3fr);gap:18px;align-items:start}section,details,dialog{background:#fff;padding:clamp(18px,3vw,28px);border:1px solid #c5d4db;border-radius:14px}details,aside section{margin-bottom:16px}summary{font-weight:650;cursor:pointer}form{display:grid;gap:12px}label{display:grid;gap:4px;font-weight:600}small{color:#465c6b}input,textarea,select{font:inherit;width:100%;border:1px solid #758997;border-radius:7px;padding:8px 10px;background:#fff;color:#192f3e}textarea{resize:vertical}button{font:inherit;font-weight:650;border:1px solid #526978;border-radius:7px;padding:8px 14px;background:white;color:#183449;cursor:pointer}button.primary{background:#163e50;color:white;border-color:#163e50}button:disabled{opacity:.6;cursor:default}a{color:#145776}button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #0083a9;outline-offset:3px}[hidden]{display:none!important}#status:not(:empty),#preview-status:not(:empty){padding:10px 14px;border-radius:7px;background:#e1edf1;color:#1a4254}.history{margin-top:18px}.history li{padding:9px 0;overflow-wrap:anywhere}.history button{margin-left:8px;font-size:.88rem}dialog{width:min(630px,94vw);max-height:88dvh;color:#1c3040}dialog::backdrop{background:#0b1b27aa}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;background:#f4f7f8;border-radius:8px;padding:16px}.sender{font-size:.9rem;overflow-wrap:anywhere}.actions{display:flex;gap:8px;flex-wrap:wrap}@media(max-width:740px){.layout{display:flex;flex-direction:column}.layout>*{width:100%}aside{order:-1}main{padding:0 14px 40px}}
+</style></head><body><header><img src="/brand/logo-dark.webp" alt="AutoDealership.SI"><a href="/onboarding/admin">Platform Admin</a></header>
+<main><h1>Sales email</h1><p id="status" role="status"></p><div class="layout"><section><h2>Compose an email</h2><form id="compose">
+<label>Email type<select id="kind"><option value="demo">Demo invitation</option><option value="followup">Personal follow-up</option><option value="education">Educational email</option></select></label>
+<label>Recipient<input type="email" id="email" required maxlength="254"></label><label>Reason for contact<input id="permission" required minlength="3" maxlength="350" placeholder="For example, requested a walkthrough on a call"></label>
+<label>Subject<input id="subject" maxlength="160" required></label><label>Message<textarea id="body" rows="8" required maxlength="4000"></textarea></label>
+<button class="primary" id="prepare" disabled>Preview email</button><small id="compose-help"></small></form></section>
+<aside><section><h2>Platform Resend team</h2><p id="connection">Checking connection…</p><button class="primary" id="connect" hidden>Connect platform Resend</button><button id="disconnect" hidden>Disconnect</button><div id="confirm" hidden><p>Disconnect this platform’s sending team?</p><button id="remove">Confirm disconnect</button> <button id="keep">Keep connection</button></div>
+</section><details id="setup"><summary>Sender and mailing address</summary><p>Verify <b>autodealership.si</b> for sending in the selected Resend team. Use a sender address where your team can receive replies. <a href="https://resend.com/domains" target="_blank" rel="noopener">Open Resend domains</a></p><form id="settings"><label>From address<input id="sender" type="email" maxlength="254" required></label><label>Business mailing address<input id="address" minlength="5" maxlength="280" required></label><small>This address appears in the footer with an unsubscribe link.</small><button>Save sender</button></form></details></aside></div>
+<section class="history"><h2>Recent emails</h2><p id="empty">No previews or sent emails yet.</p><ul id="history"></ul></section></main>
+<dialog id="preview" aria-labelledby="preview-title"><h2 id="preview-title">Email preview</h2><p class="sender" id="envelope"></p><strong id="preview-subject"></strong><pre id="preview-body"></pre><p id="preview-status" role="status"></p><div class="actions"><button class="primary" id="send">Send this email</button><button id="close">Close</button></div></dialog>
+<script>
+"use strict";
+const el=id=>document.getElementById(id),templates={
+demo:["Schedule your AutoDealership.SI demo","Thanks for your interest in AutoDealership.SI. Choose a time for a walkthrough here:\nhttps://calendly.com/ben-onetimesuite/new-meeting\n\nIf there’s a vehicle or workflow you’d like to see, reply and I’ll include it."],
+followup:["Following up on our conversation","Thanks for taking the time to talk. What would you like to see next for your dealership?"],
+education:["How a vehicle inquiry reaches your team","When a shopper asks about a vehicle in an AutoDealership.SI showroom, the question and stock number stay together in the dealer inbox. A salesperson can claim the inquiry and set a time to follow up.\n\nWhich part of your current process takes the most time?"]};
+let current,ready=false;
+const say=(s)=>el("status").textContent=s;
+function template(){const t=templates[el("kind").value];el("subject").value=t[0];el("body").value=t[1];}
+async function api(op,data={}){const r=await fetch("/onboarding/sales-email/"+op,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed.");return d;}
+async function run(button,fn,inside=false){button.disabled=true;try{await fn();}catch(e){if(inside)el("preview-status").textContent=e.message;else say(e.message);}finally{button.disabled=false;if(button===el("prepare"))button.disabled=!ready;}}
+async function refresh(){
+ const d=await api("status");ready=d.connected&&!d.reconnect&&!!d.address;
+ el("connection").textContent=d.reconnect?"Authorization expired. Reconnect the platform team.":d.connected?"Connected for sending from AutoDealership.SI.":"Choose your AutoDealership.SI team on Resend to authorize sending.";
+ el("connect").hidden=d.connected&&!d.reconnect;el("connect").textContent=d.reconnect?"Reconnect platform Resend":"Connect platform Resend";el("disconnect").hidden=!d.connected;
+ el("sender").value=d.sender;el("address").value=d.address;el("prepare").disabled=!ready;el("confirm").hidden=true;
+ if(!d.address)el("setup").open=true;
+ el("compose-help").textContent=ready?"Review the recipient, message and footer before sending.":"Connect your team and save a sender and mailing address to preview and send.";
+ el("empty").hidden=!!d.history.length;el("history").replaceChildren();
+ for(const x of d.history){const li=document.createElement("li"),b=document.createElement("button");
+ li.textContent=x.subject+" · "+x.email+" · "+(x.accepted?"Accepted by Resend":x.first_attempt?"Acceptance unconfirmed":"Draft");
+ b.textContent="View";b.onclick=()=>run(b,async()=>show(await api("read",{id:x.id})));li.append(b);el("history").append(li);}
+}
+function show(d){current=d;el("envelope").textContent="From "+d.sender+"  →  "+d.email;el("preview-subject").textContent=d.subject;el("preview-body").textContent=d.body;
+ el("send").hidden=!!d.accepted;el("send").disabled=!ready;el("send").textContent=d.attempted?"Retry this email":"Send this email";
+ el("preview-status").textContent=d.accepted?"Resend accepted this email.":d.attempted?"Previous acceptance is unconfirmed. Retrying this preview uses the original send ID.":"";
+ el("preview").showModal();}
+el("kind").onchange=template;template();
+el("settings").onsubmit=e=>{e.preventDefault();run(e.submitter,async()=>{await api("save",{sender:el("sender").value,address:el("address").value});await refresh();say("Sender saved.");});};
+el("connect").onclick=e=>run(e.target,async()=>location.assign((await api("connect")).url));
+el("disconnect").onclick=()=>{el("confirm").hidden=false;el("keep").focus();};el("keep").onclick=()=>el("confirm").hidden=true;
+el("remove").onclick=e=>run(e.target,async()=>{await api("disconnect");await refresh();say("Platform team disconnected.");});
+el("compose").onsubmit=e=>{e.preventDefault();run(e.submitter,async()=>{const fields=Object.fromEntries(["kind","email","permission","subject","body"].map(k=>[k,el(k).value]));show(await api("preview",fields));await refresh();});};
+el("close").onclick=()=>el("preview").close();
+el("send").onclick=e=>run(e.target,async()=>{const id=current.id;await api("send",{id});el("send").hidden=true;el("preview-status").textContent="Resend accepted this email.";await refresh();},true);
+const result=new URLSearchParams(location.search).get("result");history.replaceState(null,"",location.pathname);
+refresh().then(()=>{if(result)say(result==="connected"?"Platform Resend team connected.":"Authorization canceled.");}).catch(e=>say(e.message));
+</script></body></html>
