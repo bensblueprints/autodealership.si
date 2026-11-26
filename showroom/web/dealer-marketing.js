@@ -6,7 +6,7 @@
   const endpoint = "api/dealer-marketing";
   const states = {draft:"Draft",review:"Awaiting review",changes:"Changes requested",approved:"Approved copy"};
   const decisions = {save:"Draft saved",submit:"Submitted for review",approve:"Copy approved",return:"Changes requested"};
-  let data, active, loading = 0, busy = false;
+  let data, active, loading = 0, feedRequest = 0, busy = false;
   const node = (tag, value) => Object.assign(document.createElement(tag), {textContent:value});
   function brief() {
     return {name:fields.namedItem("name").value.trim(), program:fields.program.value,channel:fields.channel.value,
@@ -46,6 +46,7 @@
   function render() {
     byId("marketing-inquiries").textContent = data.report.inquiries;
     byId("marketing-bookings").textContent = data.report.bookings;
+    byId("booking-channels").textContent = data.report.concierge_bookings+" booked through the concierge";
     const list = byId("marketing-list");
     list.replaceChildren();
     if (!data.campaigns.length) list.append(node("p","Create a campaign to plan its budget and send its copy for review."));
@@ -71,6 +72,7 @@
       if (version!==loading) return;
       data = result;
       render();
+      loadFeed(version);
       status.textContent = message;
     } catch (error) {
       if (version!==loading) return;
@@ -78,6 +80,26 @@
       status.textContent = message ? message+" "+error.message : error.message;
     }
   }
+  async function loadFeed(version) {
+    const request=++feedRequest;
+    const summary=byId("feed-summary"), address=byId("feed-address"), diagnostics=byId("feed-diagnostics");
+    address.hidden=diagnostics.hidden=true;summary.textContent="Checking inventory…";
+    try{
+      const response=await window.readDealerDesk("api/vehicle-feed-status",{cache:"no-store"});
+      if(!response.ok)throw Error();
+      const feed=await response.json();
+      if(version!==loading || request!==feedRequest)return;
+      const availability=feed.enabled?"Feed enabled":!feed.supportedCountry?"The vehicle feed supports U.S. dealerships":!feed.storeCode?"Add your Google store code to enable the feed":"Enable public cash pricing to publish the feed";
+      summary.textContent=availability+" · "+feed.eligible+" of "+feed.available+" inventory records meet the listing checks.";
+      if(feed.enabled){byId("feed-url").value=feed.url;address.hidden=false;}
+      diagnostics.hidden=!feed.excluded.length;
+      byId("feed-reasons").textContent=feed.excluded.length+" vehicles need attention";
+      byId("feed-issues").replaceChildren(...feed.excluded.map(row=>node("li",(row.stock||row.vin)+" · "+row.issues.join(", "))));
+    }catch{if(version===loading && request===feedRequest)summary.textContent="Could not check the feed. Select Refresh to retry.";}
+  }
+  byId("feed-settings").addEventListener("click",()=>byId("brandSettings").click());
+  byId("settings").addEventListener("close",()=>{if(!byId("marketing").hidden)loadFeed(loading);});
+  byId("feed-url").addEventListener("focus",event=>event.target.select());
   async function act(action) {
     if (busy || (action==="save" && !form.reportValidity())) return;
     const input = {id:active.id,revision:active.revision,action,brief:brief(),verified:fields.verified.checked,note:fields.note.value};

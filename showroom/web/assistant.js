@@ -309,7 +309,9 @@
       // The agent can deliver the chosen slot and the shopper's confirmation in the same call.
       if(!booking && review!==signature)return "Read the completed appraisal details back and ask for confirmation first.";
       if(form.querySelector("button[type=submit],button.primary")?.disabled)return "Submission is already in progress.";
-      review=null;form.requestSubmit();
+      review=null;
+      if(booking)form.dataset.conciergeSubmit="true";
+      try{form.requestSubmit();}finally{delete form.dataset.conciergeSubmit;}
       for(let i=0;i<80;i++){
         await new Promise(resolve=>setTimeout(resolve,100));
         if(booking && form.hidden)return doc.getElementById("drive-status").textContent+" Now ask whether they have a trade-in. Save their answer with customer_notes, then ask what they are looking for specifically.";

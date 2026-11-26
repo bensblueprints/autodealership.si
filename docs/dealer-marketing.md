@@ -42,4 +42,24 @@ The channel mix follows the public Acura program benchmark. Each OEM's current d
 
 ## First pilot
 
-Start with **used-vehicle search**. Inventory, price and availability can be checked against the same dealership database that serves the landing page. Compare the draft with the actual vehicle, update a price, mark a test VIN sold, and verify that stale ads and approvals are flagged before opening paid delivery. Service advertising follows when a dealer can supply a working service scheduler and a reliable booking event. The reporting and approval pilot can start before media-account access.
+### Configure the U.S. Google vehicle feed
+
+1. In **Dealer dashboard → Marketing → Feed settings**, enter the store code assigned to the dealership in its linked Google Business Profile. Verify that the dealership's advertised cash prices include its mandatory dealer fees. Save the settings. Public cash pricing and the pricing breakdown must be enabled.
+2. Under **Marketing → Google vehicle feed**, inspect the eligible count and expand the excluded vehicles. Supply missing inventory facts or a real vehicle photo. Clearing the store code disables the public feed.
+3. In the dealer's authorized Merchant Center vehicle ads program, add the displayed HTTPS URL as a scheduled-fetch primary data source for U.S. in-store offers. Select the correct store and vehicle-ads destination. Review the first processing result and resolve Google disapprovals in Merchant Center. The desk's listing checks are local validation. [Google vehicle data source specification](https://support.google.com/merchants/answer/11192663?hl=en)
+
+The feed is generated from the current dealership database on every fetch. Sold and deleted vehicles are removed, and an eligible vehicle marked available again returns. A configured empty lot emits a valid empty feed. Google refreshes its copy on its own schedule. Each item uses the VIN, a store-specific vehicle landing link, and the same cash price as the detail page, including a BHPH cash override when applicable.
+
+### Reconcile native conversions
+
+Use **Marketing → Download conversion events** to export the last 30 rolling days for the signed-in dealership. Each row has an event ID, type, UTC timestamp, VIN and channel. One committed test-drive confirmation produces one booking conversion. Web and concierge booking requests reuse a request key on retry. Repeating a request with matching details returns the original receipt. Competing shoppers receive one successful booking for the slot. The export also includes saved shopper inquiries, each identified by its persisted inquiry ID. Earlier bookings retain their original timestamp and show an unrecorded channel. The export omits shopper names, email addresses, phone numbers and private booking tokens.
+
+### Choose a dealer website template
+
+Engineering can choose **Franchise / OEM**, **Independent dealer**, **Buy Here Pay Here** or **Showroom** in the onboarding wizard. Existing stores can change the layout under **Branding & store settings → Storefront layout**. The color skin can be chosen independently. The **Today** tab checks live inventory, logo variants, contact information and published hours, plus template-specific requirements.
+
+The franchise layout prioritizes new, used and certified inventory. It surfaces service and specials after their dealer pages are enabled. The independent layout prioritizes pre-owned and budget inventory. The BHPH layout links to specific vehicles and shows the dealer-entered down payment, installment and term when an eligible schedule exists. A layout selection never grants OEM certification, enables credit terms or creates a financing offer. Each franchise still needs its current brand assets, authorized offers, disclosures and formal OEM review.
+
+### Next external pilot
+
+Start with **used-vehicle search**. Connect a dealer-authorized Merchant Center property, verify the scheduled fetch, compare a published offer price with its landing page, and reconcile Google's diagnostics. Service advertising follows when a dealer can supply a working service scheduler and a reliable booking event.

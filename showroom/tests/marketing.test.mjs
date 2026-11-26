@@ -15,7 +15,7 @@ test("campaign governance, activity reporting and rooftop isolation in PostgreSQ
       const client=new pg.Client({connectionString:databaseURL});
       await client.connect();
       clients.push(client);
-      await client.query("CREATE TEMP TABLE shopper_leads (body jsonb); CREATE TEMP TABLE appointments (body jsonb); SET search_path TO pg_temp");
+      await client.query("CREATE TEMP TABLE shopper_leads (body jsonb,id uuid DEFAULT gen_random_uuid() PRIMARY KEY); CREATE TEMP TABLE appointments (body jsonb,confirmation text UNIQUE DEFAULT gen_random_uuid()::text); SET search_path TO pg_temp");
     }
     const [dealer,other]=clients;
     const read=(db,historyId)=>dealershipMarketing({method:"GET",db,historyId});

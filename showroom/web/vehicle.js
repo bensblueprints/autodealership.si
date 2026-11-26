@@ -7,7 +7,7 @@
   const settings=Store.settings();
   const enabled=key=>settings.options?.[key]!==false && (!["finance","payment","lease"].includes(key)||Store.aprAllowed(car));
   const exists=value=>value!==null && value!==undefined && value!=="";
-  const money=value=>!exists(value)?"Contact for price":new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}).format(value);
+  const money=value=>!exists(value)?"Contact for price":new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:0,maximumFractionDigits:2}).format(value);
   const makeNode=(tag,value)=>{
     const node=document.createElement(tag);
     if(exists(value))node.textContent=value;
@@ -235,6 +235,7 @@
     catch(e){follow.querySelector("[role=status]").textContent=e.message;}
     finally{button.disabled=false;}
   };
+  const bookingAttempts=new Map();
   get("leadform").onsubmit=async event=>{
     event.preventDefault();
     const form=event.currentTarget,button=form.querySelector("button");
@@ -243,6 +244,14 @@
     if(!data.name.trim()||!data.message.trim()){get("drive-status").textContent="Enter your name and a message.";return;}
     button.disabled=true;
     try{
+      const key="booking-attempt:"+car.vin+":"+data.slot;
+      let attempt=bookingAttempts.get(key);
+      try{attempt ||= sessionStorage.getItem(key);}catch{}
+      attempt ||= crypto.randomUUID();
+      bookingAttempts.set(key,attempt);
+      try{sessionStorage.setItem(key,attempt);}catch{}
+      data.requestId=attempt;
+      data.channel=form.dataset.conciergeSubmit==="true"?"concierge":"website";
       if(window.bhphChoice)data.bhph=window.bhphChoice;
       const response=await fetch(bookingUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
       const result=await response.json();

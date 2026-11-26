@@ -6,6 +6,11 @@ function validateProfile(input){
   const skin=input.profile.skin||"midnight";
   if(!["midnight", "pearl", "navy", "forest", "burgundy", "plum", "slate", "sand"].includes(skin))throw Error("Unknown showroom skin.");
   const profile={skin};
+  profile.siteTemplate=input.profile.siteTemplate||"classic";
+  if(!Object.hasOwn(DealerSitePages.templates,profile.siteTemplate))throw Error("Choose a supported showroom template.");
+  const code=input.profile.googleStoreCode||"";
+  if(typeof code!=="string" || !/^[A-Za-z0-9_-]{0,64}$/.test(code))throw Error("Enter a valid Google Business Profile store code (up to 64 characters).");
+  profile.googleStoreCode=code;
   for(const key of ["driveHours","salesHours"]){
     if(input.profile[key]==null)continue;
     const zone=input.profile.driveTimezone;

@@ -10,6 +10,26 @@ const campaignId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9
 const campaignReply = (status, data) => ({status, data});
 const campaignError = (status, error) => campaignReply(status, {error});
 
+// Use the successful operational writes as the event ledger, including legacy bookings.
+// Both source identifiers have UNIQUE constraints in each dealership database.
+const conversionRows = `SELECT 'test_drive_booked:'||confirmation AS event_id,'test_drive_booked' AS event,
+    body->>'createdAt' AS occurred_at,body->>'vin' AS vin,
+    COALESCE(body->'conversion'->>'channel','unrecorded') AS channel
+  FROM appointments WHERE body->>'createdAt' BETWEEN $1 AND $2
+  UNION ALL SELECT 'shopper_inquiry:'||id,'shopper_inquiry',body->>'createdAt',body->'car'->>'vin',
+    CASE WHEN body->>'source'='Voice concierge' THEN 'concierge' ELSE 'showroom' END
+  FROM shopper_leads WHERE body->>'createdAt' BETWEEN $1 AND $2`;
+function conversionPeriod(){
+  const end=new Date();
+  return [new Date(end.getTime()-30*86400000).toISOString(),end.toISOString()];
+}
+export async function dealerConversionExport(db){
+  const rows=(await db.query("SELECT * FROM ("+conversionRows+") e ORDER BY occurred_at DESC,event_id",conversionPeriod())).rows;
+  const fields=["event_id","event","occurred_at","vin","channel"];
+  const quote=value=>'"'+String(value??"").replace(/^[=+@\-\t\r]/,"'$&").replaceAll('"','""')+'"';
+  return [fields.join(","),...rows.map(row=>fields.map(k=>quote(row[k])).join(","))].join("\r\n")+"\r\n";
+}
+
 function validCampaignBrief(value) {
   if (!value || !campaignPrograms.includes(value.program) || !campaignChannels.includes(value.channel)) return false;
   if (!Number.isSafeInteger(value.monthlyCents) || value.monthlyCents < 0 || value.monthlyCents > 10000000000) return false;
@@ -36,12 +56,11 @@ export async function dealershipMarketing({db, method, input, canReview, actor, 
       const record = (await db.query("SELECT history FROM marketing_campaigns WHERE id=$1",[historyId])).rows[0];
       return record ? campaignReply(200,record.history) : campaignError(404,"Campaign unavailable.");
     }
-    const end = new Date();
-    const start = new Date(end.getTime() - 30 * 86400000);
-    const times = [start.toISOString(), end.toISOString()];
-    const counts = await db.query(`SELECT
-      (SELECT count(*)::int FROM shopper_leads WHERE body->>'createdAt' BETWEEN $1 AND $2) AS inquiries,
-      (SELECT count(*)::int FROM appointments WHERE body->>'createdAt' BETWEEN $1 AND $2) AS bookings`, times);
+    const times = conversionPeriod();
+    const counts = await db.query(`SELECT count(*) FILTER(WHERE event='shopper_inquiry')::int AS inquiries,
+      count(*) FILTER(WHERE event='test_drive_booked')::int AS bookings,
+      count(*) FILTER(WHERE event='test_drive_booked' AND channel='concierge')::int AS concierge_bookings
+      FROM (`+conversionRows+") e", times);
     const list = await db.query(`SELECT id, revision, state, brief, updated_at, history->-1 AS latest
       FROM marketing_campaigns ORDER BY updated_at DESC, id`);
     return campaignReply(200, {campaigns:list.rows, canReview, programs:campaignPrograms, channels:campaignChannels,

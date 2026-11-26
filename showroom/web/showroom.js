@@ -2,7 +2,7 @@
   const $ = id => document.getElementById(id);
   const exists = value => value !== null && value !== undefined && value !== '';
   const miles = car => exists(car.miles) ? Number(car.miles).toLocaleString('en-US')+' mi' : '';
-  const currency = value => !exists(value) ? 'Contact for price' : Number(value).toLocaleString('en-US', {style:'currency', currency:'USD', maximumFractionDigits:0});
+  const currency = value => !exists(value) ? 'Contact for price' : Number(value).toLocaleString('en-US', {style:'currency', currency:'USD', minimumFractionDigits:0,maximumFractionDigits:2});
   const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const categoryPage=document.body.dataset.inventoryPage;
   const pageFilter=categoryPage && DealerSitePages.inventoryFilters[categoryPage];
@@ -28,7 +28,7 @@
   }
   const pageSize=24;
   const initialParams=new URLSearchParams(location.search);
-  let page=0,previousResults='',landingReady=!pageFilter;
+  let page=0,previousResults='',landingReady=!pageFilter && !window.postgresInventory;
   if(pageFilter){query=initialParams.get("search")||"";$("search").value=query;}
   function pageLocation(){
     if(!pageFilter)return;
@@ -63,8 +63,9 @@
     const pages=DealerPages.list().filter(p=>p.enabled);
     const inventory=pages.find(p=>p.key==="all-inventory");
     const bhph=list.some(car=>car.bhph);
+    showTemplate(list,pages);
     const services=["value-trade","schedule-service","directions","contact"].map(key=>pages.find(p=>p.key===key)).filter(Boolean);
-    const signature=JSON.stringify([inventory?.key,bhph,services.map(p=>[p.key,p.title])]);
+    const signature=JSON.stringify([document.body.dataset.storeTemplate,inventory?.key,bhph,services.map(p=>[p.key,p.title])]);
     if(signature===shortcutSignature)return;shortcutSignature=signature;bar.replaceChildren();
     function link(title,href){const a=document.createElement("a");a.href=href;a.textContent=title;bar.append(a);}
     if(inventory)link("Shop all vehicles",DealerPages.href(inventory.key));
@@ -74,6 +75,40 @@
     }
     for(const service of services)link(service.title,DealerPages.href(service.key));
     bar.hidden=!bar.childElementCount;
+    if(document.body.dataset.storeTemplate && document.body.dataset.storeTemplate!=="classic")bar.hidden=true;
+  }
+  function showTemplate(list,pages){
+    const settings=Store.settings(), key=DealerSitePages.templateKey(settings.profile?.siteTemplate);
+    const section=$("dealer-template");
+    document.body.dataset.storeTemplate=key;
+    if(!section || key==="classic"){if(section)section.hidden=true;return;}
+    const template=DealerSitePages.templates[key];
+    const enabled=template.links.map(k=>pages.find(page=>page.key===k)).filter(Boolean);
+    const picks=key==="bhph"?list.filter(car=>car.bhph?.schedules?.length).slice(0,3):[];
+    const signature=JSON.stringify([key,enabled.map(p=>[p.key,p.title]),picks.map(c=>[c.id,c.bhph.revision,c.bhph.down,c.bhph.schedules[0]])]);
+    if(section.dataset.signature===signature)return;
+    section.dataset.signature=signature;section.hidden=false;
+    section.querySelector("h2").textContent=key==="bhph"&&!picks.length?"Browse available vehicles":template.heading;
+    const grid=section.querySelector(".template-links");grid.replaceChildren();
+    const add=(label,href,detail)=>{
+      const a=document.createElement("a"),name=document.createElement("strong");
+      a.href=href;name.textContent=label;a.append(name);
+      if(detail){const small=document.createElement("small");small.textContent=detail;a.append(small);}
+      grid.append(a);
+    };
+    const money=cents=>(cents/100).toLocaleString("en-US",{style:"currency",currency:"USD",minimumFractionDigits:0,maximumFractionDigits:2});
+    for(const car of picks){
+      const offer=car.bhph,s=offer.schedules[0];
+      add(title(car),"vehicle.html?stock="+encodeURIComponent(car.vin)+"#vehicle-payment-schedules",
+        money(offer.down)+" down · "+money(s.payment)+" "+s.frequency.toLowerCase()+" · "+s.months+" months");
+    }
+    for(const page of enabled)add(page.title,DealerPages.href(page.key));
+    if(picks.length){
+      const shortcut=document.createElement("button");shortcut.type="button";shortcut.textContent="Filter by down payment";
+      shortcut.onclick=()=>{window.filterCars("");$("bhph-only").checked=true;$("filterpanel").open=true;render();jump();$("max-cash-down").focus();};
+      grid.append(shortcut);
+    }
+    section.hidden=!grid.childElementCount;
   }
   function render() {
     if(!landingReady)return [];
@@ -166,7 +201,7 @@
   $('assistantlaunch').onclick=()=>window.dispatchEvent(new Event('open-assistant'));
   window.addEventListener('showroom:update',render);
   window.addEventListener('storage',render);
-  if(pageFilter)Promise.all([Store.inventoryReady,Store.profileReady]).then(()=>{landingReady=true;render();});else render();
+  if(!landingReady)Promise.all([Store.inventoryReady,Store.profileReady]).then(()=>{landingReady=true;render();});else render();
   const initialCar = new URLSearchParams(location.search).get('vehicle');
   if (initialCar) location.replace("vehicle.html?stock="+encodeURIComponent(initialCar));
 })();

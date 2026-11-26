@@ -18,7 +18,7 @@ TABLES = {
 }
 
 
-def provision(control, site_id, name, legacy=False):
+def provision(control, site_id, name, legacy=False, template="independent"):
     # Caller holds the site's registry row lock until this function returns and commits.
     database = "client_" + site_id.hex
     dsn = os.environ["CLIENT_DATABASE_URL"]
@@ -52,7 +52,7 @@ def provision(control, site_id, name, legacy=False):
                 raise RuntimeError("Copy verification failed for " + table)
         if not legacy:
             from psycopg.types.json import Jsonb
-            target.execute("INSERT INTO client_profile VALUES(1,%s,%s)", (Jsonb({"dealerName":name,"profile":{"skin":"midnight"},"pages":{}}),uuid.uuid4().hex))
+            target.execute("INSERT INTO client_profile VALUES(1,%s,%s)", (Jsonb({"dealerName":name,"profile":{"skin":"midnight","siteTemplate":template},"pages":{}}),uuid.uuid4().hex))
     control.execute("UPDATE public.client_sites SET database_name=%s WHERE id=%s", (database,site_id))
 
 

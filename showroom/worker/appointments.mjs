@@ -30,7 +30,7 @@ async function appointmentApi(request,env){
     do {
       const page=await bucket.list({prefix:appointmentPrefix,cursor});
       for(const item of page.objects){const record=await bucket.get(item.key);if(record){
-        const {noteToken,...customer}=await record.json();
+        const {noteToken,requestFingerprint,...customer}=await record.json();
         customer.notes={};
         for(const field of ["tradeIn","preferences"]){
           const note=await bucket.get("drive-notes/"+customer.confirmation+"/"+field);
@@ -61,12 +61,30 @@ async function appointmentApi(request,env){
     await bucket.put("drive-notes/"+record.confirmation+"/"+data.field,JSON.stringify(data.answer.trim()));
     return profileReply({saved:true});
   }
-  if(!data || !slots.includes(data.slot)||typeof data.name!=="string"||!data.name.trim()||data.name.length>100||typeof data.email!=="string"||data.email.length>200||!/^\S+@\S+\.\S+$/.test(data.email)||typeof data.phone!=="string"||data.phone.length>40||!/^\+?[0-9(). \-]+$/.test(data.phone.trim())||!/^\d{7,15}$/.test(data.phone.replace(/\D/g,""))||typeof data.message!=="string"||data.message.length>2000)return profileReply({error:"Check the time and contact details."},400);
+  if(!data || typeof data.slot!=="string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z$/.test(data.slot)||typeof data.name!=="string"||!data.name.trim()||data.name.length>100||typeof data.email!=="string"||data.email.length>200||!/^\S+@\S+\.\S+$/.test(data.email)||typeof data.phone!=="string"||data.phone.length>40||!/^\+?[0-9(). \-]+$/.test(data.phone.trim())||!/^\d{7,15}$/.test(data.phone.replace(/\D/g,""))||typeof data.message!=="string"||data.message.length>2000)return profileReply({error:"Check the time and contact details."},400);
+  if(data.requestId!==undefined && (typeof data.requestId!=="string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(data.requestId)))return profileReply({error:"Invalid booking reference."},400);
+  const hash=async value=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,"0")).join("");
   const record={vin,slot:data.slot,name:data.name.trim(),email:data.email.trim(),phone:data.phone.trim(),message:data.message.trim(),confirmation:crypto.randomUUID(),noteToken:crypto.randomUUID(),createdAt:new Date().toISOString()};
+  if(data.requestId){
+    const key=await hash("test-drive:"+data.requestId.toLowerCase());
+    record.confirmation=[key.slice(0,8),key.slice(8,12),"8"+key.slice(13,16),"a"+key.slice(17,20),key.slice(20,32)].join("-");
+    record.requestFingerprint=await hash(JSON.stringify([vin,data.slot,record.name,record.email,record.phone,record.message,data.bhph?.revision??null,data.bhph?.months??null,data.bhph?.frequency??null]));
+  }
+  const receipt=(row, status)=>profileReply({confirmation:row.confirmation,noteToken:row.noteToken,eventId:"test_drive_booked:"+row.confirmation},status);
+  async function replay(){
+    if(!data.requestId)return null;
+    const stored=await bucket.get(prefix+record.slot),prior=stored && await stored.json();
+    if(prior?.confirmation!==record.confirmation)return null;
+    return prior.requestFingerprint===record.requestFingerprint?receipt(prior,200):profileReply({error:"This booking reference was already used for different details."},409);
+  }
+  const existing=await replay();
+  if(existing)return existing;
+  if(!slots.includes(data.slot))return profileReply({error:"Choose a currently available time."},400);
+  record.conversion={type:"test_drive_booked",eventId:"test_drive_booked:"+record.confirmation,channel:data.channel==="concierge"?"concierge":"website",occurredAt:record.createdAt};
   if(data.bhph){
     record.bhph=await env.offerSnapshot?.(vin,data.bhph);
     if(!record.bhph)return profileReply({error:"Financing terms changed. Reload the listing and review them before booking."},422);
   }
   const saved=await bucket.put(prefix+record.slot,JSON.stringify(record),{onlyIf:{etagDoesNotMatch:"*"}});
-  return saved?profileReply({confirmation:record.confirmation,noteToken:record.noteToken},201):profileReply({error:"This time was just reserved. Choose another time."},409);
+  return saved?receipt(record,201):await replay() || profileReply({error:"This time is unavailable. Choose another time."},409);
 }

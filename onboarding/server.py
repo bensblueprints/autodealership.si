@@ -37,11 +37,13 @@ def create(data,engineer=None):
     if not 1<=len(name)<=100 or not 14<=len(password)<=128 or type(rate) is not int or not 0<=rate<=100000:raise ValueError("Check the dealership name, monthly rate and dealer password (14 characters minimum).")
     domain=data.get("domain","").strip().lower()
     if domain and (not re.fullmatch(r"(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}",domain) or domain.endswith(".autodealership.si") or domain=="autodealership.si"):raise ValueError("Enter the future custom hostname without https://.")
+    template=data.get("siteTemplate") or ("bhph" if data.get("bhph") is True else "independent")
+    if template not in ("classic","franchise","independent","bhph"):raise ValueError("Choose a supported storefront template.")
     ident=uuid.uuid4()
     auth="Basic "+base64.b64encode(("dealer:"+password).encode()).decode()
     with connect() as db:
         db.execute("INSERT INTO public.client_sites(id,slug,name,admin_hash,rate,bhph,voice,domain,engineer) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)",(ident,slug,name,hashlib.sha256(auth.encode()).hexdigest(),rate,data["bhph"] is True,data["voice"] is True,domain,engineer))
-        provision(db,ident,name)
+        provision(db,ident,name,template=template)
     return {"slug":slug}
 def provision_agent(slug):
     with connect() as db:

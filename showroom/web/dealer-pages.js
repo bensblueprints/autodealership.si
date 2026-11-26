@@ -52,6 +52,13 @@ const DealerSitePages=(()=>{
   ];
   const catalog=[...core,...optional].map(([key,title,group,path,body="",demoPath=""])=>({key,title,group,path,body,demoPath,editorial:!body}));
   const requiresApr=new Set(["finance-center","apply-financing","payment-calculator","leasing","finance-specials","lease-specials"]);
+  const templates={
+    classic:{label:"Showroom",heading:"Explore inventory",pages:[]},
+    franchise:{label:"Franchise / OEM",heading:"Shop by department",pages:["new-vehicles","pre-owned","certified-pre-owned"],links:["new-vehicles","pre-owned","certified-pre-owned","new-specials","schedule-service","order-parts"]},
+    independent:{label:"Independent dealer",heading:"Find your next vehicle",pages:["pre-owned","under-20k"],links:["all-inventory","under-20k","value-trade","contact"]},
+    bhph:{label:"Buy Here Pay Here",heading:"Shop by payment",pages:["pre-owned"],links:["all-inventory","contact"]}
+  };
+  function templateKey(value){return Object.hasOwn(templates,value)?value:"classic";}
   function safeUrl(value){
     try{const u=new URL(value);return u.protocol==="https:" && !u.username && !u.password?u.href:"";}catch{return "";}
   }
@@ -60,7 +67,7 @@ const DealerSitePages=(()=>{
     const overrides=Array.isArray(saved)?Object.fromEntries(saved.filter(p=>p?.key).map(p=>[p.key,p])):saved;
     return catalog.map(base=>{
       const edit=overrides[base.key],body=edit?.body??base.body;
-      const enabled=edit?(edit.enabled!==false):base.key==="all-inventory"||(!tenant&&!base.editorial);
+      const enabled=edit?(edit.enabled!==false):base.key==="all-inventory"||templates[templateKey(settings.profile?.siteTemplate)].pages.includes(base.key)||(!tenant&&!base.editorial);
       return {...base,title:edit?.title?.trim()||base.title,body,
         enabled:enabled && (!base.editorial || !!body.trim()) && (apr || !requiresApr.has(base.key)),
         url:safeUrl(edit?.url??(!tenant&&base.demoPath?demoOrigin+base.demoPath:""))};
@@ -75,13 +82,13 @@ const DealerSitePages=(()=>{
     incoming:car=>/in transit|incoming/i.test(car.status||""),
     "ev-inventory":car=>/^(electric|electricity|battery electric)$/i.test(car.fuel||"")
   };
-  return {catalog,list,safeUrl,requiresApr,inventoryFilters};
+  return {catalog,list,safeUrl,requiresApr,inventoryFilters,templates,templateKey};
 })();
 if(typeof window!=="undefined"){
   const nativeRoutes=()=>window.postgresInventory && (window.clientSite || location.hostname==="demo.autodealership.si") && !location.pathname.startsWith("/clients/");
   const href=key=>nativeRoutes()?DealerSitePages.catalog.find(p=>p.key===key)?.path:"page.html?page="+encodeURIComponent(key);
   const currentKey=()=>DealerSitePages.catalog.find(p=>p.path===location.pathname)?.key || new URL(location.href).searchParams.get("page") || "about";
   window.DealerPages={href,currentKey,safeUrl:DealerSitePages.safeUrl,
-    get defaults(){return DealerSitePages.list({},!!window.clientSite);},
+    get defaults(){return DealerSitePages.list({profile:Store.settings().profile},!!window.clientSite);},
     list:()=>DealerSitePages.list(Store.settings(),!!window.clientSite,Store.aprAllowed())};
 }

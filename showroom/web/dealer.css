@@ -80,3 +80,15 @@ main>.desk-nav button{text-align:left;width:100%}
 #marketing .sectionhead{margin:1rem 0}#marketing-list article{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:.7rem 0;flex-wrap:wrap;overflow-wrap:anywhere}
 #marketing-list article p{margin:.4rem 0}#campaign-dialog{width:min(620px,95vw)}#campaign-fields{border:0;padding:0;margin:0;min-width:0}
 #campaign-review input[type=checkbox]{width:auto;display:inline;margin-right:.4rem}.campaign-actions{display:flex;gap:8px;flex-wrap:wrap}
+#desk-template{padding-left:.65em;margin-left:.45em;border-left:1px solid var(--line);color:var(--sub);font-weight:500}
+.feed-desk{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:clamp(14px,2vw,22px);margin:24px 0}
+.feed-desk .sectionhead{margin:0 0 12px!important}.feed-desk h3,.feed-desk p{margin:.25rem 0}.feed-desk summary{cursor:pointer;font-weight:600}
+#feed-url{font-family:ui-monospace,monospace}.feed-desk ul{max-height:18rem;overflow:auto;padding-left:1.3rem}.feed-desk li{padding:.35rem 0;overflow-wrap:anywhere}
+#booking-channels{display:inline-block;margin:.3rem .5rem;color:var(--sub)}.template-setting p{color:var(--sub);line-height:1.5}
+main>.desk-nav .desk-group button.active{box-shadow:inset 3px 0 currentColor}
+#leadList,#drive-desk,#inventoryList{font-variant-numeric:tabular-nums}
+#marketing button:not(.primary),#campaign-dialog button:not(.primary){border:1px solid var(--line);border-radius:8px;background:#253344;color:var(--text);padding:9px 14px;font:inherit;font-size:.87rem;font-weight:600;cursor:pointer}
+#marketing :is(a,button,summary,input):focus-visible,#campaign-dialog :is(button,textarea,input,select):focus-visible{outline:2px solid var(--lime);outline-offset:3px}
+#marketing .quiet{color:var(--lime);text-underline-offset:3px}
+.launch-checks{margin-top:24px;padding:16px 18px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}.launch-checks summary{cursor:pointer;font-weight:650}
+.launch-checks ul{display:grid;gap:0;padding:0;margin:12px 0 0;list-style:none}.launch-checks li{display:grid;grid-template-columns:minmax(120px,1fr) 2fr;gap:14px;border-top:1px solid var(--line);padding:10px 0}.launch-checks li span{color:var(--sub)}.launch-checks li[data-ready=true] span{color:var(--lime)}

@@ -184,6 +184,26 @@
     load(0);
   }
   function refresh() {
+    const selected=DealerSitePages.templateKey(Store.settings().profile?.siteTemplate);
+    $("desk-template").textContent=DealerSitePages.templates[selected].label;
+    const settings=Store.settings(),profile=settings.profile||{},pages=DealerPages.list().filter(p=>p.enabled);
+    const checks=[
+      ["Brand identity",!!profile.logo && !!profile.logoLightBackground,"Upload both logo variants in Store settings."],
+      ["Sales contact",!!(profile.salesPhone && profile.street && profile.city),"Enter the sales number and showroom address."],
+      ["Published hours",!!profile.salesHours,"Publish the sales department’s opening hours."],
+      ["Live inventory",Store.cars().length>0,"Publish an available vehicle."],
+    ];
+    if(selected==="franchise"){
+      checks.push(["Offer disclosures",pages.some(p=>p.key==="disclosures"),"Publish the dealer’s approved advertising disclosures in Website pages."],
+        ["Service destination",pages.some(p=>p.key==="schedule-service" && p.url),"Connect and enable the service scheduler."],
+        ["New inventory",Store.cars().some(c=>String(c.condition).toLowerCase()==="new"),"Publish an eligible new vehicle."]);
+    }else if(selected==="bhph"){
+      checks.push(["Payment schedules",Store.cars().some(c=>c.bhph?.schedules?.length),"Enable BHPH on a vehicle and save an installment schedule."]);
+    }
+    $("template-check-count").textContent=checks.filter(c=>c[1]).length+" of "+checks.length+" storefront checks complete";
+    $("template-check-list").replaceChildren(...checks.map(([label,ok,hint])=>{
+      const row=node("li");row.append(node("strong",label),node("span",ok?"Ready":hint));row.dataset.ready=String(ok);return row;
+    }));
     const cars=Store.cars(),leads=Store.leads(),name=Store.settings().dealerName;
     refreshLogo(Store.settings().profile||{});
     $("brand").textContent=name;document.title="Sales desk · "+name;
@@ -290,6 +310,7 @@
       car.id=editing?.id || crypto.randomUUID();car.featured=editing?.featured || false;
       if(photoBusy)throw Error("Wait for photo uploads to finish.");
       addPhotoUrl();car.photos=[...photos];car.image=photos[0]||"";car.galleryEdited=true;
+      if(editing?.imageType==="stock" && car.image && car.image!==editing.image)car.imageType="dealer";
       if(!car.image && !editing)throw Error("Add a photo URL or upload a photo to publish this vehicle.");
       await Store.saveCar(car);refresh();$("editor").close();notice("Vehicle saved to showroom");
       if(save.id==="saveWithBhph")await BHPH.edit(car);
@@ -317,7 +338,7 @@
   window.addEventListener("DOMContentLoaded",()=>tabs.find(btn=>"#"+btn.dataset.view===location.hash)?.click());
   $("statusFilter").addEventListener("change",()=>renderLeads(Store.leads(),$("leadList"),$("statusFilter").value));
   $("addCar").addEventListener("click",()=>openEditor());
-  const profileFields=["salesPhone","partsPhone","servicePhone","street","city","region","postal","country"];
+  const profileFields=["salesPhone","partsPhone","servicePhone","street","city","region","postal","country","googleStoreCode"];
   const socialFields=["facebook","instagram","youtube","tiktok","x","linkedin"];
   const profileForm=$("settingsForm"),profileInputs=profileForm.elements;
 
@@ -398,6 +419,14 @@
     try{await Store.profileReady;}catch{notice("Could not load the saved dealership profile.");return;}
     const settings=Store.settings(), fields=$("settingsForm").elements;
     fields.name.value=settings.dealerName;fields.skin.value=settings.profile?.skin || "midnight";
+    fields.siteTemplate.value=DealerSitePages.templateKey(settings.profile?.siteTemplate);
+    const explain=()=>{$("template-description").textContent={
+      classic:"Featured vehicles and searchable showroom rows.",
+      franchise:"Department navigation, new and certified inventory, and space for approved OEM assets and disclosures.",
+      independent:"An inventory-first layout with pre-owned vehicles and budget-based shopping.",
+      bhph:"Vehicle-level cash down and payment schedules appear when the dealer has published an eligible offer."
+    }[fields.siteTemplate.value];};
+    fields.siteTemplate.onchange=explain;explain();
     fields.tradeUrl.value=settings.tradeUrl;
     fields.storeFinancing.value=paymentMode(settings.options);
     const profile=settings.profile||{};
@@ -441,7 +470,7 @@
       }
       const options=paymentFlags(fields.storeFinancing.value);
       for(const input of e.target.querySelectorAll('[name^="option-"]')) options[input.name.slice(7)]=input.checked;
-      const profile={...Store.settings().profile,skin:fields.skin.value,logo:darkLogo.value(),logoLightBackground:lightLogo.value()};
+      const profile={...Store.settings().profile,siteTemplate:fields.siteTemplate.value,skin:fields.skin.value,logo:darkLogo.value(),logoLightBackground:lightLogo.value()};
       profile.driveTimezone=$("drive-zone").value;
       const readHours=id=>Object.fromEntries(Array.from($(id).children,row=>[row.dataset.day,row.querySelector("input").checked?Array.from(row.querySelectorAll("input[type=time]"),t=>t.value):null]));
       profile.driveHours=readHours("drive-hours");

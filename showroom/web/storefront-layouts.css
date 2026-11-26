@@ -1,0 +1,37 @@
+.dealer-template {
+  padding:clamp(22px,4vw,56px) 5vw;
+  color:var(--ink);
+  background:var(--surface,var(--card));
+  border-block:1px solid var(--hair);
+}
+.dealer-template h2 {margin:0 0 18px;font-size:clamp(1.4rem,2.8vw,2.6rem);letter-spacing:-.045em;line-height:1.1}
+.template-links {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:12px}
+.template-links a,.template-links button {display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:6px;min-height:68px;padding:14px 18px;text-decoration:none;color:var(--ink);background:var(--card);border:1px solid var(--hair);border-radius:8px;text-align:left;overflow-wrap:anywhere}
+.template-links a:hover,.template-links button:hover {border-color:currentColor}
+.template-links :is(a,button):focus-visible {outline:3px solid currentColor;outline-offset:3px}
+.template-links strong {font-size:1rem;font-weight:650}
+.template-links small {font-size:.83rem;line-height:1.4;color:inherit}
+[data-store-template="franchise"] .template-links a {border-radius:2px;border-inline-start:3px solid currentColor}
+[data-store-template="franchise"] .top {border-bottom:2px solid var(--hair)}
+[data-store-template="franchise"] .hero {min-height:320px;height:clamp(340px,46vw,570px)}
+[data-store-template="franchise"] .herotext h1 {font-size:clamp(2.8rem,6vw,6rem);letter-spacing:-.055em}
+[data-store-template="independent"] .hero {height:clamp(320px,40vw,475px);min-height:0;margin:20px 5vw 0;border-radius:18px;overflow:hidden}
+[data-store-template="independent"] .herotext {max-width:52%;padding-inline-start:clamp(22px,4vw,54px)}
+[data-store-template="independent"] .herotext h1 {font-size:clamp(2.75rem,5.5vw,5rem)}
+[data-store-template="independent"] .dealer-template {display:grid;grid-template-columns:minmax(180px,1fr) 3fr;align-items:center;gap:18px}
+[data-store-template="independent"] .dealer-template h2 {margin:0;max-width:13ch}
+[data-store-template="independent"] .template-links a {border-radius:16px}
+[data-store-template="bhph"] .template-links a:has(small) {min-height:100px;border-top:3px solid currentColor}
+[data-store-template="bhph"] .template-links small {font-variant-numeric:tabular-nums}
+[data-store-template="bhph"] #top {display:flex;flex-direction:column}
+[data-store-template="bhph"] #sale-slides {order:-3}
+[data-store-template="bhph"] #dealer-template {order:-2}
+[data-store-template="bhph"] .hero {min-height:0;height:clamp(275px,32vw,390px)}
+.dealer-template[hidden] {display:none}
+@media(max-width:760px){
+  [data-store-template="independent"] .dealer-template {display:block}
+  [data-store-template="independent"] .dealer-template h2 {max-width:none;margin-bottom:16px}
+  .template-links {grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .template-links a,.template-links button {padding:12px;min-height:55px}
+  [data-store-template="independent"] .herotext {max-width:95%}
+}
