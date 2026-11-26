@@ -231,7 +231,7 @@ createServer(async(req,res)=>{
     const dealerHost=tenant && !prefix && base.hostname===tenant.slug+".autodealership.si";
     const tenantDesk=dealerHost && /(?:^|; *)__Host-client_desk=([a-zA-Z0-9_-]{43})(?:;|$)/.exec(req.headers.cookie||"");
     const desk=tenantDesk || (tenant && prefix && /(?:^|; *)client_desk=([a-zA-Z0-9_-]{43})(?:;|$)/.exec(req.headers.cookie||""));
-    const grant=desk && (await pool.query("SELECT 1 FROM public.client_desk_sessions s JOIN public.client_sites t USING(slug) LEFT JOIN public.client_engineers e ON e.id=s.engineer WHERE s.token=$1 AND s.slug=$2 AND s.expires>now() AND (s.engineer IS NULL OR (e.active AND t.engineer=s.engineer))",[createHash("sha256").update(desk[1]).digest("hex"),tenant.slug])).rowCount>0;
+    const grant=desk && (await pool.query("SELECT s.engineer FROM public.client_desk_sessions s JOIN public.client_sites t USING(slug) LEFT JOIN public.client_engineers e ON e.id=s.engineer WHERE s.token=$1 AND s.slug=$2 AND s.expires>now() AND (s.engineer IS NULL OR (e.active AND t.engineer=s.engineer))",[createHash("sha256").update(desk[1]).digest("hex"),tenant.slug])).rows[0];
     const site=tenant?.id||"demo";
     const currentToken=/(?:^|; )dealer_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie||"")?.[1];
     const tokenHash=currentToken && createHash("sha256").update(currentToken).digest("hex");
@@ -239,7 +239,7 @@ createServer(async(req,res)=>{
     const claims=dealerHost && await dealerClaim(req.headers.cookie,base.origin);
     const clerkRole=clerkOrg && claims?.organization===clerkOrg && claims.role;
     const platformStaff=claims && (await pool.query("SELECT 1 FROM public.staff_clerk_links l WHERE l.subject=$1 AND (l.principal IN ('owner','owner:sales@autodealership.si') OR EXISTS(SELECT 1 FROM public.client_engineers e JOIN public.client_sites t ON t.engineer=e.id WHERE t.id=$2 AND e.active AND e.id::text=l.principal))",[claims.subject,tenant.id])).rowCount>0;
-    const delegated=grant || platformStaff;
+    const delegated=!!grant || platformStaff;
     const account=!clerkOrg && tokenHash && (await pool.query("SELECT s.email FROM public.dealer_sessions s LEFT JOIN public.dealer_users u ON u.site=s.site AND u.email=s.email WHERE s.token=$1 AND s.site=$2 AND s.expires>now() AND (s.email='dealer' OR u.active)",[tokenHash,site])).rows[0];
     const privileged=tenant ? delegated || (!clerkOrg && createHash("sha256").update(supplied).digest("hex")===tenant.admin_hash) : signed || ["localhost","127.0.0.1","[::1]"].includes(base.hostname) && !req.headers.forwarded && !req.headers["x-forwarded-for"];
     const privateAdmin=privileged || !!account || !!clerkRole;
@@ -340,6 +340,19 @@ createServer(async(req,res)=>{
       if(prefix){res.writeHead(302,{Location:"/onboarding/clerk-login?site="+encodeURIComponent(tenant.slug),"Cache-Control":"no-store"}).end();return}
       if(base.hostname!==tenant.slug+".autodealership.si"){res.writeHead(302,{Location:"https://"+tenant.slug+".autodealership.si/dealer-login"}).end();return}
       res.writeHead(200,{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store","X-Frame-Options":"DENY"}).end(clerkDealerPage(clerkOrg,tenant.slug));return;
+    }
+    if(route.pathname==="/api/dealer-marketing"){
+      const send=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
+      if(!privateAdmin)return send(403,{error:"Dealer sign-in required."});
+      let input;
+      if(req.method==="POST"){
+        if(req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return send(403,{error:"Use the dealer workspace."});
+        if(body.length>32000)return send(413,{error:"Campaign is too large."});
+        try{input=JSON.parse(body);}catch{return send(400,{error:"Invalid campaign data."});}
+      }
+      const actor=(clerkRole || platformStaff)?claims.subject:grant?(grant.engineer?"engineer:"+grant.engineer:"platform owner"):account?.email||"dealer administrator";
+      const result=await worker.dealershipMarketing({db,method:req.method,input,historyId:route.searchParams.get("history"),canReview:!!managesUsers || clerkRole==="org:admin",actor});
+      return send(result.status,result.data);
     }
     if(route.pathname.startsWith("/api/dealer-auth/")){
       const op=route.pathname.split("/").pop();
@@ -551,7 +564,7 @@ createServer(async(req,res)=>{
     const esc=value=>String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
     const origin=publicDealer?"https://"+(tenant.verified_domain || tenant.slug+".autodealership.si"):demoBrowse?"https://demo.autodealership.si":"";
     const available=" FROM client_cars c WHERE NOT EXISTS (SELECT 1 FROM inventory_status s WHERE s.vin=c.vin)";
-    let seo,page,sitePages=[],pageTools="",assetUrl=req.url;
+    let seo,page,vehicleFacts,sitePages=[],pageTools="",assetUrl=req.url;
     if(publicDealer || demoBrowse){
       let displayName=tenant?.name||"Capital City CDJR";
       if(demoBrowse)res.setHeader("X-Robots-Tag","noindex");
@@ -599,9 +612,10 @@ createServer(async(req,res)=>{
         seo={title:displayName+" | Vehicle Inventory",description:"Browse available vehicles at "+displayName+", explore vehicle details and schedule a test drive.",path:"/"};
       }else if(route.pathname==="/vehicle.html"){
         const vin=route.searchParams.get("stock")||"";
-        const car=(await db.query("SELECT body->>'year' AS year, body->>'make' AS make, body->>'model' AS model, body->>'trim' AS trim"+available+" AND c.vin=$1",[vin])).rows[0];
+        const car=(await db.query("SELECT body->>'year' AS year, body->>'make' AS make, body->>'model' AS model, body->>'trim' AS trim, body->>'stock' AS stock, body->>'body' AS body, body->>'fuel' AS fuel, body->>'transmission' AS transmission"+available+" AND c.vin=$1",[vin])).rows[0];
         if(!car){res.writeHead(404,{"Content-Type":"text/plain","X-Robots-Tag":"noindex"}).end("Vehicle unavailable");return;}
         const label=[car.year,car.make,car.model,car.trim].filter(Boolean).join(" ")||vin;
+        vehicleFacts={label,vin,car};
         seo={title:label+" | "+displayName,description:"View the "+label+" at "+displayName+". VIN "+vin+". Explore its features and request a test drive.",path:"/vehicle.html?stock="+encodeURIComponent(vin)};
       }
     }
@@ -613,6 +627,17 @@ createServer(async(req,res)=>{
       if((clerkRole || platformStaff || tenantDesk) && response.headers.get("content-type").includes("html") && ["/dealer","/dealer.html"].includes(route.pathname))content=content.replace("</head>",clerkScript+'<script>window.dealerClerkReady=Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});window.dealerClerkReady.catch(()=>{});</script></head>');
       if(prefix)content=content.replace(/(["'`])\/(?!\/)(?=(?:api\/|dealer-login|bhph\.|banner|inventory|index\.html))/g,"$1"+prefix+"/");
       if(tenant && response.headers.get("content-type").includes("html"))content=content.replaceAll("Capital City CDJR",tenant.name.replace(/[&<>"]/g,x=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[x])));
+      if(vehicleFacts){
+        const {label,vin,car}=vehicleFacts;
+        const facts=[["VIN",vin],["Stock number",car.stock],["Body style",car.body],["Fuel",car.fuel],["Transmission",car.transmission]].filter(([,value])=>value);
+        const summary='<section class="page-section" id="vehicle-facts"><h1>'+esc(label)+'</h1><dl class="overview-grid">'+facts.map(([key,value])=>'<div><dt>'+esc(key)+'</dt><dd>'+esc(value)+'</dd></div>').join("")+'</dl></section>';
+        const data={"@context":"https://schema.org","@type":"Vehicle",name:label,url:origin+seo.path,vehicleIdentificationNumber:vin};
+        for(const [key,value] of Object.entries({model:car.model,vehicleModelDate:car.year,sku:car.stock,bodyType:car.body,fuelType:car.fuel,vehicleTransmission:car.transmission})){
+          if(value)data[key]=value;
+        }
+        if(car.make)data.brand={"@type":"Brand",name:car.make};
+        content=content.replace('<div id="listing" hidden>',()=>summary+'<div id="listing" hidden>').replace("</head>",()=>'<script type="application/ld+json">'+JSON.stringify(data).replaceAll("<","\\u003c")+'</script></head>');
+      }
       if(seo?.path==="/" && req.method==="GET"){
         const cars=(await db.query("SELECT vin,body->>'year' AS year,body->>'make' AS make,body->>'model' AS model,body->>'stock' AS stock,body->>'image' AS image"+available+" ORDER BY vin LIMIT 24")).rows;
         const cards=cars.map(car=>{

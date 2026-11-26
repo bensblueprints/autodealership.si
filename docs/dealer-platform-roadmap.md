@@ -2,6 +2,8 @@
 
 November 26, 2026 • Advanced Marketing • US dealership rollout
 
+Dealer search visibility, reporting and Module 13 advertising have a dedicated [engineering roadmap](dealer-marketing.md) and [GitHub epic](https://github.com/bensblueprints/autodealership.si/issues/1).
+
 ## The product to build
 
 An independent dealer should be able to publish a car, answer a shopper, book the visit and see who needs a response today. A franchise dealer should get the same experience with delivery into the CRM and DMS it already pays for. Use those deployments to assemble the evidence each manufacturer asks for.

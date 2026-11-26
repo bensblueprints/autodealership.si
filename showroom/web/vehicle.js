@@ -21,6 +21,7 @@
     }
   }
   get("brandname").textContent=settings.dealerName || "Showroom";
+  get("vehicle-facts")?.remove();
   if(!car){get("unavailable").hidden=false;return;}
   const title=[car.year,car.make,car.model].filter(Boolean).join(" ");
   const sticker=car.vin && car.factorySticker?.vin===car.vin ? car.factorySticker : null;

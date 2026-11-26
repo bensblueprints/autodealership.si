@@ -13,6 +13,7 @@ TABLES = {
     "client_cars": "vin text PRIMARY KEY,body jsonb NOT NULL",
     "client_profile": "id integer PRIMARY KEY,settings jsonb NOT NULL,etag text NOT NULL",
     "vehicle_photo_assets": "site text NOT NULL,digest text NOT NULL,jpeg bytea NOT NULL,PRIMARY KEY(site,digest)",
+    "marketing_campaigns": "id uuid PRIMARY KEY, revision integer NOT NULL, state text NOT NULL, brief jsonb NOT NULL, history jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now()",
     "shopper_leads": "id uuid PRIMARY KEY,body jsonb NOT NULL",
 }
 
@@ -32,6 +33,10 @@ def provision(control, site_id, name, legacy=False):
                 continue
             if table == "vehicle_photo_assets":
                 source = sql.SQL("SELECT * FROM public.vehicle_photo_assets WHERE site={}").format(sql.Literal(str(site_id)))
+            elif table == "marketing_campaigns" and not control.execute(
+                "SELECT to_regclass(%s) AS name", (database + ".marketing_campaigns",)
+            ).fetchone()["name"]:
+                continue
             elif table == "shopper_leads":
                 continue
             else:
