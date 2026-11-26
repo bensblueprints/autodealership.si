@@ -355,6 +355,22 @@ createServer(async(req,res)=>{
       if(result===null){res.writeHead(404,headers).end("Vehicle feed is not enabled.");return;}
       res.writeHead(200,{...headers,"Content-Type":feedPublic?"application/xml; charset=utf-8":"application/json"}).end(req.method==="HEAD"?undefined:feedPublic?result:JSON.stringify(result));return;
     }
+    if(route.pathname==="/api/oem-programs"){
+      const headers={"Content-Type":"application/json","Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"};
+      const send=(code,data)=>res.writeHead(code,headers).end(JSON.stringify(data));
+      if(!privateAdmin)return send(403,{error:"Dealer sign-in required."});
+      let input;
+      if(req.method==="POST"){
+        if(req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return send(403,{error:"Use the dealer workspace."});
+        if(body.length>16000)return send(413,{error:"Program is too large."});
+        try{input=JSON.parse(body);}catch{return send(400,{error:"Invalid program data."});}
+      }
+      const actor=(clerkRole||platformStaff)?claims.subject:grant?(grant.engineer?"engineer:"+grant.engineer:"platform owner"):account?.email||"dealer administrator";
+      const exportId=route.searchParams.get("export");
+      const result=await worker.oemProgramsApi({db,method:req.method,input,actor,canReview:!!managesUsers||clerkRole==="org:admin",exportId});
+      if(req.method==="GET" && exportId && result.status===200)headers["Content-Disposition"]='attachment; filename="oem-program-'+exportId+'.json"';
+      return send(result.status,result.data);
+    }
     if(route.pathname==="/api/dealer-marketing"){
       const send=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
       if(!privateAdmin)return send(403,{error:"Dealer sign-in required."});
@@ -538,7 +554,15 @@ createServer(async(req,res)=>{
       if(req.method==="GET"){
         const row=(await db.query("SELECT revision,config FROM homepage_banners WHERE id=1")).rows[0];
         const config=row?.config??{enabled:false,slides:[]};
-        return reply(200,editor?{...config,revision:row?.revision??0}:{heroImage:config.heroMode==="dealership"?config.heroImage:null,slides:config.enabled?config.slides:[]});
+        const settings=(await db.query("SELECT settings->'profile'->>'siteTemplate' AS template,settings->'profile'->>'driveTimezone' AS timezone FROM client_profile WHERE id=1")).rows[0]||{};
+        const franchise=settings.template==="franchise",timezone=settings.timezone||"America/Chicago";
+        const checked=await worker.governedSlides(db,config.slides||[],franchise,timezone);
+        if(editor)return reply(200,{...config,revision:row?.revision??0,franchise,timezone,states:checked.map(row=>row.status)});
+        const slides=config.enabled?checked.filter(row=>["Standard banner","Approved"].includes(row.status)).map(({slide,disclosure,expiresAt})=>({image:slide.image,alt:slide.alt,link:slide.link,disclosure,expiresAt})):[];
+        const publicConfig={heroImage:config.heroMode==="dealership"?config.heroImage:null,slides,governed:franchise||checked.some(row=>row.slide.program)};
+        const json=JSON.stringify(publicConfig),tag='"'+createHash("sha256").update(json).digest("hex")+'"';
+        if(req.headers["if-none-match"]===tag){res.writeHead(304,{"Cache-Control":"private, no-cache",ETag:tag}).end();return;}
+        res.writeHead(200,{"Content-Type":"application/json","Cache-Control":"private, no-cache",ETag:tag}).end(json);return;
       }
       if(!editor || req.method!=="PUT" || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Dealer access required."});
       let data;try{data=JSON.parse(body);}catch{return reply(400,{error:"Invalid slideshow."});}
@@ -553,7 +577,9 @@ createServer(async(req,res)=>{
           try{const url=new URL(slide.link,base);if(url.username||url.password||!(url.protocol==="https:" || (url.origin===base.origin && slide.link.startsWith("/"))))throw Error();}
           catch{return reply(400,{error:"Enter a valid HTTPS link or a showroom path."});}
         }
-        slides.push({image:slide.image,alt:slide.alt.trim(),link:slide.link});
+        const program=worker.oemBinding(slide);
+        if(slide.program && !program)return reply(400,{error:"Choose a valid program revision."});
+        slides.push({image:slide.image,alt:slide.alt.trim(),link:slide.link,...(program?{program}:{})});
       }
       const heroMode=data.heroMode??"vehicle",heroImage=data.heroImage??"";
       if(!["vehicle","dealership"].includes(heroMode) || typeof heroImage!=="string" || heroImage.length>2400000 || (heroImage && !/^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]+=*$/.test(heroImage)) || (heroMode==="dealership" && !heroImage))return reply(400,{error:"Upload a dealership photo before enabling the dealership hero."});

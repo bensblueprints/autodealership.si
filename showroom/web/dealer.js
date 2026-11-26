@@ -328,7 +328,7 @@
     }
     if(key==="inventory")renderInventory(Store.cars(true));
     if(key==="inquiries" || key==="today")Store.loadLeads();
-    if(["banners","pages","voice"].includes(key))$("setup-menu").open=true;
+    if(["banners","pages","voice","oem"].includes(key))$("setup-menu").open=true;
   }
   tabs.forEach(btn=>btn.addEventListener("click",()=>{
     selectTab(btn.dataset.view);

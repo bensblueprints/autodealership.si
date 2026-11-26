@@ -60,6 +60,17 @@ Engineering can choose **Franchise / OEM**, **Independent dealer**, **Buy Here P
 
 The franchise layout prioritizes new, used and certified inventory. It surfaces service and specials after their dealer pages are enabled. The independent layout prioritizes pre-owned and budget inventory. The BHPH layout links to specific vehicles and shows the dealer-entered down payment, installment and term when an eligible schedule exists. A layout selection never grants OEM certification, enables credit terms or creates a financing offer. Each franchise still needs its current brand assets, authorized offers, disclosures and formal OEM review.
 
+### Review franchise offers before publishing a homepage banner
+
+1. Open **Dealer dashboard → Website settings → OEM programs**. Save the manufacturer's offer title, brand, market, source bulletin, version, effective dates and exact shopper-facing disclosure. Record any written manufacturer acceptance separately.
+2. An authorized administrator opens the saved draft, checks it against the source, confirms the review and approves that revision. Staff can prepare drafts.
+3. In **Homepage banners**, upload the artwork, enter its description and destination, select the approved program revision and save. An administrator reviews the saved artwork and approves it. Enable the slideshow to display eligible banners.
+4. Use **Download evidence** in OEM programs for a private JSON record of each revision and decision, including the approved creative, digest, reviewer and timestamp. Invoices, delivery records, reimbursement claims and manufacturer adjudication remain separate work.
+
+The franchise template holds every promotional slide until it has both approvals. A dealership exterior hero photo can still display. Independent and BHPH stores can publish ordinary banners or opt individual offers into the same review. A linked offer displays its saved disclosure and follows its start and end dates in the dealership's configured time zone, including the entire end date.
+
+Changing the image, description or destination requires a matching artwork approval. Saving a new program draft or withdrawing the current revision removes the old offers from subsequent storefront requests. An already-open page checks again when it regains visibility and every minute while visible. It also hides expired artwork at the scheduled cutoff. To release a revised program, approve it, select that revision in the banner editor and review the artwork. These approvals record dealer decisions. Manufacturer certification requires written acceptance through the applicable program.
+
 ### Next external pilot
 
 Start with **used-vehicle search**. Connect a dealer-authorized Merchant Center property, verify the scheduled fetch, compare a published offer price with its landing page, and reconcile Google's diagnostics. Service advertising follows when a dealer can supply a working service scheduler and a reliable booking event.
