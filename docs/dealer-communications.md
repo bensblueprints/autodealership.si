@@ -33,6 +33,12 @@ The engineer’s onboarding wizard should show separate **Email**, **Text** and 
 
 Use a provider-neutral conversation ID and usage record from day one. Start with one working email integration. Revisit SES when the projected savings or reputation isolation justify the operating cost. For example, at 50,000 outbound emails the difference between Resend Pro and SES base sending is $15 per month before AWS extras.
 
+## Platform sales email
+
+The platform owner opens **Platform Admin → Platform sales email** and connects the AutoDealership.SI Resend team. This second confidential OAuth client requests `emails:send`. It has its own callback, encrypted grant and PostgreSQL message history. Configure and verify `autodealership.si` for sending in that team, then select a working From address on the domain and save the business postal address.
+
+Choose a demo invitation, personal follow-up or educational email, record why the person requested the message and review the preview. The demo invitation includes the platform's Calendly link. Sending requires a separate click. Resend acceptance is recorded against the saved preview and retries reuse its provider idempotency key. An unsubscribe applies to subsequent platform sales emails to the same address, including prepared messages. Dealer shopper mail uses its own connection and data. [Resend send API](https://resend.com/docs/api-reference/emails/send-email)
+
 ## Approved pilot rate card
 
 Existing subscriptions, negotiated website fees and included voice minutes continue under their existing agreements. Offer **Managed Follow-up at $99/month per rooftop** as an optional addition. The existing $100 Southern Ohio website agreement would change only if the dealer elects the add-on. These are the pilot retail rates.

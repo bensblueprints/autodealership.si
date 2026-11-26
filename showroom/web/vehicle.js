@@ -21,21 +21,55 @@
     }
   }
   get("brandname").textContent=settings.dealerName || "Showroom";
+  if(!car){get("unavailable").hidden=!!get("vehicle-facts");return;}
   get("vehicle-facts")?.remove();
-  if(!car){get("unavailable").hidden=false;return;}
   const title=[car.year,car.make,car.model].filter(Boolean).join(" ");
+  const currentCrumb=get("vehicle-trail").querySelector("[aria-current]");
+  if(currentCrumb.hidden){currentCrumb.textContent=[title,car.trim].filter(Boolean).join(" ");currentCrumb.hidden=false;}
   const sticker=car.vin && car.factorySticker?.vin===car.vin ? car.factorySticker : null;
   document.title=title+" · "+get("brandname").textContent;
   get("listing").hidden=false;
   get("overline").textContent=[car.condition,car.body,car.status].filter(Boolean).join(" · ");
   get("title").textContent=[car.make,car.model].join(" ");
   get("trim").textContent=[car.year,car.trim].filter(Boolean).join(" · ");
-  get("identity").textContent=[car.stock?"Stock #"+car.stock:null,car.location].filter(Boolean).join(" · ");
+  get("identity").textContent=[car.stock?"Stock #"+car.stock:null,car.vin?"VIN "+car.vin:null,car.location].filter(Boolean).join(" · ");
   if(car.imageType==="stock")get("photo").append(makeNode("figcaption","Representative manufacturer photos for this listing"));
   const gallery=[...new Set([car.image,...(Array.isArray(car.photos)?car.photos:[])].filter(url=>typeof url==="string" && url.trim()))];
   const image=get("vehicle-photo"),box=get("photo-view"),large=get("lightbox-photo");
   const controls=document.querySelectorAll(".photo-controls");
+  const strip=get("photo-strip"),rejected=new Set();
   let position=0;
+  function buildStrip(){
+    const restore=strip.contains(document.activeElement);
+    strip.replaceChildren();strip.hidden=gallery.length<2;
+    if(strip.hidden){if(restore&&!get("enlarge").hidden)get("enlarge").focus();return;}
+    gallery.forEach((url,i)=>{
+      const button=makeNode("button"),thumb=makeNode("img");
+      button.type="button";button.setAttribute("aria-label","Show photo "+(i+1)+" of "+gallery.length);
+      thumb.alt="";thumb.loading="lazy";thumb.decoding="async";thumb.width=80;thumb.height=58;thumb.src=url;
+      button.append(thumb);button.onclick=()=>selectPhoto(i);
+      strip.append(button);
+    });
+    if(restore)strip.children[position]?.focus({preventScroll:true});
+  }
+  function selectPhoto(i){
+    position=i;
+    drawPhoto();
+    const selected=strip.children[position];
+    if(selected && !strip.hidden){
+      const left=selected.getBoundingClientRect().left-strip.getBoundingClientRect().left+strip.scrollLeft;
+      if(left<strip.scrollLeft)strip.scrollLeft=left;
+      else if(left+selected.offsetWidth>strip.scrollLeft+strip.clientWidth)strip.scrollLeft=left+selected.offsetWidth-strip.clientWidth;
+    }
+  }
+  strip.onkeydown=event=>{
+    if(!["Home","End","ArrowLeft","ArrowRight"].includes(event.key))return;
+    event.preventDefault();
+    if(event.key==="Home")selectPhoto(0);
+    else if(event.key==="End")selectPhoto(gallery.length-1);
+    else stepPhoto(event.key==="ArrowLeft"?-1:1);
+    strip.children[position]?.focus({preventScroll:true});
+  };
   function drawPhoto(){
     const url=gallery[position];
     image.hidden=!url;get("photoMissing").hidden=Boolean(url);get("enlarge").hidden=!url;
@@ -43,20 +77,23 @@
       group.hidden=gallery.length<2;
       group.querySelector("span").textContent=url?(position+1)+" / "+gallery.length:"";
     });
+    for(let i=0;i<strip.children.length;i++){
+      strip.children[i].setAttribute("aria-pressed",String(i===position));strip.children[i].tabIndex=i===position?0:-1;
+    }
     if(!url){image.removeAttribute("src");large.removeAttribute("src");if(box.open)box.close();return;}
     image.alt=title+" · photo "+(position+1);
     const failed=()=>{
       if(gallery[position]!==url)return;
-      gallery.splice(position,1);
+      rejected.add(url);gallery.splice(position,1);
       position=Math.min(position,Math.max(0,gallery.length-1));
-      drawPhoto();
+      buildStrip();drawPhoto();
     };
-    image.onerror=failed;image.src=url;
-    if(box.open){large.onerror=failed;large.alt=image.alt;large.src=url;}
+    image.onerror=failed;if(image.getAttribute("src")!==url)image.src=url;
+    if(box.open){large.onerror=failed;large.alt=image.alt;if(large.getAttribute("src")!==url)large.src=url;}
   }
   function stepPhoto(offset){
     if(gallery.length<2)return;
-    position=(position+gallery.length+offset)%gallery.length;drawPhoto();
+    selectPhoto((position+gallery.length+offset)%gallery.length);
   }
   controls.forEach(group=>group.querySelectorAll("[data-move]").forEach(button=>{
     button.onclick=()=>stepPhoto(Number(button.dataset.move));
@@ -79,12 +116,12 @@
       if(Math.abs(dx)>55 && Math.abs(dx)>Math.abs(dy)*1.5)stepPhoto(dx>0?-1:1);
     },{passive:true});
   }
-  drawPhoto();
+  buildStrip();drawPhoto();
   if(car.galleryPath && !car.galleryEdited){
     fetch(car.galleryPath).then(response=>response.ok?response.json():{}).then(rows=>{
       const urls=rows[car.vin]||[];
-      const next=urls.filter(url=>typeof url==="string" && url.startsWith("https://") && !gallery.includes(url));
-      if(next.length){gallery.push(...next);drawPhoto();}
+      const next=urls.filter(url=>typeof url==="string" && url.startsWith("https://") && !gallery.includes(url) && !rejected.has(url));
+      if(next.length){gallery.push(...new Set(next));buildStrip();drawPhoto();}
     }).catch(()=>{});
   }
   const miles=exists(car.miles)?Number(car.miles).toLocaleString("en-US")+" mi":null;
@@ -204,6 +241,22 @@
     }catch{get("drive-status").textContent="Times are unavailable. Contact sales to schedule.";}
   }
   get("request-drive").onclick=()=>{get("drive").showModal();if(!get("leadform").hidden)loadTimes();};
+  const bar=get("vehicle-contact-bar"),salesHref=DealerLocation.dial(settings.profile?.salesPhone);
+  bar.dataset.retailCar=car.id;get("quick-question").hidden=!enabled("question");
+  if(salesHref){get("quick-call").href=salesHref;get("quick-call").hidden=false;}
+  get("quick-drive").onclick=()=>get("request-drive").click();
+  const mobile=matchMedia("(max-width:780px)");
+  let updatePending=false;
+  function updateBar(){
+    updatePending=false;bar.hidden=!mobile.matches || actions.getBoundingClientRect().bottom>0;
+  }
+  function queueBarUpdate(){
+    if(!updatePending){updatePending=true;requestAnimationFrame(updateBar);}
+  }
+  window.addEventListener("scroll",queueBarUpdate,{passive:true});
+  window.addEventListener("resize",queueBarUpdate);
+  if(window.ResizeObserver)new ResizeObserver(queueBarUpdate).observe(get("listing"));
+  updateBar();
   if(new URLSearchParams(location.search).get("book")==="1")get("request-drive").click();
   document.querySelectorAll("dialog .close").forEach(btn=>btn.onclick=()=>btn.closest("dialog").close());
   let receipt, nextNote="tradeIn";
@@ -264,8 +317,8 @@
       describe(get("drive-facts"),[["Dealership",settings.dealerName],["Address",address],["Confirmation",result.confirmation]]);
       const event=VisitCalendar.create({confirmation:result.confirmation,slot,host:location.hostname,vehicle:title,stock:car.stock,dealer:settings.dealerName,address});
       get("drive-calendar").href=URL.createObjectURL(new Blob([event],{type:"text/calendar;charset=utf-8"}));
-      const sales=get("drive-sales"),digits=(profile.salesPhone||"").replace(/[^+0-9]/g,"");
-      if(digits){sales.href="tel:"+digits;sales.hidden=false;}
+      const sales=get("drive-sales");
+      if(salesHref){sales.href=salesHref;sales.hidden=false;}
       get("drive-receipt").hidden=false;
       receipt={leadId:localLead?.id,slot:result.slot||data.slot,confirmation:result.confirmation,token:result.noteToken};follow.hidden=false;
       form.hidden=true;get("drive-title").textContent="Test drive scheduled";

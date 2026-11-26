@@ -740,7 +740,7 @@ createServer(async(req,res)=>{
         seo={title:displayName+" | Vehicle Inventory",description:"Browse available vehicles at "+displayName+", explore vehicle details and schedule a test drive.",path:"/"};
       }else if(route.pathname==="/vehicle.html"){
         const vin=route.searchParams.get("stock")||"";
-        const car=(await db.query("SELECT body->>'year' AS year, body->>'make' AS make, body->>'model' AS model, body->>'trim' AS trim, body->>'stock' AS stock, body->>'body' AS body, body->>'fuel' AS fuel, body->>'transmission' AS transmission,body->>'color' AS color,body->>'miles' AS miles,COALESCE((SELECT (offer->>'cash')::numeric/100 FROM bhph_offers WHERE vehicle=c.vin AND $2),CASE WHEN body->>'price' ~ '^[0-9]+([.][0-9]+)?$' THEN (body->>'price')::numeric END)::text AS price"+available+" AND c.vin=$1",[vin,!tenant||!!tenant.bhph])).rows[0];
+        const car=(await db.query("SELECT body->>'year' AS year, body->>'make' AS make, body->>'model' AS model, body->>'trim' AS trim, body->>'stock' AS stock, body->>'body' AS body, body->>'fuel' AS fuel, body->>'transmission' AS transmission,body->>'color' AS color,body->>'miles' AS miles,body->>'image' AS image,body->>'imageType' AS image_type,COALESCE((SELECT (offer->>'cash')::numeric/100 FROM bhph_offers WHERE vehicle=c.vin AND $2),CASE WHEN body->>'price' ~ '^[0-9]+([.][0-9]+)?$' THEN (body->>'price')::numeric END)::text AS price"+available+" AND c.vin=$1",[vin,!tenant||!!tenant.bhph])).rows[0];
         if(!car){res.writeHead(404,{"Content-Type":"text/plain","X-Robots-Tag":"noindex"}).end("Vehicle unavailable");return;}
         const label=[car.year,car.make,car.model,car.trim].filter(Boolean).join(" ")||vin;
         vehicleFacts={label,vin,car};
@@ -758,14 +758,25 @@ createServer(async(req,res)=>{
       if(vehicleFacts){
         const {label,vin,car}=vehicleFacts;
         const facts=[["VIN",vin],["Stock number",car.stock],["Body style",car.body],["Fuel",car.fuel],["Transmission",car.transmission],["Exterior color",car.color],["Mileage",car.miles!=null?car.miles+" mi":null],["Cash price",showCash && Number(car.price)>0?Number(car.price).toLocaleString("en-US",{style:"currency",currency:"USD"}):null]].filter(([,value])=>value);
-        const summary='<section class="page-section" id="vehicle-facts"><h1>'+esc(label)+'</h1><dl class="overview-grid">'+facts.map(([key,value])=>'<div><dt>'+esc(key)+'</dt><dd>'+esc(value)+'</dd></div>').join("")+'</dl></section>';
+        const inventory=sitePages.find(p=>p.key==="all-inventory");
+        const crumbs=[{name:publicName||"Showroom",path:"/"},...(inventory?[{name:inventory.title,path:inventory.path}]:[]),{name:label,path:seo.path}];
+        const trail='<nav id="vehicle-trail" aria-label="Breadcrumb">'+crumbs.map((c,i)=>i===crumbs.length-1?'<span aria-current="page">'+esc(c.name)+'</span>':'<a '+(i===crumbs.length-2?'id="back" ':'')+'href="'+esc(c.path)+'">'+esc(c.name)+'</a>').join("")+'</nav>';
+        const trailData={"@context":"https://schema.org","@type":"BreadcrumbList",itemListElement:crumbs.map((c,i)=>({"@type":"ListItem",position:i+1,name:c.name,item:origin+c.path}))};
+        content=content.replace(/<nav id="vehicle-trail"[^>]*>[\s\S]*?<\/nav>/,()=>trail);
+        let photo="";
+        if(typeof car.image==="string" && /^(?:https:\/\/|\/?assets\/)/i.test(car.image)){
+          try{const u=new URL(car.image,origin+"/");if(u.protocol==="https:" && !u.username && !u.password)photo=u.href;}catch{}
+        }
+        const initial=photo?'<img class="initial-photo" src="'+esc(photo)+'" alt="'+esc(label)+'" fetchpriority="high">'+(car.image_type==="stock"?'<small>Representative manufacturer photo</small>':''):'';
+        const summary='<section class="page-section" id="vehicle-facts"><h1>'+esc(label)+'</h1>'+initial+'<dl class="overview-grid">'+facts.map(([key,value])=>'<div><dt>'+esc(key)+'</dt><dd>'+esc(value)+'</dd></div>').join("")+'</dl></section>';
         const data={"@context":"https://schema.org","@type":"Vehicle",name:label,url:origin+seo.path,vehicleIdentificationNumber:vin};
         for(const [key,value] of Object.entries({model:car.model,vehicleModelDate:car.year,sku:car.stock,bodyType:car.body,fuelType:car.fuel,vehicleTransmission:car.transmission})){
           if(value)data[key]=value;
         }
         if(showCash && Number(car.price)>0)data.offers={"@type":"Offer",price:Number(car.price).toFixed(2),priceCurrency:"USD",url:origin+seo.path};
+        if(photo && car.image_type!=="stock")data.image=photo;
         if(car.make)data.brand={"@type":"Brand",name:car.make};
-        content=content.replace('<div id="listing" hidden>',()=>summary+'<div id="listing" hidden>').replace("</head>",()=>'<script type="application/ld+json">'+JSON.stringify(data).replaceAll("<","\\u003c")+'</script></head>');
+        content=content.replace('<div id="listing" hidden>',()=>summary+'<div id="listing" hidden>').replace("</head>",()=>'<script type="application/ld+json">'+JSON.stringify(data).replaceAll("<","\\u003c")+'</script><script type="application/ld+json">'+JSON.stringify(trailData).replaceAll("<","\\u003c")+'</script></head>');
       }
       if(seo?.path==="/" && req.method==="GET"){
         const cars=(await db.query("SELECT vin,body->>'year' AS year,body->>'make' AS make,body->>'model' AS model,body->>'stock' AS stock,body->>'image' AS image"+available+" ORDER BY vin LIMIT 24")).rows;

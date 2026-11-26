@@ -127,7 +127,7 @@ flowchart LR
 
 **Publishing rules.** Every page has a stable key, URL, group, visibility, title, copy and optional HTTPS action. The public dealer’s editor, links and sitemap use the same catalog. Editorial templates require content. Disabled pages return 404. Legacy published links redirect. Search results stay out of the index and numbered inventory pages can be crawled. Crawl tests must check response codes, canonicals, real links and visible inventory after every template change. [Google pagination](https://developers.google.com/search/docs/specialty/ecommerce/pagination-and-incremental-page-loading) · [Google on faceted navigation](https://developers.google.com/crawling/docs/faceted-navigation)
 
-**Next design milestone.** Persistent mobile call/ask/book controls, saved shortlist across devices, accessible gallery, editorial components, breadcrumbs and offer disclosures beside the price. Test a shopper locating a specific car and scheduling a visit on a slow mobile connection, keyboard and screen reader across light and dark skins.
+**Vehicle detail pages.** The server publishes the first available cover photo and vehicle facts alongside a dealership-specific breadcrumb trail. Shoppers can select dealer-ordered thumbnails, use arrow keys in the enlarged gallery, and open the same inquiry or booking from mobile controls. The sales number comes from the published dealer profile. Remaining milestones include saved shortlists across devices, editorial components and offer disclosures beside the price. Test a shopper locating a specific car and scheduling a visit on a slow mobile connection, keyboard and screen reader across light and dark skins.
 
 ---
 
