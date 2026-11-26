@@ -56,8 +56,12 @@ async function appointmentApi(request,env){
   if(url.pathname.endsWith("/notes")){
     if(!data || typeof data.slot!=="string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:[0-5]\d:00\.000Z$/.test(data.slot) || !["tradeIn","preferences"].includes(data.field) || typeof data.answer!=="string" || !data.answer.trim() || data.answer.length>1000)return profileReply({error:"Enter a customer answer."},400);
     const saved=await bucket.get(prefix+data.slot);
-    const record=saved && await saved.json();
-    if(!record?.noteToken || data.token!==record.noteToken)return profileReply({error:"Booking access required."},403);
+    let record=saved && await saved.json();
+    if(record?.noteToken!==data.token){
+      if(typeof data.confirmation==="string" && data.confirmation.length===36 && env.visitByConfirmation)record=await env.visitByConfirmation(data.confirmation);
+      else if(env.visitByNote)record=await env.visitByNote(vin,data.slot,data.token);
+    }
+    if(record?.vin!==vin || !record?.noteToken || data.token!==record.noteToken)return profileReply({error:"Booking access required."},403);
     await bucket.put("drive-notes/"+record.confirmation+"/"+data.field,JSON.stringify(data.answer.trim()));
     return profileReply({saved:true});
   }
@@ -70,10 +74,12 @@ async function appointmentApi(request,env){
     record.confirmation=[key.slice(0,8),key.slice(8,12),"8"+key.slice(13,16),"a"+key.slice(17,20),key.slice(20,32)].join("-");
     record.requestFingerprint=await hash(JSON.stringify([vin,data.slot,record.name,record.email,record.phone,record.message,data.bhph?.revision??null,data.bhph?.months??null,data.bhph?.frequency??null]));
   }
-  const receipt=(row, status)=>profileReply({confirmation:row.confirmation,noteToken:row.noteToken,eventId:"test_drive_booked:"+row.confirmation},status);
+  const receipt=(row, status)=>row.visit?.state==="canceled"?profileReply({code:"booking_canceled",error:"This test drive was canceled. Choose a new appointment."},409):profileReply({slot:row.slot,timezone,confirmation:row.confirmation,noteToken:row.noteToken,eventId:"test_drive_booked:"+row.confirmation},status);
   async function replay(){
     if(!data.requestId)return null;
-    const stored=await bucket.get(prefix+record.slot),prior=stored && await stored.json();
+    let prior;
+    if(env.visitByConfirmation)prior=await env.visitByConfirmation(record.confirmation);
+    else{const stored=await bucket.get(prefix+record.slot);prior=stored && await stored.json();}
     if(prior?.confirmation!==record.confirmation)return null;
     return prior.requestFingerprint===record.requestFingerprint?receipt(prior,200):profileReply({error:"This booking reference was already used for different details."},409);
   }

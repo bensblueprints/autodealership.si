@@ -84,7 +84,7 @@ Evidence: onboarding, billing and the showroom worker, store, facets, VIN/sticke
 
 | Module | Working or partially working | Outstanding work |
 |---|---|---|
-| 09. CRM and DMS | PostgreSQL inbox, statuses, appointments, attached car and notes. Scoped text requests and staff-editable saved replies in this release. | Contact identity, rep ownership, partner adapters, acknowledgments, deduplication, DMS feeds, CRM appointment sync and closed-sale reconciliation. |
+| 09. CRM and DMS | PostgreSQL inbox, saved reply drafts, attached vehicle and customer notes. Staff can reschedule, cancel and record attendance with a private decision history. The shopper receives a downloadable calendar entry. | Contact identity, rep ownership, outbound communication, partner adapters, acknowledgments, DMS feeds, CRM appointment sync and closed-sale reconciliation. |
 | 10. AI employees | ElevenLabs web concierge finds stock, answers vehicle questions, opens listings, books test drives and submits inquiries. Per-client agent and usage controls exist. | Verify each dealer’s inbound phone route and transfer, missed-call recovery, service capacity, cross-channel memory, escalation and OEM-specific accuracy audits. |
 | 11. Marketing automation | Slides, branding, dealer pages and examples of managed campaigns. | Approved campaign records, scheduling/expiry, email/SMS/social orchestration, holdouts, rollback and dealer approval. |
 | 12. SEO and AI discovery | Home/vehicle metadata, dealer contact information, sitemap. This release adds published page URLs, server-rendered links and legacy-page redirects. | Business, breadcrumb and offer schema QA, model publishing, local entity consistency, crawl monitoring, listings, reputation and Search Console integration. |

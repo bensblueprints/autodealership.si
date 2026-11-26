@@ -54,6 +54,14 @@ The feed is generated from the current dealership database on every fetch. Sold 
 
 Use **Marketing → Download conversion events** to export the last 30 rolling days for the signed-in dealership. Each row has an event ID, type, UTC timestamp, VIN and channel. One committed test-drive confirmation produces one booking conversion. Web and concierge booking requests reuse a request key on retry. Repeating a request with matching details returns the original receipt. Competing shoppers receive one successful booking for the slot. The export also includes saved shopper inquiries, each identified by its persisted inquiry ID. Earlier bookings retain their original timestamp and show an unrecorded channel. The export omits shopper names, email addresses, phone numbers and private booking tokens.
 
+### Manage booked test drives
+
+In **Scheduled test drives**, search by shopper, phone, stock number or VIN. Use **Awaiting outcome** to find visits whose scheduled time has passed. Open **Manage visit** to reschedule within dealership hours, cancel, or record attendance. A correction between attended and no-show requires a staff note. Open **Contact, notes and history** for the shopper's requests, selected payment plan and staff decisions.
+
+A reschedule retains the booking confirmation, notes and original booking conversion. The old slot becomes available when the new slot is secured. Cancellation releases the slot and retains the record. Staff should contact the shopper directly to confirm any change. The shopper's original downloadable calendar file is a snapshot of the confirmed appointment.
+
+**Marketing → Test-drive outcomes** counts each appointment's latest disposition using its current scheduled time in the trailing 30 days. **Test drives booked** uses the original booking time, including bookings later canceled.
+
 ### Choose a dealer website template
 
 Engineering can choose **Franchise / OEM**, **Independent dealer**, **Buy Here Pay Here** or **Showroom** in the onboarding wizard. Existing stores can change the layout under **Branding & store settings → Storefront layout**. The color skin can be chosen independently. The **Today** tab checks live inventory, logo variants, contact information and published hours, plus template-specific requirements.

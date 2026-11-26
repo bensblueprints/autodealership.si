@@ -64,6 +64,7 @@
     dialog.showModal();
   }
   function render() {
+    for(const key of ["attended","missed","unrecorded","canceled"])byId("visits-"+key).textContent=data.report.visits?.[key]??"—";
     byId("marketing-inquiries").textContent = data.report.inquiries;
     byId("marketing-bookings").textContent = data.report.bookings;
     byId("booking-channels").textContent = data.report.concierge_bookings+" booked through the concierge";

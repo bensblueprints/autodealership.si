@@ -61,10 +61,15 @@ export async function dealershipMarketing({db, method, input, canReview, actor, 
       count(*) FILTER(WHERE event='test_drive_booked')::int AS bookings,
       count(*) FILTER(WHERE event='test_drive_booked' AND channel='concierge')::int AS concierge_bookings
       FROM (`+conversionRows+") e", times);
+    const visits=await db.query(`SELECT count(*) FILTER(WHERE body->'visit'->>'state'='attended')::int AS attended,
+      count(*) FILTER(WHERE body->'visit'->>'state'='missed')::int AS missed,
+      count(*) FILTER(WHERE body->'visit'->>'state'='canceled')::int AS canceled,
+      count(*) FILTER(WHERE COALESCE(body->'visit'->>'state','scheduled')='scheduled')::int AS unrecorded
+      FROM appointments WHERE body->>'slot' BETWEEN $1 AND $2`,times);
     const list = await db.query(`SELECT id, revision, state, brief, updated_at, history->-1 AS latest
       FROM marketing_campaigns ORDER BY updated_at DESC, id`);
     return campaignReply(200, {campaigns:list.rows, canReview, programs:campaignPrograms, channels:campaignChannels,
-      report:{...counts.rows[0], from:times[0], through:times[1]}});
+      report:{...counts.rows[0],visits:visits.rows[0], from:times[0], through:times[1]}});
   }
   const {action,id,revision} = input;
   const now = new Date().toISOString();

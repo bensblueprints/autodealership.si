@@ -33,6 +33,9 @@
 #drive-car{margin:0;font-size:14px;font-weight:600;line-height:1.4}
 #drive #leadform,#drive #follow-up{display:grid;gap:18px;padding:22px 28px 26px}
 #drive [hidden],#drive #leadform[hidden],#drive #follow-up[hidden]{display:none}
+#drive-receipt{margin:0 0 4px;padding:4px clamp(20px,5vw,28px) 18px;border-bottom:1px solid var(--hair);color:var(--ink);background:var(--card)}
+#drive-receipt dl{display:grid;gap:8px;margin:0 0 16px}#drive-receipt dt{font-size:.82rem;color:var(--muted)}#drive-receipt dd{margin:2px 0;overflow-wrap:anywhere}
+.receipt-actions{display:flex;gap:10px;flex-wrap:wrap}.receipt-actions a{display:inline-flex;align-items:center;min-height:42px;padding:6px 15px;border:1px solid currentColor;border-radius:8px;font-weight:600;color:var(--ink);text-decoration:none}
 #drive fieldset{padding:0;margin:0;min-width:0;border:0}
 #drive legend{margin-bottom:9px;padding:0;font-size:16px;font-weight:700}
 .drive-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.drive-wide{grid-column:1/-1}

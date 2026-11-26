@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#101210"><title>Vehicle details</title>
   <link rel="stylesheet" href="style.css"><link rel="stylesheet" href="retail.css"><link rel="stylesheet" href="vehicle.css">
-  <script defer src="assets/cdjr-inventory.js"></script><script defer src="assets/cdjr-covers.js"></script><script defer src="inquiry-contact.js"></script><script defer src="store.js?v=capital1"></script><script defer src="retail.js"></script><script defer src="sticker-sources.js"></script><script defer src="sticker-view.js"></script><script defer src="dealer-pages.js"></script><script defer src="vehicle.js"></script><script defer src="dealer-profile.js"></script>
+  <script defer src="assets/cdjr-inventory.js"></script><script defer src="assets/cdjr-covers.js"></script><script defer src="inquiry-contact.js"></script><script defer src="store.js?v=capital1"></script><script defer src="retail.js"></script><script defer src="sticker-sources.js"></script><script defer src="sticker-view.js"></script><script defer src="dealer-pages.js"></script><script defer src="visit-calendar.js"></script><script defer src="vehicle.js"></script><script defer src="dealer-profile.js"></script>
 <link rel="stylesheet" href="dealer-profile.css"><link rel="stylesheet" href="skins.css"><script defer src="/bhph.js"></script><link rel="stylesheet" href="/bhph.css"><link rel="stylesheet" href="/storefront-layouts.css"></head>
 <body>
 <header class="top"><a class="brand" href="index.html"><img data-dealer-logo alt=""><svg aria-hidden="true" viewBox="0 0 44 36"><path d="M1 31 19 3h8L9 31zM19 31l9-14 10 14h-9l-2-3-2 3z" fill="currentColor"/></svg><b id="brandname">Showroom</b></a><nav><a href="index.html">Showroom</a><a class="active" href="index.html#inventory">Inventory</a><a data-contact-nav href="#dealer-contact" hidden>Contact</a></nav></header>
@@ -63,6 +63,7 @@
     <button class="primary" type="submit">Reserve test drive</button>
   </form>
   <p id="drive-status" role="status"></p>
+  <section id="drive-receipt" aria-label="Appointment details" hidden><dl id="drive-facts"></dl><div class="receipt-actions"><a id="drive-calendar" download="test-drive.ics">Add to calendar</a><a id="drive-sales" hidden>Call sales</a></div></section>
   <form id="follow-up" hidden><label><span id="follow-up-question">Do you have a vehicle to trade in?</span><textarea name="answer" rows="2" maxlength="1000" required></textarea></label><button class="primary">Save answer</button><p role="status"></p></form>
 </dialog>
 <script defer src="assistant.js"></script><script defer src="skins.js"></script></body></html>

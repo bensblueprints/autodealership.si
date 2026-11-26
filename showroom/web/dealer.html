@@ -7,7 +7,15 @@
 <section class="metrics" aria-label="Sales metrics"><div><span>Available vehicles</span><b id="countCars">—</b></div><div><span>Upcoming test drives</span><b id="countDrives">—</b></div><div><span>Awaiting contact</span><b id="countNew">—</b></div></section>
 <nav aria-label="Workspace sections" class="desk-nav"><div class="desk-group"><button data-view="today" class="active" aria-pressed="true">Today</button><button data-view="leads" aria-pressed="false">Scheduled test drives</button><button data-view="inquiries" aria-pressed="false">Shopper inquiries</button><button data-view="inventory" aria-pressed="false">Inventory</button><button data-view="marketing" aria-pressed="false">Marketing</button></div><details id="setup-menu"><summary>Website settings</summary><div class="desk-group"><button id="brandSettings">Branding &amp; store settings</button><button data-view="banners" aria-pressed="false">Homepage banners</button><button data-view="oem" aria-pressed="false">OEM programs</button><button data-view="pages" aria-pressed="false">Website pages</button><button data-view="voice" aria-pressed="false">Website voice usage</button></div></details></nav>
 <section id="today"><h2>Next test drive</h2><div id="next-drive" aria-live="polite">Loading appointments…</div><div class="sectionhead"><h2>Awaiting first contact</h2></div><div id="pending-inquiries"></div><details class="launch-checks"><summary id="template-check-count">Storefront checks</summary><ul id="template-check-list"></ul></details></section>
-<section id="leads" hidden><h2>Scheduled Test Drives</h2><div id="drive-desk" aria-live="polite">Loading appointments…</div></section><section id="inquiries" hidden><div class="sectionhead"><div><h2>Shopper inquiries</h2><p>Vehicle interest and contact details from your showroom.</p></div><select id="statusFilter" aria-label="Filter leads by status"><option value="">All statuses</option><option>New</option><option>Contacted</option><option>Appointment set</option><option>Closed</option></select></div><div id="leadList" aria-live="polite"></div></section><section id="voice" hidden><h2>Website Voice Usage</h2><p id="voice-state" role="status">Loading usage…</p></section>
+<section id="leads" hidden><div class="sectionhead"><h2>Scheduled test drives</h2><button id="visit-refresh" type="button">Refresh</button></div>
+<div class="visit-filters"><label>Find an appointment<input type="search" id="visit-search" placeholder="Shopper, phone, stock number or VIN"></label>
+<label>Show<select id="visit-filter"><option value="all">All appointments</option><option value="upcoming">Upcoming</option><option value="due">Awaiting outcome</option><option value="attended">Attended</option><option value="missed">No-show</option><option value="canceled">Canceled</option></select></label></div>
+<p id="visit-count"></p><p id="visit-status" role="status"></p><div id="drive-desk">Loading appointments…</div>
+<dialog id="visit-dialog" aria-labelledby="visit-person"><div class="sectionhead"><h2 id="visit-person"></h2><button id="visit-close" aria-label="Close visit editor">Close</button></div>
+<p id="visit-when"></p><form id="visit-edit"><label>Visit update<select name="action" required></select></label>
+<label id="visit-slot-wrap" hidden>New time in dealership time zone<select id="visit-slot"></select></label>
+<label>Staff note<textarea name="note" rows="3" maxlength="500"></textarea></label>
+<p id="visit-error" role="status"></p><button class="primary" id="visit-save" type="submit">Save visit update</button></form></dialog></section><section id="inquiries" hidden><div class="sectionhead"><div><h2>Shopper inquiries</h2><p>Vehicle interest and contact details from your showroom.</p></div><select id="statusFilter" aria-label="Filter leads by status"><option value="">All statuses</option><option>New</option><option>Contacted</option><option>Appointment set</option><option>Closed</option></select></div><div id="leadList" aria-live="polite"></div></section><section id="voice" hidden><h2>Website Voice Usage</h2><p id="voice-state" role="status">Loading usage…</p></section>
 <section id="banners" hidden><h2>Homepage banners</h2><p>Upload up to six promotional images. Wide artwork works best. Changes appear after you save.</p><fieldset id="banner-controls" disabled><h3>Homepage hero</h3><label>Hero image <select id="hero-mode"><option value="vehicle">Featured vehicle</option><option value="dealership">Dealership photo</option><option value="artwork" disabled>Template artwork</option></select></label><div id="template-art-picker" hidden><label>Template image <select id="template-art-choice"></select></label><p>Preview a scene in both sizes. Save homepage banners to use it on this dealership’s website.</p><div class="art-previews"><figure><img id="art-desktop" alt="Desktop crop preview"><figcaption>Desktop</figcaption></figure><figure><img id="art-mobile" alt="Mobile crop preview"><figcaption>Mobile</figcaption></figure></div></div><p><label>Upload dealership photo (publishes automatically) <input type="file" id="hero-upload" accept="image/jpeg,image/png,image/webp"></label></p><p>Use an original landscape photo, ideally 2400 × 1200 pixels. Keep the building near the center for mobile cropping.</p><img id="hero-preview" hidden alt="Dealership photo preview" style="max-width:min(100%,480px);height:auto"><h3>Promotional slideshow</h3><label><input id="banner-enabled" type="checkbox"> Show banners on the homepage</label><p><label>Add banner <input type="file" id="banner-upload" accept="image/jpeg,image/png,image/webp"></label></p><div id="banner-list"></div><button id="banner-save" type="button">Save homepage banners</button></fieldset><p id="banner-status" role="status"></p></section><section id="inventory" hidden><div class="sectionhead"><div><h2>Vehicle inventory</h2><p>Manage listings across inventory locations.</p></div><button class="primary" id="addCar">+ Add vehicle</button></div><label class="inventory-search">Search inventory<input type="search" id="inventorySearch" placeholder="VIN, stock, make, model or location"></label><div class="inventory-pager"><button type="button" id="invPrevious">← Previous</button><span id="invPage" aria-live="polite"></span><button type="button" id="invNext">Next →</button></div><div id="inventoryList"></div></section>
 <section id="oem" hidden>
   <div class="sectionhead"><div><h2>OEM programs</h2><p>Review brand offers, effective dates and the disclosures shoppers will see.</p></div><button class="primary" id="oem-new" disabled>New program</button></div>
@@ -31,7 +39,9 @@
     <h3>Showroom activity · last 30 days</h3>
     <div class="marketing-metrics"><div><strong id="marketing-inquiries"></strong><span>Inquiries received</span></div><div><strong id="marketing-bookings"></strong><span>Test drives booked</span></div></div>
     <p class="marketing-caption">Counts use the time the shopper submitted the inquiry or booked the appointment. Traffic, search rankings and ad attribution require connected reporting sources.</p>
-    <p><a class="quiet" href="api/conversions.csv" download>Download conversion events (CSV)</a> <span id="booking-channels"></span></p>
+    <h3>Test-drive outcomes</h3><p class="marketing-caption">Appointments whose scheduled time fell in the last 30 days.</p>
+<div class="marketing-metrics"><div><strong id="visits-attended"></strong><span>Attended</span></div><div><strong id="visits-missed"></strong><span>No-show</span></div><div><strong id="visits-unrecorded"></strong><span>Awaiting outcome</span></div><div><strong id="visits-canceled"></strong><span>Canceled</span></div></div>
+<p><a class="quiet" href="api/conversions.csv" download>Download conversion events (CSV)</a> <span id="booking-channels"></span></p>
     <section class="feed-desk" aria-labelledby="feed-title"><div class="sectionhead"><div><h3 id="feed-title">Google vehicle feed</h3><p id="feed-summary" role="status"></p></div><button type="button" id="feed-settings">Feed settings</button></div>
     <label id="feed-address" hidden>Scheduled fetch URL<input readonly id="feed-url"></label>
     <details id="feed-diagnostics" hidden><summary id="feed-reasons"></summary><label>Find a vehicle or issue<input type="search" id="feed-query" placeholder="Stock number, VIN or missing field"></label><ul id="feed-issues"></ul><div class="campaign-actions"><button type="button" id="feed-prev">Previous</button><span id="feed-range" role="status"></span><button type="button" id="feed-next">Next</button></div></details></section>
@@ -91,68 +101,6 @@
 <datalist id="catalog-year"></datalist><datalist id="catalog-make"></datalist><datalist id="catalog-model"></datalist><p class="error" role="alert" id="formError"></p><button class="primary" type="submit">Save vehicle</button> <button id="saveWithBhph" class="primary" type="submit" hidden>Save &amp; set up Buy Here Pay Here</button></form></dialog>
 <dialog id="settings"><div class="modalhead"><h2>Store settings</h2><button class="close" aria-label="Close">×</button></div><form id="settingsForm"><fieldset class="profile-set"><legend>Google vehicle feed</legend><label>Google Business Profile store code<input name="googleStoreCode" maxlength="64" pattern="[A-Za-z0-9_\-]{1,64}" placeholder="Store code from Google"></label><small>Saving a code enables the U.S. in-store vehicle feed when cash pricing is visible. Clear it to disable the feed.</small></fieldset><fieldset class="profile-set template-setting"><legend>Storefront layout</legend><label>Website template<select name="siteTemplate"><option value="classic">Showroom</option><option value="franchise">Franchise / OEM</option><option value="independent">Independent dealer</option><option value="bhph">Buy Here Pay Here</option></select></label><p id="template-description"></p></fieldset><label>Showroom skin<select name="skin"><option value="midnight">Midnight black</option><option value="pearl">Pearl white</option><option value="navy">Navy blue</option><option value="forest">Forest green</option><option value="burgundy">Burgundy</option><option value="plum">Plum</option><option value="slate">Slate gray</option><option value="sand">Desert sand</option></select></label><label>Dealership name<input name="name" maxlength="65" required></label><fieldset class="profile-set"><legend>Financing</legend><label>Dealership payment options<select name="storeFinancing"><option value="apr">Show APR estimates and allow Buy Here Pay Here</option><option value="bhph">Hide APR estimates · allow Buy Here Pay Here</option><option value="cash">Cash only</option></select></label><small>This applies across the showroom. Buy Here Pay Here appears on vehicles with a published plan.</small></fieldset><fieldset class="profile-set"><legend>Logo for dark backgrounds</legend><div class="logo-controls"><img id="logoPreview" style="background:#16191c;max-width:180px;max-height:80px" alt="Dealership logo preview" hidden><label>Upload logo<input name="logoFile" type="file" accept="image/png,image/jpeg,image/webp"></label><label>Logo URL<input type="url" name="logoUrl" maxlength="2048" placeholder="https://…"></label><button type="button" class="quiet" id="clearLogo">Remove logo</button><small id="logoStatus" role="status"></small></div></fieldset><fieldset class="profile-set"><legend>Logo for light backgrounds</legend><div class="logo-controls"><img id="lightLogoPreview" style="background:#fff;max-width:180px;max-height:80px" alt="Dealership logo preview" hidden><label>Upload logo<input name="lightLogoFile" type="file" accept="image/png,image/jpeg,image/webp"></label><label>Logo URL<input type="url" name="lightLogoUrl" maxlength="2048" placeholder="https://…"></label><button type="button" class="quiet" id="clearLightLogo">Remove logo</button><small id="lightLogoStatus" role="status"></small></div></fieldset><fieldset class="profile-set"><legend>Sales department hours</legend><label><input type="checkbox" id="publish-sales-hours"> Publish sales hours on the showroom</label><div id="sales-hours"></div></fieldset><fieldset class="profile-set"><legend>Test-drive hours</legend><p>One-hour appointments start at opening time. Uncheck a day to close it.</p><label>Dealership time zone<select id="drive-zone"></select></label><div id="drive-hours"></div></fieldset><fieldset class="profile-set"><legend>Department phones</legend><div class="profile-grid"><label>Sales<input type="tel" name="salesPhone" maxlength="200"></label><label>Parts<input type="tel" name="partsPhone" maxlength="200"></label><label>Service<input type="tel" name="servicePhone" maxlength="200"></label></div></fieldset><fieldset class="profile-set"><legend>Dealership address</legend><div class="profile-grid"><label>Street address<input type="text" name="street" maxlength="200"></label><label>City<input type="text" name="city" maxlength="200"></label><label>State or region<input type="text" name="region" maxlength="200"></label><label>Postal code<input type="text" name="postal" maxlength="200"></label><label>Country<input type="text" name="country" maxlength="200"></label></div></fieldset><fieldset class="profile-set"><legend>Social links (optional)</legend><div class="profile-grid"><label>Facebook<input type="url" name="facebook" maxlength="2048"></label><label>Instagram<input type="url" name="instagram" maxlength="2048"></label><label>YouTube<input type="url" name="youtube" maxlength="2048"></label><label>TikTok<input type="url" name="tiktok" maxlength="2048"></label><label>X<input type="url" name="x" maxlength="2048"></label><label>LinkedIn<input type="url" name="linkedin" maxlength="2048"></label></div></fieldset><div id="shopOptions"></div><label>Trade valuation provider URL (optional)<input type="url" name="tradeUrl" placeholder="https://" maxlength="2048"></label><small>Leave blank to collect appraisal requests in your lead inbox.</small><p class="error" role="alert" id="settingsError"></p><button class="primary" type="submit">Save settings</button></form></dialog>
 <p id="notice" role="status"></p>
-<script>
-let loadingDrives=false;
-async function refreshDrives(){
-  if(loadingDrives || document.hidden)return;
-  loadingDrives=true;
-  const out=document.querySelector("#drive-desk");
-  try{
-    const res=await readDealerDesk("/api/test-drives/desk",{cache:"no-store"});
-    const next=document.getElementById("next-drive");
-    if(res.status===401 || res.status===403){
-      const link=document.createElement("a");link.href="dealer-login";link.textContent="Reconnect to this dealership";
-      out.replaceChildren("Your dashboard access needs to be verified. ",link);
-      next.replaceChildren(...Array.from(out.childNodes,n=>n.cloneNode(true)));
-      document.querySelector("#countDrives").textContent="—";return;
-    }
-    if(!res.ok)throw Error("Appointments could not be loaded. Try again in a moment.");
-    const {appointments,timezone}=await res.json();out.replaceChildren();
-    document.querySelector("#countDrives").textContent=appointments.filter(row=>Date.parse(row.slot)>=Date.now()).length;
-    next.textContent="No upcoming test drives.";
-    let nextFound=false;
-    if(!appointments.length)out.textContent="No test drives scheduled.";
-    const format=new Intl.DateTimeFormat("en-US",{timeZone:timezone,dateStyle:"full",timeStyle:"short"});
-    const inventory=new Map((window.Store?.cars(true)||[]).map(car=>[car.vin,car]));
-    for(const row of appointments){
-      const card=document.createElement("article");card.className="drive-record";
-      const car=inventory.get(row.vin);
-      const label=car && [car.year,car.make,car.model].filter(Boolean).join(" ");
-      const photos=[...new Set([car?.image,...(Array.isArray(car?.photos)?car.photos:[])].filter(Boolean))];
-      if(photos.length){
-        const photo=document.createElement("img");
-        photo.className="drive-photo";photo.alt=label||"Vehicle for this test drive";photo.loading="lazy";
-        let index=0;
-        photo.onerror=()=>{if(++index<photos.length)photo.src=photos[index];else photo.remove();};
-        photo.src=photos[0];card.append(photo);
-      }
-      const details=document.createElement("div");card.append(details);
-      const add=(tag,text)=>{const el=document.createElement(tag);el.textContent=text;details.append(el)};
-      add("h3",format.format(new Date(row.slot))+" · "+timezone.replaceAll("_"," "));
-      add("p",[row.name,row.phone,row.email].filter(Boolean).join(" · "));
-      add("p",[label,car?.stock && "Stock #"+car.stock,row.vin].filter(Boolean).join(" · "));
-      if(row.message)add("p",row.message);
-      if(row.bhph)add("p",BHPH.summary(row.bhph,row.bhph));
-      for(const [key,label] of [["tradeIn","Trade-in"],["preferences","Looking for"]])if(row.notes?.[key])add("p",label+": "+row.notes[key]);
-      if(row.phone){
-        const call=document.createElement("a");call.className="desk-call";call.textContent="Call shopper";call.href="tel:"+row.phone.replace(/[^+0-9]/g,"");details.append(call);
-      }
-      if(!nextFound && Date.parse(row.slot)>=Date.now()){const duplicate=card.cloneNode(true);
-        const copiedPhoto=duplicate.querySelector("img");
-        if(copiedPhoto){let index=0;copiedPhoto.onerror=()=>{if(++index<photos.length)copiedPhoto.src=photos[index];else copiedPhoto.remove();};}
-        next.replaceChildren(duplicate);nextFound=true;}
-      out.append(card);
-    }
-  }catch(e){document.getElementById("next-drive").textContent=e.message;out.textContent=e.message;document.querySelector("#countDrives").textContent="—"}finally{loadingDrives=false}
-}
-document.addEventListener("DOMContentLoaded",refreshDrives);
-for(const key of ["today","leads"])document.querySelector('[data-view="'+key+'"]').addEventListener("click",refreshDrives);
-window.addEventListener("focus",refreshDrives);
-setInterval(()=>{
-  if(document.hidden)return;
-  if(!document.querySelector("#leads").hidden||!document.querySelector("#today").hidden)refreshDrives();
-  if(!document.querySelector("#inquiries").hidden||!document.querySelector("#today").hidden)Store.loadLeads();
-},30000);
-</script><script defer src="dealer-users.js"></script></body></html>
+<script defer src="dealer-visits.js"></script><script defer src="dealer-users.js"></script></body></html>
 
 

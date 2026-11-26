@@ -217,7 +217,7 @@
   async function saveCustomerNote(field,answer){
     if(!receipt)return "No completed booking is open.";
     if(!answer?.trim())return "Ask the shopper for their answer.";
-    const response=await fetch("/api/test-drives/notes?vin="+encodeURIComponent(car.vin),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:receipt.slot,token:receipt.token,field,answer})});
+    const response=await fetch("/api/test-drives/notes?vin="+encodeURIComponent(car.vin),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:receipt.slot,confirmation:receipt.confirmation,token:receipt.token,field,answer})});
     if(!response.ok)throw Error("The note could not be saved. Please try again.");
     if(field==="tradeIn" && nextNote==="tradeIn"){
       nextNote="preferences";get("follow-up-question").textContent="Is there anything specific you’re looking for in your next vehicle?";
@@ -255,10 +255,19 @@
       if(window.bhphChoice)data.bhph=window.bhphChoice;
       const response=await fetch(bookingUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
       const result=await response.json();
-      if(!response.ok){if(response.status===409)await loadTimes();throw Error(result.error||"Booking unavailable.");}
+      if(!response.ok){if(result.code==="booking_canceled"){bookingAttempts.delete(key);try{sessionStorage.removeItem(key);}catch{}}if(response.status===409)await loadTimes();throw Error(result.error||"Booking unavailable.");}
       let localLead;try{if(!window.postgresInventory)localLead=await Store.addLead({...data,carId:car.id,source:"Scheduled test drive",message:data.message+" · "+data.slot});}catch{}
-      get("drive-status").textContent="Reserved for "+form.elements.slot.selectedOptions[0].text+" ("+get("drive-timezone").textContent+"). Confirmation "+result.confirmation;
-      receipt={leadId:localLead?.id,slot:data.slot,token:result.noteToken};follow.hidden=false;
+      const slot=result.slot||data.slot,zone=result.timezone||form.elements.slot.dataset.timezone;
+      const when=new Date(slot).toLocaleString("en-US",{timeZone:zone,weekday:"long",month:"long",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit",timeZoneName:"short"});
+      get("drive-status").textContent="Reserved for "+when+".";
+      const profile=settings.profile||{},address=[profile.street,profile.city,profile.region,profile.postal].filter(Boolean).join(", ");
+      describe(get("drive-facts"),[["Dealership",settings.dealerName],["Address",address],["Confirmation",result.confirmation]]);
+      const event=VisitCalendar.create({confirmation:result.confirmation,slot,host:location.hostname,vehicle:title,stock:car.stock,dealer:settings.dealerName,address});
+      get("drive-calendar").href=URL.createObjectURL(new Blob([event],{type:"text/calendar;charset=utf-8"}));
+      const sales=get("drive-sales"),digits=(profile.salesPhone||"").replace(/[^+0-9]/g,"");
+      if(digits){sales.href="tel:"+digits;sales.hidden=false;}
+      get("drive-receipt").hidden=false;
+      receipt={leadId:localLead?.id,slot:result.slot||data.slot,confirmation:result.confirmation,token:result.noteToken};follow.hidden=false;
       form.hidden=true;get("drive-title").textContent="Test drive scheduled";
     }catch(error){get("drive-status").textContent=error.message || "Your reservation could not be saved. Please try again.";button.disabled=false;}
   };

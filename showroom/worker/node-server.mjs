@@ -89,6 +89,13 @@ async function offerSnapshot(vin,choice){
   const schedule=row.offer.schedules.find(s=>s.frequency===choice.frequency && s.months===choice.months);
   return schedule?{cash:row.offer.cash,price:row.offer.price,down:row.offer.down,balance:row.offer.balance,...schedule}:null;
 }
+async function visitByConfirmation(id){
+  return (await db.query("SELECT body FROM appointments WHERE confirmation=$1",[id])).rows[0]?.body;
+}
+async function visitByNote(vin,slot,token){
+  if(typeof token!=="string" || token.length!==36)return null;
+  return (await db.query("SELECT body FROM appointments WHERE body->>'vin'=$1 AND (body->>'slot'=$2 OR body->>'originalSlot'=$2) AND body->>'noteToken'=$3",[vin,slot,token])).rows[0]?.body;
+}
 const bucket={
   async list({prefix}){return {objects:(await db.query("SELECT key FROM appointments WHERE starts_with(key,$1)",[prefix])).rows,truncated:false};},
   async get(key){
@@ -113,7 +120,7 @@ const bucket={
     }
     if(key.startsWith("appointments/")){
       const record=JSON.parse(body);
-      const result=await db.query("INSERT INTO appointments(key,confirmation,body) SELECT $1,$2,$3 WHERE NOT EXISTS (SELECT 1 FROM inventory_status WHERE vin=$4) ON CONFLICT DO NOTHING",[key,record.confirmation,body,record.vin]);
+      const result=await db.query("INSERT INTO appointments(key,confirmation,body) SELECT $1,$2,$3::jsonb || jsonb_build_object('car',jsonb_strip_nulls(jsonb_build_object('year',body->'year','make',body->'make','model',body->'model','stock',body->'stock','image',body->'image'))) FROM client_cars WHERE vin=$4 AND NOT EXISTS (SELECT 1 FROM inventory_status WHERE vin=$4) ON CONFLICT DO NOTHING",[key,record.confirmation,body,record.vin]);
       return result.rowCount?{}:null;
     }
     const etag=randomUUID();
@@ -371,6 +378,18 @@ createServer(async(req,res)=>{
       const exportId=route.searchParams.get("export");
       const result=await worker.oemProgramsApi({db,method:req.method,input,actor,canReview:!!managesUsers||clerkRole==="org:admin",exportId});
       if(req.method==="GET" && exportId && result.status===200)headers["Content-Disposition"]='attachment; filename="oem-program-'+exportId+'.json"';
+      return send(result.status,result.data);
+    }
+    if(route.pathname==="/api/test-drives/desk"){
+      const send=(status,data)=>res.writeHead(status,{"Content-Type":"application/json","Cache-Control":"private, no-store"}).end(JSON.stringify(data));
+      if(!privateAdmin)return send(403,{error:"Dealer sign-in required."});
+      let input;
+      if(req.method==="PUT"){
+        if(req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return send(403,{error:"Use this dealership dashboard."});
+        try{input=JSON.parse(body);}catch{return send(400,{error:"Invalid visit update."});}
+      }
+      const actor=(clerkRole||platformStaff)?claims.subject:grant?(grant.engineer?"engineer:"+grant.engineer:"platform owner"):account?.email||"dealer administrator";
+      const result=await worker.visitDesk(db,req.method,input,actor);
       return send(result.status,result.data);
     }
     if(route.pathname==="/api/dealer-marketing"){
@@ -682,7 +701,7 @@ createServer(async(req,res)=>{
       }
     }
     if(!seo)res.setHeader("X-Robots-Tag","noindex");
-    const response=await worker.default.fetch(new Request(new URL(assetUrl,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,offerSnapshot,clientHasVin:async vin=>(await db.query("SELECT 1 FROM client_cars WHERE vin=$1",[vin])).rowCount>0});
+    const response=await worker.default.fetch(new Request(new URL(assetUrl,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,offerSnapshot,visitByConfirmation,visitByNote,clientHasVin:async vin=>(await db.query("SELECT 1 FROM client_cars WHERE vin=$1",[vin])).rowCount>0});
     if((tenant || (demoBrowse && seo)) && /html|javascript/.test(response.headers.get("content-type")||"") && req.method==="GET"){
       let content=await response.text();
       if(!clerkOrg && ["/dealer-login","/dealer-signin.html"].includes(route.pathname))content=content.replace("</main>",platformSignIn(tenant.slug)+"</main>");
