@@ -620,6 +620,15 @@ createServer(async(req,res)=>{
       }
       return reply(201,{id:lead.id});
     }
+    if(route.pathname==="/api/dealer-inventory"){
+      const headers={"Content-Type":"application/json","Cache-Control":"private, no-store","X-Robots-Tag":"noindex","Cross-Origin-Resource-Policy":"same-origin"};
+      if(!privateAdmin){res.writeHead(403,headers).end(JSON.stringify({error:"Dealer sign-in required."}));return;}
+      if(req.method!=="GET"){res.writeHead(405,{...headers,Allow:"GET"}).end();return;}
+      const result=await worker.inventoryDesk(db,!!tenant);
+      const json=JSON.stringify(result.data);
+      if(json.length>65536 && /\bgzip\b/.test(req.headers["accept-encoding"]||"")){res.writeHead(200,{...headers,"Content-Encoding":"gzip",Vary:"Accept-Encoding"}).end(await zipInventory(json));return;}
+      res.writeHead(200,headers).end(json);return;
+    }
     if(route.pathname==="/api/inventory-review" && req.method==="GET"){
       if(!privateAdmin){res.writeHead(403).end();return;}
       const vins=[...new Set(route.searchParams.getAll("vin"))];
@@ -643,11 +652,12 @@ createServer(async(req,res)=>{
       }
       car.vinReviewDecision=decision;
       car.id=car.vin;
-      await db.query("INSERT INTO client_cars(vin,body) VALUES($1,$2) ON CONFLICT(vin) DO UPDATE SET body=client_cars.body || excluded.body",[car.vin,JSON.stringify(car)]);
-      res.writeHead(200,{"Content-Type":"application/json"}).end("{}");return;
+      const result=await worker.saveInventoryRecord(db,car);
+      res.writeHead(result.status,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(result.data));return;
     }
     if((route.pathname==="/assets/cdjr-inventory.js" || route.pathname==="/api/showroom-inventory") && req.method==="GET"){
-      const cars=(await db.query("SELECT body FROM client_cars ORDER BY "+(tenant?"vin":"position"))).rows.map(r=>r.body);
+      const deskBootstrap=route.pathname==="/assets/cdjr-inventory.js" && route.searchParams.get("workspace")==="1";
+      const cars=deskBootstrap?[]:(await db.query("SELECT c.body FROM client_cars c WHERE NOT EXISTS(SELECT 1 FROM inventory_status s WHERE s.vin=c.vin) ORDER BY "+(tenant?"c.vin":"c.position"))).rows.map(r=>r.body);
       const json=route.pathname==="/api/showroom-inventory";
       const siteMeta=tenant?{slug:tenant.slug,name:tenant.name,agent:tenant.agent_id,bhph:tenant.bhph}:null;
       const payload=json?JSON.stringify(cars):"window.postgresInventory=true;window.clientSite="+JSON.stringify(siteMeta)+";window.CdjrInventory="+JSON.stringify(cars)+";";
@@ -723,9 +733,8 @@ createServer(async(req,res)=>{
       if(!privateAdmin || req.method!=="PUT" || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json")){res.writeHead(403).end();return;}
       let data;try{data=JSON.parse(body);}catch{}
       if(!/^([A-HJ-NPR-Z0-9]{17}|[a-zA-Z0-9_-]{1,100})$/.test(data?.vin||"")||!["sold","deleted","available"].includes(data.status)){res.writeHead(400).end();return;}
-      if(data.status==="available")await db.query("DELETE FROM inventory_status WHERE vin=$1 AND status='sold'",[data.vin]);
-      else await db.query("INSERT INTO inventory_status VALUES ($1,$2) ON CONFLICT(vin) DO UPDATE SET status=excluded.status WHERE inventory_status.status<>'deleted'",[data.vin,data.status]);
-      res.end("{}");return;
+      const result=await worker.changeInventoryStatus(db,data.vin,data.status);
+      res.writeHead(result.status,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(result.data));return;
     }
     const publicDealer=tenant && !prefix && ["GET","HEAD"].includes(req.method);
     const demoBrowse=base.hostname==="demo.autodealership.si" && ["GET","HEAD"].includes(req.method);

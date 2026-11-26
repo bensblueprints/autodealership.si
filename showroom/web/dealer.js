@@ -125,47 +125,89 @@
       showReview();renderInventory(Store.cars(true));
     }catch{vins.forEach(v=>checkedVins.delete(v));}
   }
-  let inventoryPage=0;
+
+  let inventoryPage=0,inventoryQueue="current",deleteTarget=null;
   const pageSize=32;
-  function renderInventory(cars) {
-    const needle=$("inventorySearch").value.trim().toLowerCase();
-    const matches=needle?cars.filter(c=>[carName(c),c.vin,c.stock,c.trim,c.location].join(' ').toLowerCase().includes(needle)):cars;
+  function changeQueue(queue){
+    inventoryQueue=queue;inventoryPage=0;$("lot-issue").value="";$("lot-age").value="";
+    if(queue==="aged")$("lot-sort").value="age";
+    renderInventory(Store.cars(true));
+  }
+  async function setCarAvailability(car,status,button){
+    button.disabled=true;
+    try{
+      const res=await fetch("/api/inventory-status",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({vin:car.vin||car.id,status})});
+      if(!res.ok){const reason=await res.json().catch(()=>({}));throw Error(reason.error||"Could not change vehicle availability.");}
+      await Store.refreshInventoryStatus();
+      notice(status==="sold"?"Vehicle marked sold.":status==="deleted"?"Vehicle deleted.":"Vehicle returned to inventory.");
+    }catch(e){notice(e.message);}finally{button.disabled=false;}
+  }
+  function inventoryCard({car,issues,sold,days}){
+    const row=node("article",null,"lot-vehicle"),image=car.image?thumb(car):node("div","No photo","thumb missing-cover"),summary=node("div",null,"lot-summary"),aside=node("div",null,"lot-aside");
+    row.dataset.vin=car.vin||car.id;
+    const head=node("div",null,"lot-name");
+    head.append(node("h3",carName(car)),node("span",sold?"Sold":car.status||"Listed","lot-status"));
+    const ids=node("p",null,"lot-ids");
+    ids.append(node("span","Stock "+(car.stock||"unassigned")),node("span","VIN "+(car.vin||"unavailable")));
+    summary.append(head,ids);
+    const facts=[car.trim,car.condition,car.miles!=null && String(car.miles).trim()!==""?fmt.format(car.miles)+" mi":"",car.location].filter(Boolean);
+    if(facts.length)summary.append(node("p",facts.join(" · "),"lot-facts"));
+    const flags=node("div",null,"lot-flags");
+    for(const issue of issues){
+      const label=issue==="photo" && car.imageType==="stock"?"Replace representative photo":InventoryWorklist.labels[issue];
+      const fix=node("button",label);fix.type="button";fix.onclick=()=>openEditor(car,InventoryWorklist.target[issue]);flags.append(fix);
+    }
+    const expected=identities.get(car.vin);
+    if(identityDiff(car,expected))flags.append(node("span",car.vinReviewDecision===identityDecision(car,expected)?"VIN difference reviewed":"VIN details need review","identity-flag"));
+    if(flags.childElementCount)summary.append(flags);
+    const price=Number(car.price);
+    aside.append(node("strong",Number.isFinite(price)&&price>0?"$"+fmt.format(price):"Contact for price","lot-price"));
+    const age=node("span",sold?(car.lotDate?"Arrived "+car.lotDate:"Arrival date unknown"):days===null?"Arrival date unknown":days===0?"Arrived today":days+" day"+(days===1?"":"s")+" on lot","lot-days");
+    if(car.lotDate)age.title="Lot arrival "+car.lotDate;aside.append(age);
+    const actions=node("div",null,"lot-actions"),edit=node("button","Edit listing","quiet");edit.type="button";edit.onclick=()=>openEditor(car);actions.append(edit);
+    if(!sold){const link=node("a","View listing ↗","quiet");link.href="vehicle.html?stock="+encodeURIComponent(car.vin||car.id);link.target="_blank";link.rel="noopener";actions.append(link);}
+    if(!window.clientSite||clientSite.bhph){const pricing=node("button",car.bhph?"Edit BHPH":"Enable BHPH","quiet");pricing.type="button";pricing.onclick=()=>BHPH.edit(car);actions.append(pricing);}
+    const action=node("button",sold?"Return to inventory":"Mark sold","quiet");action.type="button";action.onclick=()=>setCarAvailability(car,sold?"available":"sold",action);
+    const del=node("button","Delete","quiet lot-danger");del.type="button";del.onclick=()=>{
+      deleteTarget=car;$("lot-delete-message").textContent=carName(car)+" (stock "+(car.stock||car.vin)+") will be removed from inventory. Existing appointments will be kept.";$("lot-delete").showModal();
+    };
+    actions.append(action,del);row.append(image,summary,aside,actions);return row;
+  }
+  $("lot-delete-cancel").onclick=()=>$("lot-delete").close();
+  $("lot-delete-confirm").onclick=()=>{const car=deleteTarget;$("lot-delete").close();if(car)setCarAvailability(car,"deleted",$("lot-delete-confirm"));};
+  $("lot-delete").onclose=()=>{deleteTarget=null;};
+  function renderInventory(cars){
+    if($("inventory").hidden)return;
+    const state=Store.catalogState(),noticeBox=$("lot-notice"),list=$("inventoryList");
+    noticeBox.hidden=state==="ready";
+    noticeBox.querySelector("span").textContent=state==="loading"?"Loading dealership inventory…":state;
+    $("lot-reload").hidden=state==="loading";
+    const today=InventoryWorklist.today(Store.settings().profile?.driveTimezone);
+    const rows=InventoryWorklist.records(cars,Store.statusFor,today);
+    for(const tab of $("lot-queues").querySelectorAll("[data-queue]")){
+      tab.setAttribute("aria-pressed",String(tab.dataset.queue===inventoryQueue));
+      tab.querySelector("strong").textContent=state!=="ready"&&!rows.length?"—":fmt.format(rows.filter(InventoryWorklist.queues[tab.dataset.queue]).length);
+    }
+    $("lot-issue").disabled=inventoryQueue==="sold";
+    $("lot-age").disabled=inventoryQueue==="sold" || inventoryQueue==="aged";
+    const matches=InventoryWorklist.select(rows,{queue:inventoryQueue,issue:$("lot-issue").value,date:$("lot-age").value,sort:$("lot-sort").value,search:$("inventorySearch").value});
     const pages=Math.ceil(matches.length/pageSize);
     inventoryPage=Math.max(0,Math.min(inventoryPage,pages-1));
-    $("invPage").textContent=matches.length.toLocaleString()+' vehicles'+(pages?' · Page '+(inventoryPage+1)+' of '+pages:'');
-    $("invPrevious").disabled=inventoryPage===0;
-    $("invNext").disabled=inventoryPage+1>=pages;
-    const list=$("inventoryList");list.replaceChildren();
+    $("invPage").textContent=state!=="ready"&&!rows.length?"":fmt.format(matches.length)+" vehicle"+(matches.length===1?"":"s")+(pages>1?" · Page "+(inventoryPage+1)+" of "+pages:"");
+    $("invPrevious").disabled=inventoryPage===0;$("invNext").disabled=inventoryPage+1>=pages;
     const visible=matches.slice(inventoryPage*pageSize,(inventoryPage+1)*pageSize);
-    if(!$("inventory").hidden)loadIdentityFlags(visible);
-    for (const car of visible) {
-      const row=node("article",null,"vehicle"),group=node("div",null,"grow");
-      group.append(node("strong",carName(car)),node("small",[car.trim,car.stock || car.id,car.miles!=null?fmt.format(car.miles)+" mi":""].filter(Boolean).join(" · ")));
-      const expected=identities.get(car.vin);
-      if(identityDiff(car,expected))group.append(node("small",car.vinReviewDecision===identityDecision(car,expected)?"VIN difference reviewed":"VIN details need review","identity-flag"));
-      const pricing=node("button",car.bhph?"Edit BHPH":"Enable BHPH","quiet");pricing.onclick=()=>BHPH.edit(car);if(!window.clientSite||clientSite.bhph)group.append(pricing);
-      const sold=Store.statusFor(car.vin||car.id)==="sold";
-      if(sold)group.append(node("strong","Sold"));
-      for(const [label,status] of [[sold?"Return to inventory":"Mark sold",sold?"available":"sold"],["Delete","deleted"]]){
-        const button=node("button",label,"quiet");
-        button.onclick=async()=>{
-          if(status==="deleted" && !confirm("Delete "+carName(car)+" (stock "+(car.stock||car.id)+") from inventory? Existing appointments will be kept."))return;
-          button.disabled=true;
-          try{
-            const res=await fetch("/api/inventory-status",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({vin:car.vin||car.id,status})});
-            if(!res.ok)throw Error(res.status===403?"Sign in to the dealer dashboard first.":"Could not update vehicle availability.");
-            await Store.refreshInventoryStatus();
-          }catch(e){notice(e.message);}finally{button.disabled=false;}
-        };
-        group.append(button);
-      }
-      const edit=node("button","Edit","quiet");edit.addEventListener("click",()=>openEditor(car));
-      row.append(thumb(car),group,node("span",car.price==null?"Contact for price":"$"+fmt.format(car.price),"price"),edit);list.append(row);
+    if(!$("inventory").hidden)loadIdentityFlags(visible.map(r=>r.car));
+    list.replaceChildren(...visible.map(inventoryCard));
+    if(!visible.length && state==="ready"){
+      const filtered=$("inventorySearch").value.trim()||$("lot-age").value||$("lot-issue").value;
+      const messages={current:["No current vehicles","Add a vehicle to start this lot."],sold:["No sold vehicles","Vehicles marked sold are kept here."],aged:["No vehicles recorded at 60+ days","Days on lot use the arrival date entered on each listing."],attention:["No listing issues found","Current listings passed the photo, price, mileage, and stock checks."]};
+      list.append(empty(...(filtered?["No matching vehicles","Try a different search or filter."]:messages[inventoryQueue])));
     }
-    if(cars.length && !matches.length)list.append(empty("No matching vehicles","Try a different VIN, stock number, make, or model."));
-    if(!cars.length)list.append(empty("Your inventory is ready to fill","Add a vehicle with its stock number, photo and price."));
   }
+  $("lot-queues").onclick=event=>{const tab=event.target.closest("[data-queue]");if(tab)changeQueue(tab.dataset.queue);};
+  $("lot-reload").onclick=()=>Store.reloadCatalog();
   $("inventorySearch").oninput=()=>{inventoryPage=0;renderInventory(Store.cars(true));};
+  for(const id of ["lot-issue","lot-age","lot-sort"])$(id).onchange=()=>{inventoryPage=0;renderInventory(Store.cars(true));};
   $("invNext").onclick=()=>{inventoryPage++;renderInventory(Store.cars(true));};
   $("invPrevious").onclick=()=>{inventoryPage--;renderInventory(Store.cars(true));};
   let logoSignature="";
@@ -223,10 +265,13 @@
   function paymentFlags(mode){
     return {financingEnabled:mode!=="cash",aprFinancingEnabled:mode==="apr"};
   }
-  function openEditor(car=null) {
+  function openEditor(car=null,focusField="") {
     $("saveWithBhph").hidden=!!window.clientSite && !clientSite.bhph;
     editing=car;form.reset();form.elements.vehicleFinancing.value=paymentMode(car);$("formError").textContent="";$("editTitle").textContent=car?"Edit vehicle":"Add vehicle";
     form.querySelector(".editor-details").open=false;
+    form.elements.lotDate.value=car?.lotDate||"";
+    form.elements.lotDate.max=InventoryWorklist.today(Store.settings().profile?.driveTimezone);
+    form.elements.vin.readOnly=!!car && !!window.postgresInventory;
     for(const field of ['stock','price','miles'])form.elements[field].required=!car || car[field]!=null && car[field]!=="";
     if(car)for(const key of ['status','condition','body']){
       const field=form.elements[key],value=car[key];
@@ -242,6 +287,7 @@
     StickerIntake.restore(car);
     reviewSignature="";showReview();
     $("editor").showModal();
+    if(focusField)form.elements[focusField]?.focus();
   }
   let photos=[],photoBusy=false,galleryGeneration=0;
   function renderPhotos(){
@@ -310,13 +356,16 @@
       car.features=[...new Set(String(f.get("features") || "").split(/\r?\n/).map(item=>item.trim()).filter(Boolean))];
       if((!car.stock && (!editing || editing.stock)) || !car.make || !car.model)throw Error("Enter a stock number, make and model.");
       for(const key of ["year","price","miles"])car[key]=f.get(key)===""?null:Number(f.get(key));
-      if(Store.cars().some(c=>c.id!==editing?.id && String(c.stock||c.id).toLowerCase()===car.stock.toLowerCase()))throw Error("This stock number is already in use.");
+      if(Store.statusFor(editing?.id)!=="sold" && String(editing?.stock||"").trim().toLowerCase()!==car.stock.toLowerCase() &&
+        Store.cars().some(c=>c.id!==editing?.id && String(c.stock||"").trim().toLowerCase()===car.stock.toLowerCase()))throw Error("This stock number is already in use.");
       car.id=editing?.id || crypto.randomUUID();car.featured=editing?.featured || false;
       if(photoBusy)throw Error("Wait for photo uploads to finish.");
       addPhotoUrl();car.photos=[...photos];car.image=photos[0]||"";car.galleryEdited=true;
       if(editing?.imageType==="stock" && car.image && car.image!==editing.image)car.imageType="dealer";
       if(!car.image && !editing)throw Error("Add a photo URL or upload a photo to publish this vehicle.");
-      await Store.saveCar(car);refresh();$("editor").close();notice("Vehicle saved to showroom");
+      const lotDate=f.get("lotDate")||null,previousLotDate=editing?.lotDate||null;
+      const desk={inventoryIntent:editing?"edit":"add",...(lotDate!==previousLotDate?{lotDate,previousLotDate}:{})};
+      await Store.saveCar(car,desk);refresh();$("editor").close();notice("Vehicle saved to showroom");
       if(save.id==="saveWithBhph")await BHPH.edit(car);
     }catch(err){if(err.identity){identities.set(err.identity.vin,err.identity);showReview();$("vin-review").scrollIntoView({block:"center"});}$("formError").textContent=err.name==="QuotaExceededError"?"Photo storage is full. Try a hosted photo URL.":err.message;}
     finally{delete form.dataset.saving;save.disabled=false;}

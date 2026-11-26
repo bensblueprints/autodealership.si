@@ -16,6 +16,7 @@
       link.type="button";link.setAttribute("aria-label","Find "+row.vin+" in inventory");
       link.onclick=()=>{
         document.querySelector('[data-view="inventory"]').click();
+        document.querySelector('#lot-queues [data-queue="current"]')?.click();
         const search=byId("inventorySearch");search.value=row.vin;search.dispatchEvent(new Event("input"));search.focus();
       };
       item.append(link,node("span",row.issues.join(" · ")));return item;

@@ -7,6 +7,7 @@ from psycopg import sql
 
 TABLES = {
     "appointments": "key text PRIMARY KEY, confirmation text UNIQUE NOT NULL, body jsonb NOT NULL, notes jsonb NOT NULL DEFAULT '{}'",
+    "inventory_lot_dates": "vin text PRIMARY KEY,stocked_on date NOT NULL",
     "inventory_status": "vin text PRIMARY KEY,status text NOT NULL CHECK(status IN ('sold','deleted'))",
     "bhph_offers": "vehicle text PRIMARY KEY,revision integer NOT NULL,offer jsonb NOT NULL",
     "homepage_banners": "id integer PRIMARY KEY,revision integer NOT NULL,config jsonb NOT NULL",
@@ -36,7 +37,7 @@ def provision(control, site_id, name, legacy=False, template="independent"):
                 continue
             if table == "vehicle_photo_assets":
                 source = sql.SQL("SELECT * FROM public.vehicle_photo_assets WHERE site={}").format(sql.Literal(str(site_id)))
-            elif table in ("marketing_campaigns","oem_program_revisions","oem_banner_reviews","website_page_editions") and not control.execute(
+            elif table in ("marketing_campaigns","oem_program_revisions","oem_banner_reviews","website_page_editions","inventory_lot_dates") and not control.execute(
                 "SELECT to_regclass(%s) AS name", (database + "." + table,)
             ).fetchone()["name"]:
                 continue

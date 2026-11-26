@@ -76,29 +76,36 @@
     if(offerResponse.ok)offers=await offerResponse.json();
     view=null;window.dispatchEvent(new Event("showroom:update"));
   }
-  const inventoryReady=refreshInventoryStatus().catch(()=>{});
-  if(window.postgresInventory && (document.getElementById("cards") || document.getElementById("inventoryList"))){
-    let pending=false;
-    async function syncCatalog(){
-      if(pending || document.hidden)return;
-      pending=true;
+  const dealerCatalog=!!window.postgresInventory && !!document.getElementById("inventoryList");
+  let catalogState=dealerCatalog?"loading":"ready",catalogEpoch=0,pendingCatalog;
+  async function syncCatalog(){
+    if(pendingCatalog)return pendingCatalog;
+    const version=catalogEpoch;
+    pendingCatalog=(async()=>{
       try{
-        const res=await fetch("/api/showroom-inventory",{cache:"no-store"});
-        if(!res.ok)return;
+        const res=dealerCatalog?await readDealerDesk("/api/dealer-inventory",{cache:"no-store"}):await fetch("/api/showroom-inventory",{cache:"no-store"});
+        if(!res.ok)throw Error(res.status===403?"Sign in again to load inventory.":"Inventory could not refresh.");
         const records=await res.json();
+        if(version!==catalogEpoch)return;
         catalogById.clear();
-        for(const car of records)catalogById.set(car.id,car);
-        view=null;
+        for(const car of records){
+          catalogById.set(car.id,car);
+          if(dealerCatalog){if(car.deskStatus==="sold")inventoryStatus[car.id]="sold";else delete inventoryStatus[car.id];}
+        }
+        view=null;catalogState="ready";
         window.dispatchEvent(new Event("showroom:update"));
         await refreshInventoryStatus();
-      }catch{/* Retry on the next visit or refresh interval. */}
-      finally{pending=false;}
-    }
+      }catch(error){if(dealerCatalog){catalogState=error.message||"Inventory could not refresh.";window.dispatchEvent(new Event("showroom:update"));}}
+      finally{pendingCatalog=null;}
+    })();return pendingCatalog;
+  }
+  const inventoryReady=dealerCatalog?syncCatalog():refreshInventoryStatus().catch(()=>{});
+  if(window.postgresInventory && (document.getElementById("cards") || dealerCatalog)){
     window.addEventListener("focus",syncCatalog);
-    document.addEventListener("visibilitychange",syncCatalog);
+    document.addEventListener("visibilitychange",()=>{if(!document.hidden)syncCatalog();});
     window.addEventListener("pageshow",e=>{if(e.persisted)syncCatalog()});
     window.addEventListener("storage",e=>{if(e.key===prefix+"inventory-saved")syncCatalog()});
-    setInterval(syncCatalog,60000);
+    setInterval(()=>{if(!document.hidden)syncCatalog();},60000);
   }
   function cars(includeSold=false) {
     return inventoryRows().filter(car=>!inventoryStatus[car.vin||car.id] || (includeSold && inventoryStatus[car.vin||car.id]==="sold"));
@@ -161,9 +168,9 @@
     const lead=read("lead:"+id,null);
     if (lead) write("lead:"+id,{...lead,status});
   }
-  async function saveCar(car) {
+  async function saveCar(car,desk={}) {
     if(window.postgresInventory){
-      const res=await fetch("/api/client-inventory",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(car)});
+      const res=await fetch("/api/client-inventory",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({...car,...desk})});
       if(!res.ok){
         const detail=await res.json().catch(()=>({}));
         if(detail.identity)throw Object.assign(Error(detail.error),{identity:detail.identity});
@@ -171,12 +178,12 @@
       }
       car.id=car.vin;
       const unblocked=catalogById.get(car.id)?.financingEnabled===false && car.financingEnabled!==false;
-      catalogById.set(car.id,car);view=null;
+      catalogEpoch++;catalogById.set(car.id,{...catalogById.get(car.id),...car,...(desk.lotDate!==undefined?{lotDate:desk.lotDate}:{})});view=null;
       if(unblocked)await refreshInventoryStatus().catch(()=>{});
       try{localStorage.setItem(prefix+"inventory-saved",String(Date.now()))}catch{}window.dispatchEvent(new Event("showroom:update"));return;
     }
     const original=catalogById.get(car.id);
-    const patch={...read("vehicle:"+car.id,{}),...car};
+    const patch={...read("vehicle:"+car.id,{}),...car,...(desk.lotDate!==undefined?{lotDate:desk.lotDate}:{})};
     if(original)for(const key of Object.keys(patch)){
       if(key!=="id" && JSON.stringify(patch[key])===JSON.stringify(original[key]))delete patch[key];
     }
@@ -228,7 +235,7 @@
     const lead=read("lead:"+id,null);
     if(lead)write("lead:"+id,{...lead,notes:{...lead.notes,[field]:answer}});
   }
-  window.Store = {loadProfile,profileLoaded:()=>profileLoaded,loadLeads,inquiryState:()=>inquiryState,showroomSkin:()=>sharedProfile?.profile?.skin||"midnight",aprAllowed,financingAllowed:aprAllowed,attachNote, cars,inventoryReady,refreshInventoryStatus,statusFor:vin=>inventoryStatus[vin],leads,addLead,setStatus,saveCar,settings,saveSettings,optionGroups,profileReady };
+  window.Store = {loadProfile,profileLoaded:()=>profileLoaded,loadLeads,inquiryState:()=>inquiryState,showroomSkin:()=>sharedProfile?.profile?.skin||"midnight",aprAllowed,financingAllowed:aprAllowed,attachNote, cars,inventoryReady,catalogState:()=>catalogState,reloadCatalog:syncCatalog,refreshInventoryStatus,statusFor:vin=>inventoryStatus[vin],leads,addLead,setStatus,saveCar,settings,saveSettings,optionGroups,profileReady };
   window.addEventListener("storage",e=>{if(e.key===prefix+"settings"||e.key===null)loadProfile().catch(()=>{});if (!e.key || e.key.startsWith(prefix)){view=null;window.dispatchEvent(new Event("showroom:update"));}});
 })();
 

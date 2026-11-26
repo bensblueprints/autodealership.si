@@ -173,3 +173,24 @@ main>.desk-nav .desk-group button.active{box-shadow:inset 3px 0 currentColor}
 #oem-stock-count,#oem-page-status{font-size:.85rem;color:var(--sub)}
 .oem-publication-state{display:inline-block;background:var(--bg);color:var(--sub);font-size:.8rem;font-weight:650;border:1px solid var(--line);padding:3px 8px;border-radius:20px}
 .oem-publication-state[data-live=true]{background:#233943;border-color:#47756f;color:#bdeedf}
+.lot-queues{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:18px 0}
+.lot-queues button{display:grid;gap:7px;text-align:left;font-size:.88rem;font-weight:600;color:var(--sub);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 15px}
+.lot-queues strong{font-size:1.55rem;line-height:1.2;color:var(--text);font-variant-numeric:tabular-nums}
+.lot-queues button[aria-pressed=true]{border-color:var(--lime);background:#203936;color:#c6f2e8}
+.lot-filters{display:grid;grid-template-columns:minmax(160px,1.6fr) repeat(3,minmax(125px,1fr));gap:12px}
+.lot-filters label{display:grid;gap:6px;font-size:.86rem;font-weight:600}
+.lot-filters input,.lot-filters select{width:100%;min-width:0;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px}
+.lot-notice{display:flex;align-items:center;gap:12px}.lot-notice[hidden]{display:none}
+.lot-vehicle{display:grid;grid-template-columns:96px minmax(0,1fr) minmax(108px,auto);gap:12px 18px;margin:10px 0;padding:15px 18px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.lot-vehicle .thumb{width:96px;height:72px;object-fit:cover;border-radius:7px;align-self:start;background:var(--bg)}
+.lot-summary,.lot-aside{min-width:0}.lot-name{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}.lot-name h3{margin:0;color:var(--text);font-size:1.06rem}
+.lot-status{border:1px solid var(--line);border-radius:20px;font-size:.75rem;padding:2px 7px;color:var(--sub)}
+.lot-ids,.lot-facts{color:var(--sub);font-size:.85rem;line-height:1.4;margin:6px 0 0;overflow-wrap:anywhere}.lot-ids{display:flex;flex-wrap:wrap;gap:4px 14px}
+.lot-aside{display:flex;flex-direction:column;align-items:flex-end;text-align:right;gap:4px}.lot-price{font-size:1.04rem}.lot-days{font-size:.82rem;color:var(--sub)}
+.lot-flags,.lot-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px}.lot-flags{margin-top:8px}.lot-flags button{font-size:.78rem;background:#373022;color:#f4d7a3;border:1px solid #665538;border-radius:6px;padding:4px 8px}
+.lot-actions{grid-column:2/-1;border-top:1px solid var(--line);padding-top:9px}.lot-actions .quiet,.lot-notice button{display:inline-flex;align-items:center;padding:6px 9px;min-height:32px;line-height:1.2;border-radius:6px;border:1px solid var(--line);color:var(--text);font-size:.82rem;text-decoration:none;background:var(--bg)}
+.lot-actions .lot-danger{color:#efb7aa;margin-left:auto}#lot-delete{padding:22px;width:min(430px,92vw)}#lot-delete-confirm{cursor:pointer;border:1px solid #8c5e57;background:#492e2c;color:#ffd5cb;border-radius:7px;padding:8px 12px}
+@media(max-width:920px){.lot-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.lot-queues{grid-template-columns:repeat(2,minmax(0,1fr))}.lot-queues button{padding:10px 12px}.lot-vehicle{padding:12px;grid-template-columns:60px minmax(0,1fr);gap:10px}.lot-vehicle .thumb{width:60px;height:52px}.lot-aside{grid-column:2;flex-direction:row;align-items:baseline;flex-wrap:wrap;text-align:left;gap:6px 12px}.lot-actions{grid-column:1/-1}.lot-actions .quiet{min-height:38px}}
+@media(max-width:360px){.lot-filters{grid-template-columns:1fr}.lot-vehicle{grid-template-columns:minmax(0,1fr)}.lot-vehicle .thumb{display:none}.lot-aside{grid-column:1}}
+.lot-vehicle .missing-cover{display:grid;place-items:center;color:var(--sub);font-size:.76rem;border:1px dashed var(--line)}
