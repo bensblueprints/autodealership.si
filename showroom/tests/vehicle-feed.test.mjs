@@ -17,6 +17,13 @@ test("unverified details, representative stock images and reserved cars stay out
   const flags=vehicleFeedItem({...car,miles:"",color:"Unknown",condition:"New",price:null,image_type:"stock",status:"Reserved"},origin).issues;
   for(const expected of ["Odometer reading in miles","Exterior color","MSRP for new vehicle","Positive cash selling price","Photo of the actual vehicle","Available on the lot"])assert.ok(flags.includes(expected));
 });
+test("imported certified used vehicles are eligible after the dealer confirms they are on the lot",()=>{
+  const imported={...car,condition:"Certified Used"};
+  for(const status of ["Listed online","",null]){
+    assert.deepEqual(vehicleFeedItem({...imported,status},origin).issues,["Confirm on-lot availability and select Available"]);
+  }
+  assert.equal(vehicleFeedItem(imported,origin).values.condition,"used");
+});
 test("Merchant XML handles special characters, an empty lot and unpublished config",async()=>{
   let code="East01",stock=[{...car,model:"R&D <Limited>"}];
   const db={query:async sql=>({rows:sql.includes("FROM client_profile")?[{code,options:{},name:"R&D"}]:stock})};

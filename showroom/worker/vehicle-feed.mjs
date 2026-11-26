@@ -6,7 +6,7 @@ export function vehicleFeedItem(car, origin) {
   const issues=[];
   const vin=car.vin, make=feedText(car.make), model=feedText(car.model), color=feedText(car.color);
   const condition=feedText(car.condition).toLowerCase();
-  const used=["used","pre-owned","certified pre-owned","certified"].includes(condition);
+  const used=["used","pre-owned","certified pre-owned","certified used","certified"].includes(condition);
   if(!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin))issues.push("Valid 17-character VIN");
   if(!/^\d{4}$/.test(car.year))issues.push("Four-digit model year");
   if(!make)issues.push("Make");
@@ -16,7 +16,7 @@ export function vehicleFeedItem(car, origin) {
   if(!/^\d+$/.test(car.miles) || !Number.isSafeInteger(Number(car.miles)))issues.push("Odometer reading in miles");
   if(condition==="new" && Number(car.miles)>200)issues.push("Review new condition and odometer");
   const status=String(car.status||"").trim().toLowerCase();
-  if(status && !["available","in stock","in-stock","on lot"].includes(status))issues.push(status==="listed online"?"Confirm on-lot availability and select Available":"Available on the lot");
+  if(!["available","in stock","in-stock","on lot"].includes(status))issues.push(!status || status==="listed online"?"Confirm on-lot availability and select Available":"Available on the lot");
   const dollars=value=>/^\d+(\.\d+)?$/.test(value) && Number.isFinite(Number(value)) && Number(value)>0;
   if(!dollars(car.price))issues.push("Positive cash selling price");
   if(condition==="new" && !dollars(car.msrp))issues.push("MSRP for new vehicle");
