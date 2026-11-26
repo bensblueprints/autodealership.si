@@ -45,6 +45,8 @@ await db.query("CREATE TABLE IF NOT EXISTS homepage_banners (id integer PRIMARY 
 await db.query("CREATE TABLE IF NOT EXISTS bhph_offers(vehicle text PRIMARY KEY, revision integer NOT NULL, offer jsonb NOT NULL)");
 await pool.query("CREATE TABLE IF NOT EXISTS public.vehicle_photo_assets(site text NOT NULL, digest text NOT NULL, jpeg bytea NOT NULL, PRIMARY KEY(site,digest))");
 await pool.query("CREATE TABLE IF NOT EXISTS client_cars(vin text PRIMARY KEY,body jsonb NOT NULL, position bigserial);CREATE TABLE IF NOT EXISTS client_profile(id integer PRIMARY KEY,settings jsonb NOT NULL,etag text NOT NULL);CREATE TABLE IF NOT EXISTS shopper_leads(id uuid PRIMARY KEY,body jsonb NOT NULL)");
+// Shared artwork is private until a dealership chooses a specific revision for its homepage.
+await pool.query("CREATE TABLE IF NOT EXISTS public.template_hero_art (id text PRIMARY KEY, layout text NOT NULL, title text NOT NULL, desktop bytea NOT NULL, mobile bytea NOT NULL)");
 const seed=await pool.connect();
 try{
   await seed.query("BEGIN");
@@ -547,6 +549,19 @@ createServer(async(req,res)=>{
       return;
     }
     if(route.pathname==="/assets/cdjr-covers.js"){res.writeHead(200,{"Content-Type":"application/javascript"}).end("window.CdjrCovers={};");return;}
+    const artRoute=/^\/api\/template-art\/([a-f0-9]{64})\/(desktop|mobile)\.jpg$/.exec(route.pathname);
+    if(artRoute){
+      const headers={"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","X-Robots-Tag":"noindex"};
+      if(!["GET","HEAD"].includes(req.method)){res.writeHead(405,{...headers,Allow:"GET, HEAD"}).end();return;}
+      const [,id,size]=artRoute;
+      if(!privateAdmin){
+        const selected=await db.query("SELECT 1 FROM homepage_banners WHERE id=1 AND config->>'heroMode'='artwork' AND config->>'heroArtwork'=$1",[id]);
+        if(!selected.rowCount){res.writeHead(404,headers).end();return;}
+      }
+      const {rows}=await pool.query("SELECT "+(size==="mobile"?"mobile":"desktop")+" AS image FROM public.template_hero_art WHERE id=$1",[id]);
+      if(!rows.length){res.writeHead(404,headers).end();return;}
+      res.writeHead(200,{...headers,"Content-Type":"image/jpeg","Content-Length":rows[0].image.length}).end(req.method==="HEAD"?undefined:rows[0].image);return;
+    }
     if(["/api/banners","/api/banner-editor"].includes(route.pathname)){
       const editor=route.pathname.endsWith("editor");
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
@@ -557,9 +572,12 @@ createServer(async(req,res)=>{
         const settings=(await db.query("SELECT settings->'profile'->>'siteTemplate' AS template,settings->'profile'->>'driveTimezone' AS timezone FROM client_profile WHERE id=1")).rows[0]||{};
         const franchise=settings.template==="franchise",timezone=settings.timezone||"America/Chicago";
         const checked=await worker.governedSlides(db,config.slides||[],franchise,timezone);
-        if(editor)return reply(200,{...config,revision:row?.revision??0,franchise,timezone,states:checked.map(row=>row.status)});
+        if(editor){
+          const art=(await pool.query("SELECT id,layout,title FROM public.template_hero_art ORDER BY layout,title,id")).rows;
+          return reply(200,{...config,art,revision:row?.revision??0,franchise,timezone,states:checked.map(row=>row.status)});
+        }
         const slides=config.enabled?checked.filter(row=>["Standard banner","Approved"].includes(row.status)).map(({slide,disclosure,expiresAt})=>({image:slide.image,alt:slide.alt,link:slide.link,disclosure,expiresAt})):[];
-        const publicConfig={heroImage:config.heroMode==="dealership"?config.heroImage:null,slides,governed:franchise||checked.some(row=>row.slide.program)};
+        const publicConfig={heroArtwork:config.heroMode==="artwork"?config.heroArtwork:null,heroImage:config.heroMode==="dealership"?config.heroImage:null,slides,governed:franchise||checked.some(row=>row.slide.program)};
         const json=JSON.stringify(publicConfig),tag='"'+createHash("sha256").update(json).digest("hex")+'"';
         if(req.headers["if-none-match"]===tag){res.writeHead(304,{"Cache-Control":"private, no-cache",ETag:tag}).end();return;}
         res.writeHead(200,{"Content-Type":"application/json","Cache-Control":"private, no-cache",ETag:tag}).end(json);return;
@@ -582,8 +600,10 @@ createServer(async(req,res)=>{
         slides.push({image:slide.image,alt:slide.alt.trim(),link:slide.link,...(program?{program}:{})});
       }
       const heroMode=data.heroMode??"vehicle",heroImage=data.heroImage??"";
-      if(!["vehicle","dealership"].includes(heroMode) || typeof heroImage!=="string" || heroImage.length>2400000 || (heroImage && !/^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]+=*$/.test(heroImage)) || (heroMode==="dealership" && !heroImage))return reply(400,{error:"Upload a dealership photo before enabling the dealership hero."});
-      const config=JSON.stringify({enabled:data.enabled,slides,heroMode,heroImage});
+      if(!["vehicle","dealership","artwork"].includes(heroMode) || typeof heroImage!=="string" || heroImage.length>2400000 || (heroImage && !/^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]+=*$/.test(heroImage)) || (heroMode==="dealership" && !heroImage))return reply(400,{error:"Upload a dealership photo before enabling the dealership hero."});
+      const heroArtwork=heroMode==="artwork"?data.heroArtwork:null;
+      if(heroMode==="artwork" && (!/^[a-f0-9]{64}$/.test(heroArtwork||"") || !(await pool.query("SELECT 1 FROM public.template_hero_art WHERE id=$1",[heroArtwork])).rowCount))return reply(400,{error:"Choose an available template image."});
+      const config=JSON.stringify({enabled:data.enabled,slides,heroMode,heroImage,heroArtwork});
       const saved=data.revision===0?await db.query("INSERT INTO homepage_banners VALUES(1,1,$1) ON CONFLICT DO NOTHING RETURNING revision",[config]):
         await db.query("UPDATE homepage_banners SET config=$1,revision=revision+1 WHERE id=1 AND revision=$2 RETURNING revision",[config,data.revision]);
       return saved.rowCount?reply(200,saved.rows[0]):reply(409,{error:"Another editor saved changes. Reload the dashboard before editing again."});

@@ -4,19 +4,28 @@ async function showPromotions(){
   if(!response.ok)return;
   const config=await response.json(),heroImage=config.heroImage;
   let slides=config.slides,governed=config.governed,tag=response.headers.get("ETag");
-  if(heroImage){
+  const art=config.heroArtwork;
+  if(heroImage || art){
     const photo=new Image();
+    const picture=document.createElement("picture");
+    if(art){
+      const mobile=document.createElement("source");mobile.media="(max-width: 700px)";
+      mobile.srcset="api/template-art/"+art+"/mobile.jpg";
+      picture.append(mobile,photo);
+    }
     photo.onload=()=>{
+      photo.onload=null;
       const original=document.querySelector(".hero");
       if(!original)return;
-      const hero=document.createElement("section");hero.className="hero";hero.setAttribute("aria-label","Dealership showroom");
+      const hero=document.createElement("section");hero.className=art?"hero template-art-hero":"hero";hero.setAttribute("aria-label","Dealership showroom");
       hero.innerHTML='<div class="scrim"></div><div class="herotext"><div class="eyebrow">Our showroom</div><h1></h1><div class="actions"><a class="primary" href="#inventory">Browse inventory</a><button type="button" class="secondary">Ask concierge</button></div></div>';
       hero.querySelector("h1").textContent=window.Store.settings().dealerName;
       hero.querySelector("button").onclick=()=>document.querySelector("#assistantlaunch").click();
-      photo.alt="Dealership exterior";photo.style.cssText="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center";
-      hero.prepend(photo);original.before(hero);original.style.display="none";
+      photo.alt=art?"":"Dealership exterior";
+      if(!art)photo.style.cssText="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center";
+      hero.prepend(art?picture:photo);original.before(hero);original.style.display="none";
     };
-    photo.src=heroImage;
+    photo.src=art?"api/template-art/"+art+"/desktop.jpg":heroImage;
   }
   if(!slides.length && !governed)return;
   let index=0,paused=matchMedia("(prefers-reduced-motion: reduce)").matches,timer,expiry,pending=false;

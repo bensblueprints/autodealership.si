@@ -2,6 +2,23 @@
   const get=id=>document.getElementById(id),controls=get("banner-controls"),msg=get("banner-status"),upload=get("banner-upload");
   let heroImage="", publishedSlides=[], publishedEnabled=false;
   let slides=[],revision=0,loaded=false;
+  const mode=get("hero-mode"),choice=get("template-art-choice"),picker=get("template-art-picker");
+  function previewHero(){
+    const show=mode.value==="artwork" && Boolean(choice.value);
+    picker.hidden=!show;
+    get("hero-preview").hidden=mode.value!=="dealership" || !heroImage;
+    if(show)for(const size of ["desktop","mobile"]){
+      const img=get("art-"+size),src="api/template-art/"+choice.value+"/"+size+".jpg";
+      if(img.getAttribute("src")!==src)img.src=src;
+    }
+  }
+  function artworkChoices(data){
+    const art=data.art||[],labels={franchise:"Franchise",independent:"Independent",bhph:"Buy Here Pay Here"};
+    const layout=window.Store?.settings()?.profile?.siteTemplate;
+    choice.replaceChildren(...art.map(item=>new Option((labels[item.layout]||item.layout)+" · "+item.title,item.id)));
+    choice.value=data.heroArtwork||art.find(item=>item.layout===layout)?.id||art[0]?.id||"";
+    mode.querySelector('[value="artwork"]').disabled=art.length===0;
+  }
   let programs=[],canReview=false,franchise=false,states=[],timezone="",dirty=false;
   function programReview(row,slide,index){
     const box=document.createElement("fieldset"),legend=document.createElement("legend");
@@ -73,13 +90,14 @@
     programs=catalog.programs;canReview=catalog.canReview;franchise=data.franchise;timezone=data.timezone;
     if(replace || !loaded){
       heroImage=data.heroImage||"";get("hero-mode").value=data.heroMode||"vehicle";
-      get("hero-preview").hidden=!heroImage;if(heroImage)get("hero-preview").src=heroImage;
+      artworkChoices(data);previewHero();if(heroImage)get("hero-preview").src=heroImage;
       slides=data.slides;publishedSlides=structuredClone(slides);publishedEnabled=data.enabled;revision=data.revision;
       get("banner-enabled").checked=data.enabled;dirty=false;loaded=true;
     }
     states=data.revision===revision?data.states:[];controls.disabled=false;render();
   }
-  get("banner-enabled").onchange=get("hero-mode").onchange=()=>dirty=true;
+  get("banner-enabled").onchange=()=>dirty=true;
+  mode.onchange=choice.onchange=()=>{dirty=true;previewHero();};
   document.querySelector('[data-view="banners"]').addEventListener("click",()=>loadEditor(!dirty).catch(e=>msg.textContent=e.message));
   for(const input of [upload,get("hero-upload")])input.onchange=async()=>{
     const isHero=input!==upload;const file=input.files[0];if(!file)return;controls.disabled=true;
@@ -90,12 +108,12 @@
       const ctx=canvas.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();
       const limit=isHero?2400000:1000000;let image=canvas.toDataURL("image/jpeg",.85);if(image.length>limit)image=canvas.toDataURL("image/jpeg",.55);
       if(image.length>limit)throw Error("Choose a smaller image.");
-      if(isHero){heroImage=image;get("hero-preview").src=image;get("hero-preview").hidden=false;get("hero-mode").value="dealership";msg.textContent="Saving dealership photo…";await persist(publishedSlides,publishedEnabled);msg.textContent="Dealership photo saved to the homepage.";return;}
+      if(isHero){heroImage=image;get("hero-preview").src=image;get("hero-preview").hidden=false;mode.value="dealership";previewHero();msg.textContent="Saving dealership photo…";await persist(publishedSlides,publishedEnabled);msg.textContent="Dealership photo saved to the homepage.";return;}
       slides.push({image,alt:"",link:""});dirty=true;render();msg.textContent="Add an offer description, then save.";
     }catch(e){msg.textContent=e.message;}finally{controls.disabled=false;input.value="";}
   };
   async function persist(items,enabled){
-    const res=await fetch("/api/banner-editor",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({heroImage,heroMode:get("hero-mode").value,slides:items,revision,enabled})});
+    const res=await fetch("/api/banner-editor",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({heroImage,heroMode:mode.value,heroArtwork:mode.value==="artwork"?choice.value:null,slides:items,revision,enabled})});
     const result=await res.json().catch(()=>({}));
     if(!res.ok)throw Error(result.error||(res.status===413?"Image upload is too large.":"Save failed. Reopen the dashboard if your session expired."));
     revision=result.revision;

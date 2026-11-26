@@ -62,6 +62,10 @@ The franchise layout prioritizes new, used and certified inventory. It surfaces 
 
 ### Review franchise offers before publishing a homepage banner
 
+For a decorative homepage image, go to **Website settings → Homepage banners → Hero image → Template artwork**. Select a scene, inspect both crops and save. The ordinary dealership upload is retained, so staff can switch back to **Dealership photo**. The artwork is independent of vehicle listings, Google feeds and promotional slides.
+
+The shared library is stored in the platform PostgreSQL database. To provision a fresh installation, start the showroom, extract a reviewed artwork pack, and pipe `python deploy/import-template-art.py /path/to/pack` into `psql` as the application database owner. The importer checks the paired image hashes and adds the images to the signed-in selector. Each dealership controls its own homepage selection.
+
 1. Open **Dealer dashboard → Website settings → OEM programs**. Save the manufacturer's offer title, brand, market, source bulletin, version, effective dates and exact shopper-facing disclosure. Record any written manufacturer acceptance separately.
 2. An authorized administrator opens the saved draft, checks it against the source, confirms the review and approves that revision. Staff can prepare drafts.
 3. In **Homepage banners**, upload the artwork, enter its description and destination, select the approved program revision and save. An administrator reviews the saved artwork and approves it. Enable the slideshow to display eligible banners.
