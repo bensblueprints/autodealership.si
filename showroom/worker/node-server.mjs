@@ -778,6 +778,19 @@ createServer(async(req,res)=>{
       }
       return reply(201,{id:lead.id});
     }
+    if(route.pathname==="/api/inventory-drafts"){
+      const send=(status,data)=>res.writeHead(status,{"Content-Type":"application/json","Cache-Control":"private, no-store","X-Robots-Tag":"noindex"}).end(JSON.stringify(data));
+      if(!privateAdmin)return send(403,{error:"Dealer sign-in required."});
+      let result;
+      if(req.method==="GET")result=await worker.listVinDrafts(db,Number(route.searchParams.get("offset")||0));
+      else if(req.method==="POST"){
+        if(req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return send(403,{error:"Open inventory in your dealer dashboard."});
+        let payload;try{payload=JSON.parse(body);}catch{return send(400,{error:"Invalid import."});}
+        result=await worker.importVinDrafts(db,payload?.text,async vins=>(await pool.query(
+          "SELECT vin, public.vehicle_specs(vin) AS specs FROM unnest($1::text[]) v(vin)",[vins])).rows);
+      }else return send(405,{error:"Use GET or POST."});
+      return send(result.status,result.data);
+    }
     if(route.pathname==="/api/dealer-inventory"){
       const headers={"Content-Type":"application/json","Cache-Control":"private, no-store","X-Robots-Tag":"noindex","Cross-Origin-Resource-Policy":"same-origin"};
       if(!privateAdmin){res.writeHead(403,headers).end(JSON.stringify({error:"Dealer sign-in required."}));return;}

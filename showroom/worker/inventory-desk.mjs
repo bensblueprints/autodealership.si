@@ -45,7 +45,10 @@ export async function saveInventoryRecord(db,payload){
   if(!car.stock)return inventoryError(422,"Enter a stock number.");
   return db.transaction(async conn=>{
     const existing=await inventoryRecord(conn,car.vin);
-    if(inventoryIntent==="add" && existing)return inventoryError(409,existing.status==="sold"?"This VIN is in Sold inventory. Return the existing listing to the lot.":existing.status==="deleted"?"This VIN belongs to a deleted listing.":"This VIN is already in inventory. Open the existing listing.");
+    const hasDraft=await draftsExist(conn) && (await conn.query("SELECT 1 FROM inventory_vin_drafts WHERE vin=$1",[car.vin])).rowCount>0;
+    if(inventoryIntent==="publish-draft" && !hasDraft)return inventoryError(409,"This draft has already been published or removed. Refresh inventory.");
+    if(hasDraft && (!Number.isFinite(car.price) || car.price<=0))return inventoryError(422,"Enter a positive cash price to publish this draft.");
+    if((inventoryIntent==="add" || inventoryIntent==="publish-draft") && existing)return inventoryError(409,existing.status==="sold"?"This VIN is in Sold inventory. Return the existing listing to the lot.":existing.status==="deleted"?"This VIN belongs to a deleted listing.":"This VIN is already in inventory. Open the existing listing.");
     if(inventoryIntent==="edit" && !existing)return inventoryError(409,"This vehicle is no longer in inventory.");
     if(existing?.status==="deleted")return inventoryError(409,"This listing was deleted.");
     if(!existing?.status && existing?.stock?.trim().toLowerCase()!==car.stock.toLowerCase() && await stockInUse(conn,car.stock,car.vin))
@@ -55,6 +58,7 @@ export async function saveInventoryRecord(db,payload){
       if(invalid)return invalid;
     }
     await conn.query("INSERT INTO client_cars(vin,body) VALUES($1,$2) ON CONFLICT(vin) DO UPDATE SET body=client_cars.body || excluded.body",[car.vin,car]);
+    if(hasDraft)await conn.query("DELETE FROM inventory_vin_drafts WHERE vin=$1",[car.vin]);
     await invalidateVehiclePageSources(conn,car.vin);
     return inventoryResult(200,{});
   });

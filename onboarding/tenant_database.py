@@ -7,6 +7,7 @@ from psycopg import sql
 
 TABLES = {
     "appointments": "key text PRIMARY KEY, confirmation text UNIQUE NOT NULL, body jsonb NOT NULL, notes jsonb NOT NULL DEFAULT '{}'",
+    "inventory_vin_drafts": "vin text PRIMARY KEY, specs jsonb, created_at timestamptz NOT NULL DEFAULT now()",
     "inventory_lot_dates": "vin text PRIMARY KEY,stocked_on date NOT NULL",
     "inventory_status": "vin text PRIMARY KEY,status text NOT NULL CHECK(status IN ('sold','deleted'))",
     "bhph_offers": "vehicle text PRIMARY KEY,revision integer NOT NULL,offer jsonb NOT NULL",
@@ -52,7 +53,7 @@ def provision(control, site_id, name, legacy=False, template="independent"):
                 continue
             if table == "vehicle_photo_assets":
                 source = sql.SQL("SELECT * FROM public.vehicle_photo_assets WHERE site={}").format(sql.Literal(str(site_id)))
-            elif table in ("marketing_campaigns","oem_program_revisions","oem_banner_reviews","website_page_editions","website_page_review_events","inventory_lot_dates","inquiry_sms_contacts","inquiry_sms_messages","sms_usage_evidence","sales_opportunities","sales_email_messages","staff_mail_messages","staff_calls","shopper_leads","sales_client_intakes","sales_client_contracts","dealer_review_settings","purchase_review_optouts","purchase_review_emails") and not control.execute(
+            elif table in ("marketing_campaigns","oem_program_revisions","oem_banner_reviews","website_page_editions","website_page_review_events","inventory_lot_dates","inventory_vin_drafts","inquiry_sms_contacts","inquiry_sms_messages","sms_usage_evidence","sales_opportunities","sales_email_messages","staff_mail_messages","staff_calls","shopper_leads","sales_client_intakes","sales_client_contracts","dealer_review_settings","purchase_review_optouts","purchase_review_emails") and not control.execute(
                 "SELECT to_regclass(%s) AS name", (database + "." + table,)
             ).fetchone()["name"]:
                 continue

@@ -227,3 +227,20 @@ main>.desk-nav .desk-group button.active{box-shadow:inset 3px 0 currentColor}
 #pageBlockStatus:not(:empty) {display:block; margin-top:8px}
 .page-block-preview section {display:grid; gap:4px; margin-top:14px; padding-top:10px; border-top:1px solid var(--line); overflow-wrap:anywhere}
 .page-block-preview p {white-space:pre-line}
+
+/* Private VIN intake within the dealer inventory workspace. */
+.inventory-actions {display:flex; flex-wrap:wrap; gap:.65rem}
+#draft-list {margin:1rem 0; border:1px solid var(--line); border-radius:12px; overflow:hidden}
+#draft-list>summary {cursor:pointer; padding:1rem 1.15rem; font-weight:650}
+#draft-count {margin-left:.45rem; font-variant-numeric:tabular-nums}
+.draft-body {padding:0 1.15rem 1rem}
+#draft-rows>div {display:flex; align-items:center; justify-content:space-between; gap:.75rem; border-top:1px solid var(--line); padding:.8rem 0}
+#draft-rows small {display:block; font-family:ui-monospace,monospace; margin:.25rem 0; overflow-wrap:anywhere}
+#draft-pages:not([hidden]) {display:flex; align-items:center; justify-content:space-between; gap:.65rem}
+#bulk-dialog {width:min(35rem,calc(100vw - 2rem))}
+.bulk-body {display:grid; gap:.9rem; padding:1.2rem; overflow-wrap:anywhere}
+.bulk-body label {display:grid; gap:.4rem; font-weight:600}
+.bulk-body textarea {width:100%; box-sizing:border-box; resize:vertical; min-height:7rem; font-family:ui-monospace,monospace}
+.bulk-body input[type=file] {max-width:100%}
+.bulk-body p {margin:0}
+.bulk-body p:empty,.draft-body p:empty {display:none}

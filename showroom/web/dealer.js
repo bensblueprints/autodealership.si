@@ -246,19 +246,22 @@
   function paymentFlags(mode){
     return {financingEnabled:mode!=="cash",aprFinancingEnabled:mode==="apr"};
   }
-  function openEditor(car=null,focusField="") {
+  function openEditor(car=null,focusField="",draft=false) {
+    form.dataset.draft=draft ? car.vin : "";
+    form.querySelector('button[type="submit"]').textContent=draft?"Publish vehicle":"Save vehicle";
+    form.elements.price.min=draft?"1":"0";
     $("saveWithBhph").hidden=!!window.clientSite && !clientSite.bhph;
     editing=car;form.reset();form.elements.vehicleFinancing.value=paymentMode(car);
     for(const [key,input] of [["finance","vehicleFinanceEstimate"],["lease","vehicleLeaseEstimate"]]){
       form.elements[input].checked=car?.[key+"EstimateEnabled"]!==false;
     }
     const syncVehicleModes=()=>{for(const input of ["vehicleFinanceEstimate","vehicleLeaseEstimate"])form.elements[input].disabled=form.elements.vehicleFinancing.value!=="apr";};
-    form.elements.vehicleFinancing.onchange=syncVehicleModes;syncVehicleModes();$("formError").textContent="";$("editTitle").textContent=car?"Edit vehicle":"Add vehicle";
+    form.elements.vehicleFinancing.onchange=syncVehicleModes;syncVehicleModes();$("formError").textContent="";$("editTitle").textContent=draft?"Review inventory draft":car?"Edit vehicle":"Add vehicle";
     form.querySelector(".editor-details").open=false;
     form.elements.lotDate.value=car?.lotDate||"";
     form.elements.lotDate.max=InventoryWorklist.today(Store.settings().profile?.driveTimezone);
     form.elements.vin.readOnly=!!car && !!window.postgresInventory;
-    for(const field of ['stock','price','miles'])form.elements[field].required=!car || car[field]!=null && car[field]!=="";
+    for(const field of ['stock','price','miles'])form.elements[field].required=draft || !car || car[field]!=null && car[field]!=="";
     if(car)for(const key of ['status','condition','body']){
       const field=form.elements[key],value=car[key];
       if(value && !Array.from(field.options).some(o=>o.value===value))field.add(new Option(value,value));
@@ -348,10 +351,10 @@
       if(photoBusy)throw Error("Wait for photo uploads to finish.");
       addPhotoUrl();car.photos=[...photos];car.image=photos[0]||"";car.galleryEdited=true;
       if(editing?.imageType==="stock" && car.image && car.image!==editing.image)car.imageType="dealer";
-      if(!car.image && !editing)throw Error("Add a photo URL or upload a photo to publish this vehicle.");
+      if(!car.image && (!editing || form.dataset.draft))throw Error("Add a photo URL or upload a photo to publish this vehicle.");
       const lotDate=f.get("lotDate")||null,previousLotDate=editing?.lotDate||null;
-      const desk={inventoryIntent:editing?"edit":"add",...(lotDate!==previousLotDate?{lotDate,previousLotDate}:{})};
-      await Store.saveCar(car,desk);refresh();$("editor").close();notice("Vehicle saved to showroom");
+      const desk={inventoryIntent:form.dataset.draft?"publish-draft":editing?"edit":"add",...(lotDate!==previousLotDate?{lotDate,previousLotDate}:{})};
+      await Store.saveCar(car,desk);if(form.dataset.draft)InventoryDrafts.load();refresh();$("editor").close();notice("Vehicle saved to showroom");
       if(save.id==="saveWithBhph")await BHPH.edit(car);
     }catch(err){if(err.identity){identities.set(err.identity.vin,err.identity);showReview();$("vin-review").scrollIntoView({block:"center"});}$("formError").textContent=err.name==="QuotaExceededError"?"Photo storage is full. Try a hosted photo URL.":err.message;}
     finally{delete form.dataset.saving;save.disabled=false;}
@@ -369,7 +372,7 @@
     if(key==="conversations")ConversationDesk.load();
     if(key==="clients")DealerClients.load();
     if(key==="reputation")DealerReputation.load();
-    if(key==="inventory")renderInventory(Store.cars(true));
+    if(key==="inventory"){renderInventory(Store.cars(true));InventoryDrafts.load();}
     if(key==="inquiries" || key==="today")Store.loadLeads();
     if(["banners","pages","voice","oem"].includes(key))$("setup-menu").open=true;
   }
@@ -380,6 +383,11 @@
   // Trigger the normal loaders for bookmarked workspace tabs after their scripts initialize.
   window.addEventListener("DOMContentLoaded",()=>tabs.find(btn=>"#"+btn.dataset.view===location.hash)?.click());
   $("statusFilter").addEventListener("change",()=>renderLeads(Store.leads(),$("leadList"),$("statusFilter").value));
+  InventoryDrafts.init(({vin,specs})=>{
+    openEditor({vin,id:vin,...window.inventoryDraftFields(specs)},"stock",true);
+    // Enrich with the detailed specifications and original sticker when available.
+    $("decodeVin").click();
+  });
   $("addCar").addEventListener("click",()=>openEditor());
   const profileFields=["salesPhone","partsPhone","servicePhone","street","city","region","postal","country","googleStoreCode"];
   const socialFields=["facebook","instagram","youtube","tiktok","x","linkedin"];

@@ -20,6 +20,10 @@
     const features=[clean(r.DriveType),...Object.entries(standard).filter(([key])=>r[key]==="Standard").map(([,label])=>label)].filter(Boolean);
     return {year:r.ModelYear,make:r.Make,model:r.Model,trim:r.Trim,body,drivetrain:clean(r.DriveType),fuel:[clean(r.FuelTypePrimary),clean(r.FuelTypeSecondary)].filter(Boolean).join(" / "),transmission:r.TransmissionStyle,engine,doors:r.Doors,features:features.join("\n")};
   }
+  window.inventoryDraftFields=row=>{
+    const values=specs(row||{});
+    return {...values,features:values.features.split("\n").filter(Boolean)};
+  };
   window.applyStickerFields=(record)=>{
     if(record.vin!==normalize(fields.vin.value))return;
     for(const [key,value] of Object.entries(record.listingFields||{})){
