@@ -1,5 +1,6 @@
 (async()=>{
   const get=id=>document.getElementById(id),form=document.querySelector("form"),status=get("status");
+  window.addEventListener("hashchange",()=>location.reload());
   const args=new URLSearchParams(location.hash.slice(1)),token=args.get("token");
   async function call(action,body={}){
     const response=await fetch("api/purchase-feedback",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,action,...body})});
