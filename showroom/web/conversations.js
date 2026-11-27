@@ -8,7 +8,21 @@ const ConversationDesk=(()=>{
     const res=data?await fetch(url,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(data)}):await readDealerDesk(url,{cache:"no-store"});
     const result=await res.json();if(!res.ok)throw Error(result.error||"Could not load this conversation.");return result;
   }
+  async function inbox(){
+    const button=get("conv-inbox"),state=get("conv-inbox-status");
+    try{
+      const {available,personal}=await call(api+"/inbox");
+      button.hidden=!available;button.textContent=personal?"Manage my inbox":"Connect my inbox";
+      state.textContent=personal?[personal.address,personal.issue].filter(Boolean).join(" · "):available?"Connect your work email to reply as yourself.":"Use an individual dealership login to connect your own email.";
+    }catch(e){state.textContent=e.message;}
+  }
+  get("conv-inbox").onclick=async()=>{
+    const button=get("conv-inbox");button.disabled=true;
+    try{const r=await call(api+"/inbox",{},"POST");location.assign(r.url);}
+    catch(e){get("conv-inbox-status").textContent=e.message;button.disabled=false;}
+  };
   async function load(reset=false){
+    void inbox();
     if(reset)offset=0;
     const serial=++version,msg=get("conv-list-status");
     try{
@@ -48,32 +62,36 @@ const ConversationDesk=(()=>{
       }
       const refresh=btn("Refresh messages",()=>show(id));box.append(identity,heading,contact,btn("View client",()=>DealerClients.open({id})),edit,status,refresh,log);
       if(!data.canEdit){box.append(el("p","The assigned salesperson or dealer owner can reply."));return;}
+      if(o.phone){const callButton=btn("Call "+o.name,()=>StaffCalling.start(id,o.name,()=>{if(openId===id)show(id);}));callButton.disabled=!data.voice;box.append(callButton);if(!data.voice)box.append(el("small"," Connect a dealership voice number to call from this browser."));}
       const stocks=data.leads.filter(l=>l.textReplyRequest),form=el("form",undefined,"conv-compose"),channel=el("select"),stock=el("select"),subject=el("input"),body=el("textarea");
       if(stocks.length)channel.add(new Option("Text message","sms"));if(o.email)channel.add(new Option("Email","email"));
       if(!channel.options.length){box.append(el("p","A shopper email or text request is needed to reply here."));return;}
       for(const l of stocks)stock.add(new Option(l.stock?"Stock #"+l.stock:l.source||"Shopper inquiry",l.id));
-      const stockField=labeled("Inquiry",stock),subjectField=labeled("Subject",subject);
+      const from=el("select");
+      if(data.personal)from.add(new Option(data.personal.address+(data.personal.paused?" (reconnect)":""),data.personal.id));
+      if(data.mailbox)from.add(new Option("sales@"+data.mailbox+" (dealership)","shared"));
+      const fromField=labeled("From",from),stockField=labeled("Inquiry",stock),subjectField=labeled("Subject",subject);
       subject.value="Re: Your dealership inquiry";subject.maxLength=200;body.required=true;body.rows=4;
       const send=el("button","Send reply","primary"),note=el("p");send.type="submit";note.setAttribute("role","status");
-      form.append(labeled("Reply via",channel),stockField,subjectField,labeled("Message",body),send,note);box.append(form);
+      form.append(labeled("Reply via",channel),fromField,stockField,subjectField,labeled("Message",body),send,note);box.append(form);
       let check=0,request=null,signature="",permitted=false;
       async function policy(){
         const rev=++check,isEmail=channel.value==="email";permitted=false;send.disabled=true;note.textContent="";
-        stockField.hidden=isEmail||stocks.length<2;subjectField.hidden=!isEmail;subject.required=isEmail;body.maxLength=isEmail?5000:1000;
+        fromField.hidden=!isEmail || !from.options.length;stockField.hidden=isEmail||stocks.length<2;subjectField.hidden=!isEmail;subject.required=isEmail;body.maxLength=isEmail?5000:1000;
         try{
           const sms=isEmail?null:await call("/api/inquiries/texts?id="+stock.value);
           if(rev!==check)return;
-          const reason=isEmail?(!data.mailbox?"Connect the dealer’s verified reply mailbox in Email connection.":""):sms.reason;
-          permitted=!reason;send.disabled=!permitted;note.textContent=reason||(isEmail?"From sales@"+data.mailbox:"From "+sms.from);
+          const reason=isEmail?(!from.value?"Connect your inbox to send an email.":from.value===data.personal?.id && data.personal.paused?"Reconnect your inbox to send.":""):sms.reason;
+          permitted=!reason;send.disabled=!permitted;note.textContent=reason||(isEmail?"Reply will appear in this conversation.":"From "+sms.from);
         }catch(err){if(rev===check)note.textContent=err.message;}
       }
-      channel.onchange=policy;stock.onchange=policy;await policy();
+      channel.onchange=policy;from.onchange=policy;stock.onchange=policy;await policy();
       form.onsubmit=async e=>{
         e.preventDefault();if(!permitted || send.disabled)return;send.disabled=true;
         try{
           if(channel.value==="email"){
-            const key=JSON.stringify([subject.value,body.value]);if(signature!==key){request=crypto.randomUUID();signature=key;}
-            await call(api+"/email",{id,request,subject:subject.value,body:body.value},"POST");
+            const key=JSON.stringify([from.value,subject.value,body.value]);if(signature!==key){request=crypto.randomUUID();signature=key;}
+            await call(api+"/email",{id,request,sender:from.value,subject:subject.value,body:body.value},"POST");
           }else{
             const lead=stocks.find(l=>l.id===stock.value);
             const draft=await call("/api/inquiries",{action:"save-text-draft",id:lead.id,revision:lead.textDraft?.revision||"",text:body.value},"PUT");

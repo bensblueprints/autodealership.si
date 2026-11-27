@@ -11,10 +11,14 @@ from psycopg.rows import dict_row
 import resend_connect
 import resend_routes
 import dealer_mail
+import staff_mail
+import staff_mail_worker
 import review_mail
 import threading
 import platform_mail
 import platform_mail_routes
+import staging
+import preview_health
 
 ROOT=Path(__file__).parent
 ORIGIN="https://autodealership.si"
@@ -37,11 +41,14 @@ with connect() as db:
         ALTER TABLE public.client_sites ADD COLUMN IF NOT EXISTS engineer uuid REFERENCES public.client_engineers(id)""")
     db.execute(resend_connect.SCHEMA)
     db.execute(dealer_mail.MAILBOX_SCHEMA)
+    db.execute(staff_mail.SCHEMA)
+    db.execute("ALTER TABLE public.client_sites ADD COLUMN IF NOT EXISTS preview_ready_at timestamptz, ADD COLUMN IF NOT EXISTS preview_retry_after timestamptz")
+    db.execute("ALTER TABLE public.client_sites ADD COLUMN IF NOT EXISTS staging_request uuid UNIQUE")
     db.execute(platform_mail.SCHEMA)
 def digest(token):return hashlib.sha256(token.encode()).hexdigest()
 def encoded_password(password,salt):
     return hashlib.scrypt(password.encode(),salt=bytes.fromhex(salt),n=16384,r=8,p=1).hex()
-def create(data,engineer=None):
+def create(data,engineer=None,staging_request=None):
     slug=data["slug"].strip().lower();name=data["name"].strip();rate=data["rate"];password=data["password"]
     if not re.fullmatch(r"[a-z][a-z0-9-]{1,48}[a-z0-9]",slug) or slug in {"www","demo","admin","mail","api","dashboard","onboarding","billing","support"}:raise ValueError("Choose an available subdomain with 3 to 50 letters, numbers or hyphens.")
     if not 1<=len(name)<=100 or not 14<=len(password)<=128 or type(rate) is not int or not 0<=rate<=100000:raise ValueError("Check the dealership name, monthly rate and dealer password (14 characters minimum).")
@@ -52,7 +59,7 @@ def create(data,engineer=None):
     ident=uuid.uuid4()
     auth="Basic "+base64.b64encode(("dealer:"+password).encode()).decode()
     with connect() as db:
-        db.execute("INSERT INTO public.client_sites(id,slug,name,admin_hash,rate,bhph,voice,domain,engineer) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)",(ident,slug,name,hashlib.sha256(auth.encode()).hexdigest(),rate,data["bhph"] is True,data["voice"] is True,domain,engineer))
+        db.execute("INSERT INTO public.client_sites(id,slug,name,admin_hash,rate,bhph,voice,domain,engineer,staging_request) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",(ident,slug,name,hashlib.sha256(auth.encode()).hexdigest(),rate,data["bhph"] is True,data["voice"] is True,domain,engineer,staging_request))
         provision(db,ident,name,template=template)
     return {"slug":slug}
 def provision_agent(slug):
@@ -92,6 +99,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.partition("?")[0] in (platform_mail.PATH,platform_mail.PATH+"/callback",platform_mail_routes.UNSUB):
             return platform_mail_routes.get(self)
+        if self.path.partition("?")[0] in (staff_mail.PATH,staff_mail.PATH+"/callback"):
+            return staff_mail.get(self,connect)
         if self.path.partition("?")[0] in ("/onboarding/email","/onboarding/email/callback"):
             return resend_routes.get(self,connect)
         if self.path.startswith("/api/v1/vin/"):
@@ -120,7 +129,7 @@ class Handler(BaseHTTPRequestHandler):
             with connect() as db:team=db.execute("SELECT email,id,active,password IS NOT NULL AS joined FROM public.client_engineers ORDER BY email").fetchall()
             return self.reply(200,{"owner":True,"team":team})
         with connect() as db:
-            rows=db.execute("SELECT slug,name,rate,domain,verified_domain,bhph,voice,agent_state,engineer,clerk_org_id FROM public.client_sites "+("" if who=="owner" else "WHERE engineer=%s ")+"ORDER BY created_at DESC",() if who=="owner" else (who,)).fetchall()
+            rows=db.execute("SELECT slug,name,rate,domain,verified_domain,bhph,voice,agent_state,engineer,clerk_org_id,staging_request IS NOT NULL AS staging,preview_ready_at IS NOT NULL AS preview_ready FROM public.client_sites "+("" if who=="owner" else "WHERE engineer=%s ")+"ORDER BY created_at DESC",() if who=="owner" else (who,)).fetchall()
         self.reply(200,rows)
     def do_POST(self):
         if self.path.partition("?")[0]==platform_mail_routes.UNSUB:
@@ -133,6 +142,8 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(size))
             if self.path.startswith(platform_mail.PATH+"/"):
                 return platform_mail_routes.post(self,connect,data,who)
+            if self.path.startswith(staff_mail.PATH+"/"):
+                return staff_mail.post(self,connect,self.path[len(staff_mail.PATH)+1:],data)
             if self.path.startswith("/onboarding/email/"):
                 return resend_routes.post(self,connect,self.path[len("/onboarding/email/"):],data)
             if self.path=="/onboarding/clerk-exchange":
@@ -215,9 +226,20 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         db.execute("UPDATE public.client_engineers SET active=false,invite_hash=NULL WHERE id=%s",(data["engineer"],));result={}
                 return self.reply(200,result)
+            if self.path=="/onboarding/staging":return self.reply(200,staging.stage(connect,create,data,who))
+            if self.path=="/onboarding/staging-organization":return self.reply(200,{"organizationReady":staging.bind(connect,data["slug"],who)})
             if self.path!="/onboarding/sites" and who!="owner":
                 with connect() as db:
                     if not db.execute("SELECT 1 FROM public.client_sites WHERE slug=%s AND engineer=%s",(data.get("slug"),who)).fetchone():return self.reply(403,{"error":"This client is not assigned to you."})
+            if self.path=="/onboarding/preview-status" or self.path in ("/onboarding/dealer-invite","/onboarding/open-desk"):
+                slug=str(data.get("slug",""))
+                with connect() as db:
+                    site=db.execute("SELECT 1 FROM public.client_sites WHERE slug=%s",(slug,)).fetchone()
+                    if not site:return self.reply(404,{"error":"Dealership unavailable."})
+                    good=preview_health.ready(slug)
+                    db.execute("UPDATE public.client_sites SET preview_ready_at=CASE WHEN %s THEN now() END WHERE slug=%s",(good,slug))
+                if self.path=="/onboarding/preview-status":return self.reply(200,{"ready":good})
+                if not good:return self.reply(409,{"error":"Secure showroom setup is in progress. The dashboard and invitations unlock when HTTPS is verified."})
             if self.path=="/onboarding/dealer-invite":
                 if who!="owner":return self.reply(403,{})
                 email=str(data.get("email","")).strip().lower()
@@ -234,7 +256,7 @@ class Handler(BaseHTTPRequestHandler):
                         if invitation["email_address"].lower()==email and invitation["role"]=="org:admin" and invitation["status"]=="pending" and invitation.get("url") and invitation.get("expires_at",0)>__import__("time").time()*1000:return self.reply(200,{"url":invitation["url"]})
                     if len(page)<100:break
                     offset+=100
-                request=Request("https://api.clerk.com/v1"+path,data=json.dumps({"email_address":email,"role":"org:admin","notify":False}).encode(),headers={"Authorization":"Bearer "+os.environ["CLERK_SECRET_KEY"],"User-Agent":"AutoDealership/1","Content-Type":"application/json"})
+                request=Request("https://api.clerk.com/v1"+path,data=json.dumps({"email_address":email,"role":"org:admin","notify":False,"redirect_url":"https://"+data["slug"]+".autodealership.si/dealer"}).encode(),headers={"Authorization":"Bearer "+os.environ["CLERK_SECRET_KEY"],"User-Agent":"AutoDealership/1","Content-Type":"application/json"})
                 try:
                     with urlopen(request,timeout=10) as response:invitation=json.load(response)
                 except HTTPError:return self.reply(409,{"error":"Clerk could not create the invitation. Check whether this email is already a dealership member."})
@@ -259,6 +281,7 @@ class Handler(BaseHTTPRequestHandler):
         except psycopg.errors.UniqueViolation:self.reply(409,{"error":"That subdomain is already reserved."})
         except (ValueError,TypeError,KeyError) as err:self.reply(400,{"error":str(err)})
         except Exception:self.reply(500,{"error":"Could not complete this change."})
+threading.Thread(target=staff_mail_worker.work,args=(connect,),daemon=True).start()
 threading.Thread(target=dealer_mail.work,args=(connect,),daemon=True).start()
 threading.Thread(target=review_mail.work,args=(connect,),daemon=True).start()
 ThreadingHTTPServer(("127.0.0.1",18485),Handler).serve_forever()

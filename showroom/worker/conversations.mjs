@@ -89,7 +89,8 @@ export async function readSalesConversations(db,{id,queue,search,team,offset=0})
     const leads=(await c.query("SELECT body-'followUp' AS lead FROM shopper_leads WHERE body->>'opportunityId'=$1 ORDER BY body->>'createdAt' DESC,id",[id])).rows.map(r=>r.lead);
     const texts=op.phone?(await c.query("SELECT id,direction,body,state,stock,actor,created_at FROM inquiry_sms_messages WHERE phone=$1 ORDER BY created_at DESC,id DESC LIMIT 100",[op.phone])).rows:[];
     const emails=(await c.query("SELECT id,direction,body,state,subject,address,actor,created_at FROM sales_email_messages WHERE opportunity=$1 ORDER BY created_at DESC,id DESC LIMIT 100",[id])).rows;
-    const timeline=[...texts.map(v=>({...v,channel:"SMS"})),...emails.map(v=>({...v,channel:"Email"})),
+    const calls=(await c.query("SELECT to_regclass('staff_calls') AS t")).rows[0].t?(await c.query("SELECT id,actor,state,phone,seconds,created_at FROM staff_calls WHERE opportunity=$1 AND parent_sid IS NOT NULL ORDER BY created_at DESC LIMIT 100",[id])).rows:[];
+    const timeline=[...calls.map(v=>({...v,channel:"Call",direction:"out",body:"Outgoing call to "+v.phone+(v.seconds!=null?" · "+v.seconds+" seconds":"")})),...texts.map(v=>({...v,channel:"SMS"})),...emails.map(v=>({...v,channel:"Email"})),
       ...leads.filter(l=>l.source!=="Incoming text").map(l=>({id:l.id,channel:l.source||"Showroom inquiry",direction:"in",body:l.message,stock:l.car?.stock,created_at:l.createdAt}))].sort((a,b)=>+new Date(a.created_at)-+new Date(b.created_at));
     delete op.thread_key;
     return smsResult(200,{opportunity:op,timeline,leads:leads.map(l=>({id:l.id,stock:l.car?.stock,name:l.name,phone:l.phone,email:l.email,source:l.source,textReplyRequest:l.textReplyRequest,textDraft:l.textDraft,car:l.car})),canEdit:team.manager||!op.owner||op.owner.id===team.me.id});
@@ -125,17 +126,26 @@ export async function saveOpportunityDraft(db,input,actor){
     return smsResult(200,draft);
   });
 }
-export async function queueConversationMail(db,input,actor,mailbox){
+export async function queueConversationMail(db,input,actor,mailbox,personal=null){
   if(!smsUuid.test(input?.id||"")||!smsUuid.test(input?.request||"")||typeof input.body!=="string"||!input.body.trim()||input.body.length>5000||typeof input.subject!=="string"||!input.subject.trim()||input.subject.length>200||/[\r\n]/.test(input.subject))return smsError(400,"Enter an email subject and reply.");
-  return db.transaction(async c=>{
+  return db.transaction(async (c,control)=>{
+    if(typeof personal==="function")personal=await personal(control);
     await opportunityTables(c);
     const op=(await c.query("SELECT email,owner FROM sales_opportunities WHERE id=$1 FOR UPDATE",[input.id])).rows[0];
     if(!op)return smsError(404,"Conversation unavailable.");
     if(op.owner && op.owner.id!==actor.id && !actor.manager)return smsError(403,"The assigned salesperson or a manager can reply.");
-    if(!mailbox || !conversationEmail(op.email))return smsError(409,"Connect a verified dealer mailbox and select a shopper with an email address.");
-    const args=[input.request,input.id,op.email,input.subject.trim(),input.body.trim(),actor.label];
-    const added=await c.query("INSERT INTO sales_email_messages(id,opportunity,direction,address,subject,body,state,actor) VALUES($1,$2,'out',$3,$4,$5,'queued',$6) ON CONFLICT(id) DO NOTHING",args);
+    if(input.sender && input.sender!=="shared" && (!personal || personal.id!==input.sender || personal.paused))return smsError(409,"Reconnect your selected mailbox before sending.");
+    if((!personal && !mailbox) || !conversationEmail(op.email))return smsError(409,"Connect a verified dealer mailbox and select a shopper with an email address.");
+    const args=[input.request,input.id,op.email,input.subject.trim(),input.body.trim(),personal?.address||actor.label,personal?"staff queued":"queued"];
+    if(personal && !(await c.query("SELECT to_regclass('staff_mail_messages') AS t")).rows[0].t){
+      await c.query("SELECT pg_advisory_xact_lock(81454,3)");
+      await c.query("CREATE TABLE IF NOT EXISTS staff_mail_messages(message uuid PRIMARY KEY,grant_id uuid NOT NULL,owner_id text NOT NULL,sender text NOT NULL,rfc_id text NOT NULL,thread_id text,UNIQUE(grant_id,rfc_id))");
+    }
+    const added=await c.query("INSERT INTO sales_email_messages(id,opportunity,direction,address,subject,body,state,actor) VALUES($1,$2,'out',$3,$4,$5,$7,$6) ON CONFLICT(id) DO NOTHING",args);
+    if(added.rowCount && personal)await c.query("INSERT INTO staff_mail_messages(message,grant_id,owner_id,sender,rfc_id) VALUES($1,$2,$3,$4,$5)",[input.request,personal.id,actor.id,personal.address,"<"+input.request+"@"+personal.address.split("@")[1]+">"]);
     if(!added.rowCount){
+      const linked=(await c.query("SELECT to_regclass('staff_mail_messages') AS t")).rows[0].t && (await c.query("SELECT grant_id,owner_id FROM staff_mail_messages WHERE message=$1",[input.request])).rows[0];
+      if(personal?linked?.grant_id!==personal.id || linked?.owner_id!==actor.id:!!linked)return smsError(409,"Email request already used by a different sender.");
       const same=await c.query("SELECT 1 FROM sales_email_messages WHERE id=$1 AND opportunity=$2 AND address=$3 AND subject=$4 AND body=$5 AND direction='out'",args.slice(0,5));
       if(!same.rowCount)return smsError(409,"Email request already used.");
     }

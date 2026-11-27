@@ -3,7 +3,7 @@ import {gzip} from "node:zlib";
 import pg from "pg";
 import {AsyncLocalStorage} from "node:async_hooks";
 import {promisify} from "node:util";
-import {scrypt,randomBytes,createHash,createPublicKey,verify} from "node:crypto";
+import {scrypt,randomBytes,createHmac,createHash,createPublicKey,verify} from "node:crypto";
 import {bookingDatabase} from "./booking-database.mjs";
 import {timingSafeEqual} from "node:crypto";
 import {createServer} from "node:http";
@@ -55,7 +55,7 @@ db.transaction=async function(action){
         await local.query("BEGIN");
       }else await control.query("SET LOCAL search_path TO "+tenant.schema);
     }
-    const result=await action(local||control);
+    const result=await action(local||control,control);
     const finish=result.status>=400?"ROLLBACK":"COMMIT";
     if(local)await local.query(finish);
     await control.query(finish);
@@ -319,6 +319,12 @@ createServer(async(req,res)=>{
     };
     const smsRoute=()=>{const account=smsAccount();return account && /^\+[1-9]\d{7,14}$/.test(account.from||"")?account:null;};
     const smsOrigin=tenant?"https://"+tenant.slug+".autodealership.si":"";
+    const staffVoice=()=>tenant && worker.staffVoiceRoute(loadTwilioRoutes(),site);
+    if(["/api/staff-voice/dial","/api/staff-voice/result"].includes(route.pathname)){
+      if(!dealerHost || req.method!=="POST" || !req.headers["content-type"]?.startsWith("application/x-www-form-urlencoded") || body.length>24000){res.writeHead(403).end();return;}
+      const result=await worker.staffVoiceWebhook(db,{route:staffVoice(),origin:smsOrigin,path:route.pathname+route.search,params:new URLSearchParams(body.toString()),signature:req.headers["x-twilio-signature"]});
+      res.writeHead(result.status,{"Content-Type":"text/xml","Cache-Control":"no-store"}).end(result.data.xml||"");return;
+    }
     if(["/api/dealer-sms/incoming","/api/dealer-sms/status"].includes(route.pathname)){
       if(!tenant || prefix || base.hostname!==tenant.slug+".autodealership.si" || req.method!=="POST" || !req.headers["content-type"]?.startsWith("application/x-www-form-urlencoded") || body.length>24000){res.writeHead(403).end();return;}
       const params=new URLSearchParams(body.toString("utf8")),account=smsAccount();
@@ -642,7 +648,7 @@ createServer(async(req,res)=>{
       let data;try{data=JSON.parse(body);}catch{return send(400,{error:"Invalid feedback request."});}
       const result=await worker.customerFeedback(db,data);return send(result.status,result.data);
     }
-    if(route.pathname==="/api/reputation" || route.pathname==="/api/clients" || route.pathname==="/api/inquiries" || route.pathname==="/api/inquiries/team" || route.pathname==="/api/inquiries/history" || route.pathname==="/api/inquiries/texts" || route.pathname==="/api/conversations" || route.pathname==="/api/conversations/email"){
+    if(route.pathname==="/api/reputation" || route.pathname==="/api/clients" || route.pathname==="/api/inquiries" || route.pathname==="/api/inquiries/team" || route.pathname==="/api/inquiries/history" || route.pathname==="/api/inquiries/texts" || route.pathname==="/api/conversations" || route.pathname==="/api/conversations/email" || route.pathname==="/api/conversations/inbox" || route.pathname==="/api/conversations/call"){
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
       const currentActor=()=>{
         if(clerkRole || platformStaff)return {id:"clerk:"+claims.subject,label:platformStaff?"Platform staff":"Dealership staff"};
@@ -673,19 +679,42 @@ createServer(async(req,res)=>{
       }
       if(route.pathname.startsWith("/api/conversations")){
         if(!privateAdmin)return reply(403,{error:"Dealer sign-in required."});
+        const actor=currentActor();
+        const individual=!!tenant && (actor.id.startsWith("clerk:") || actor.id.startsWith("account:") || actor.id.startsWith("engineer:"));
+        const ready=individual && !!(await pool.query("SELECT to_regclass('public.staff_mail_grants') AS t")).rows[0].t;
+        const personal=async(control)=>ready?(await (control||pool).query("SELECT id,address,paused,issue,last_sync FROM public.staff_mail_grants WHERE site=$1 AND actor=$2"+(control?" FOR SHARE":""),[site,actor.id])).rows[0]||null:null;
+        if(route.pathname==="/api/conversations/inbox"){
+          if(req.method==="GET")return reply(200,{available:ready,personal:await personal()});
+          if(req.method!=="POST" || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Open inbox settings in your dealership dashboard."});
+          if(!ready)return reply(409,{error:"Sign in with your individual staff account to connect an inbox."});
+          const ticket=randomBytes(32).toString("base64url");
+          await pool.query("DELETE FROM public.staff_mail_tickets WHERE expires<=now()");
+          await pool.query("INSERT INTO public.staff_mail_tickets(token,site,actor,expires) VALUES($1,$2,$3,now()+interval '90 seconds')",[createHash("sha256").update(ticket).digest("hex"),site,actor.id]);
+          return reply(200,{url:"https://autodealership.si/onboarding/staff-email#"+ticket});
+        }
         const mailbox=async()=>tenant && (await pool.query("SELECT to_regclass('public.dealer_mailboxes') AS t")).rows[0].t &&
           (await pool.query("SELECT g.domain FROM public.dealer_mailboxes m JOIN public.dealer_email_grants g ON g.site=m.site AND g.domain=m.domain AND g.domain_id=m.domain_id WHERE m.site=$1 AND g.verified AND NOT g.reconnect",[site])).rows[0]?.domain||null;
         if(req.method==="GET" && route.pathname==="/api/conversations"){
           const offset=Number(route.searchParams.get("offset")||0);
           if(!Number.isSafeInteger(offset)||offset<0||offset>1000000)return reply(400,{error:"Invalid page."});
           const result=await worker.readSalesConversations(db,{team:await team(),id:route.searchParams.get("id"),queue:route.searchParams.get("queue"),search:route.searchParams.get("search"),offset});
-          if(result.status===200 && result.data.opportunity)result.data.mailbox=await mailbox();
+          if(result.status===200 && result.data.opportunity){result.data.mailbox=await mailbox();result.data.personal=await personal();result.data.voice=individual && !!staffVoice();}
           return reply(result.status,result.data);
         }
         if(req.headers.origin!==base.origin||!req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Open the dealer dashboard."});
         let data;try{data=JSON.parse(body);}catch{return reply(400,{error:"Invalid conversation request."});}
+        if(req.method==="POST" && route.pathname==="/api/conversations/call"){
+          if(!individual)return reply(403,{error:"Sign in with your individual staff account to call."});
+          const voice=staffVoice(),result=await worker.reserveStaffCall(db,data,smsActor(),voice);
+          if(result.status!==200)return reply(result.status,result.data);
+          const now=Math.floor(Date.now()/1000),ident="adsi_"+data.request.replaceAll("-","");
+          const encode=v=>Buffer.from(JSON.stringify(v)).toString("base64url");
+          const unsigned=encode({typ:"JWT",alg:"HS256",cty:"twilio-fpa;v=1"})+"."+encode({jti:voice.key+"-"+now+"-"+data.request,iss:voice.key,sub:voice.account,iat:now,nbf:now-5,exp:now+120,
+            grants:{identity:ident,voice:{outgoing:{application_sid:voice.app}}}});
+          return reply(200,{...result.data,token:unsigned+"."+createHmac("sha256",voice.secret).update(unsigned).digest("base64url")});
+        }
         const result=req.method==="PUT" && route.pathname==="/api/conversations"?await worker.changeSalesOpportunity(db,data,await team()):
-          req.method==="POST" && route.pathname==="/api/conversations/email"?await worker.queueConversationMail(db,data,smsActor(),await mailbox()):{status:405,data:{}};
+          req.method==="POST" && route.pathname==="/api/conversations/email"?await worker.queueConversationMail(db,data,smsActor(),data?.sender && data.sender!=="shared"?null:await mailbox(),data?.sender && data.sender!=="shared"?personal:null):{status:405,data:{}};
         return reply(result.status,result.data);
       }
       if(route.pathname==="/api/inquiries/texts"){

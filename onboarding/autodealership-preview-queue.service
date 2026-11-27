@@ -1,0 +1,7 @@
+[Unit]
+Description=Prepare HTTPS for pending dealership previews
+After=network-online.target
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/autodealership-onboarding.env
+ExecStart=/usr/bin/python3 /opt/autodealership-onboarding/domains.py --pending

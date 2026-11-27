@@ -116,12 +116,15 @@ export async function sendInquirySms(db,{id,revision,actor,route,origin},transpo
   });
 }
 
-export async function dealerSmsWebhook(db,{route,origin,path,params,signature}){
-  if(!route || params.get("AccountSid")!==route.account || !/^[A-Za-z0-9+/]{27}=$/.test(signature||""))return smsError(403,"Invalid sender.");
+async function validDealerSignature({route,origin,path,params,signature}){
+  if(!route || params.get("AccountSid")!==route.account || !/^[A-Za-z0-9+/]{27}=$/.test(signature||""))return false;
   const keys=[...new Set(params.keys())].sort();
   const signed=origin+path+keys.map(k=>[...new Set(params.getAll(k))].sort().map(v=>k+v).join("")).join("");
   const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(route.authToken),{name:"HMAC",hash:"SHA-1"},false,["verify"]);
-  if(!await crypto.subtle.verify("HMAC",key,Uint8Array.from(atob(signature),c=>c.charCodeAt(0)),new TextEncoder().encode(signed)))return smsError(403,"Invalid signature.");
+  return crypto.subtle.verify("HMAC",key,Uint8Array.from(atob(signature),c=>c.charCodeAt(0)),new TextEncoder().encode(signed));
+}
+export async function dealerSmsWebhook(db,{route,origin,path,params,signature}){
+  if(!await validDealerSignature({route,origin,path,params,signature}))return smsError(403,"Invalid signature.");
   const sid=params.get("MessageSid");
   if(!smsSid.test(sid||"") || (params.has("MessagingServiceSid") && params.get("MessagingServiceSid")!==route.service))return smsError(400,"Invalid message.");
   return db.transaction(async c=>{

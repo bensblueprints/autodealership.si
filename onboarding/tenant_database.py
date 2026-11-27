@@ -25,6 +25,8 @@ TABLES = {
     "dealer_review_settings": "id int PRIMARY KEY CHECK(id=1),link text NOT NULL,revision int NOT NULL,automatic boolean NOT NULL DEFAULT false",
     "purchase_review_optouts": "address text PRIMARY KEY,at timestamptz NOT NULL DEFAULT now()",
     "purchase_review_emails": "id uuid PRIMARY KEY,token uuid UNIQUE NOT NULL,client_id uuid NOT NULL,vin text NOT NULL,address text NOT NULL,dealer text NOT NULL,domain_id text NOT NULL,domain text NOT NULL,origin text NOT NULL,google_link text NOT NULL,permission_actor text NOT NULL,purchased_at timestamptz NOT NULL,due_at timestamptz NOT NULL,state text NOT NULL DEFAULT 'scheduled',provider_id text,stars int CHECK(stars BETWEEN 1 AND 5),comment text,responded_at timestamptz,resolved_at timestamptz,resolved_by text,UNIQUE(client_id,vin)",
+    "staff_calls": "id uuid PRIMARY KEY,opportunity uuid NOT NULL,owner_id text NOT NULL,actor text NOT NULL,phone text NOT NULL,sender text NOT NULL,account text NOT NULL,state text NOT NULL,parent_sid text UNIQUE,child_sid text UNIQUE,seconds int,created_at timestamptz NOT NULL DEFAULT now()",
+    "staff_mail_messages": "message uuid PRIMARY KEY,grant_id uuid NOT NULL,owner_id text NOT NULL,sender text NOT NULL,rfc_id text NOT NULL,thread_id text,UNIQUE(grant_id,rfc_id)",
     "sales_email_messages": "id uuid PRIMARY KEY,opportunity uuid NOT NULL,provider_id text UNIQUE,direction text NOT NULL,address text NOT NULL,subject text NOT NULL,body text NOT NULL,state text NOT NULL,actor text,created_at timestamptz NOT NULL DEFAULT now()",
     "sms_usage_evidence": "message uuid PRIMARY KEY,sid text UNIQUE NOT NULL,segments int,cost numeric(18,7),currency text,status text NOT NULL,checked_at timestamptz NOT NULL DEFAULT now()",
     "inquiry_sms_messages": "id uuid PRIMARY KEY,sid text UNIQUE,phone text NOT NULL,sender text NOT NULL,inquiry uuid,stock text,direction text NOT NULL,body text NOT NULL,state text NOT NULL,actor text,created_at timestamptz NOT NULL DEFAULT now()",
@@ -50,7 +52,7 @@ def provision(control, site_id, name, legacy=False, template="independent"):
                 continue
             if table == "vehicle_photo_assets":
                 source = sql.SQL("SELECT * FROM public.vehicle_photo_assets WHERE site={}").format(sql.Literal(str(site_id)))
-            elif table in ("marketing_campaigns","oem_program_revisions","oem_banner_reviews","website_page_editions","website_page_review_events","inventory_lot_dates","inquiry_sms_contacts","inquiry_sms_messages","sms_usage_evidence","sales_opportunities","sales_email_messages","shopper_leads","sales_client_intakes","sales_client_contracts","dealer_review_settings","purchase_review_optouts","purchase_review_emails") and not control.execute(
+            elif table in ("marketing_campaigns","oem_program_revisions","oem_banner_reviews","website_page_editions","website_page_review_events","inventory_lot_dates","inquiry_sms_contacts","inquiry_sms_messages","sms_usage_evidence","sales_opportunities","sales_email_messages","staff_mail_messages","staff_calls","shopper_leads","sales_client_intakes","sales_client_contracts","dealer_review_settings","purchase_review_optouts","purchase_review_emails") and not control.execute(
                 "SELECT to_regclass(%s) AS name", (database + "." + table,)
             ).fetchone()["name"]:
                 continue

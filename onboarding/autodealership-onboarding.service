@@ -5,6 +5,7 @@ After=network-online.target
 DynamicUser=yes
 EnvironmentFile=/etc/autodealership-onboarding.env
 EnvironmentFile=/etc/autodealership-clerk.env
+EnvironmentFile=-/etc/autodealership-staff-mail.env
 EnvironmentFile=-/etc/autodealership-resend.env
 EnvironmentFile=-/etc/autodealership-resend-platform.env
 EnvironmentFile=-/opt/business-demo-tools/voice-provider.env
