@@ -53,7 +53,14 @@ async function reportContents(conn,settings,{tenant,store,site,host,actor,daily,
       add("attention","banner",String(index+1),title,row.status+". This slide is withheld from the homepage.",source);
     }
   }
-  return {version:1,site,host,store:settings.name||store,template,timezone:zone,source:daily?"Daily check":"Staff check",actor,
+  const marks=template==="franchise"?(await brandPlacements(conn)).filter(mark=>mark.published):[];
+  for(const mark of marks){
+    const source={revision:mark.revision,placement:mark.sequence,digest:mark.digest};
+    if(mark.state!=="Published")add("attention","brand",mark.brand,mark.name,mark.state+". Review footer permission to display this mark.",source);
+    else if(soon(mark.expires_at))add("upcoming","brand",mark.brand,mark.name,"Footer permission for this manufacturer mark expires soon.",{...source,expiresAt:mark.expires_at});
+  }
+  const brandMarks=marks.map(({brand,revision,sequence,digest,state})=>({brand,revision,placement:sequence,digest,state}));
+  return {version:2,brandMarks,site,host,store:settings.name||store,template,timezone:zone,source:daily?"Daily check":"Staff check",actor,
     coverage:{publishedPages:pages.filter(p=>p.enabled).length,sourcedPages:Object.values(overrides).filter(p=>p?.enabled!==false && p?.evidenceEdition).length,
       currentOffers,liveOffers,enabledSlides:slides.length,visibleBanners},findings};
 }

@@ -1,3 +1,9 @@
+.manufacturer-strip { padding: 18px 5vw; background: var(--surface,var(--card)); border-top: 1px solid var(--hair); }
+.manufacturer-strip ul { display: flex; flex-wrap: wrap; gap: 12px; padding: 0; margin: 0; list-style: none; }
+.manufacturer-strip li { display: grid; place-items: center; width: 152px; max-width: 100%; height: 78px; padding: 14px 20px; box-sizing: border-box; border: 1px solid var(--hair); border-radius: 4px; }
+.manufacturer-strip .mark-light { background: white; }
+.manufacturer-strip .mark-dark { background: black; }
+.manufacturer-strip img { display: block; width: 100%; height: 100%; object-fit: contain; min-height: 0; min-width: 0; }
 .dealer-template {
   padding:clamp(22px,4vw,56px) 5vw;
   color:var(--ink);

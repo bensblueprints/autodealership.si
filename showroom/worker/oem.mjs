@@ -188,9 +188,15 @@ export async function oemBrandLibrary({db,platform,method,brand,asset,scope,inpu
     return oemFailure(503,"The manufacturer reference library has not been installed.");
   if(method!=="GET" && method!=="POST")return oemFailure(405,"Unsupported method.");
   if(method==="POST" && !canReview)return oemFailure(403,"Administrator access required.");
-  if((asset!==null || method==="POST") && (typeof brand!=="string" || !/^[a-z0-9-]{1,65}$/.test(brand)))
+  if((asset!==null || scope==="history" || method==="POST") && (typeof brand!=="string" || !/^[a-z0-9-]{1,65}$/.test(brand)))
     return oemFailure(400,"Choose a manufacturer.");
   await ensureDealerArt(db);
+  if(method==="GET" && scope==="history" && asset===null){
+    const rows=await hasBrandPlacement(db)?(await db.query(`SELECT sequence,name,revision,digest,published,surface,
+      to_char(ends_on,'YYYY-MM-DD') AS ends_on,actor,source_note,rights_note,recorded_at
+      FROM oem_brand_placements WHERE brand=$1 ORDER BY sequence DESC`,[brand])).rows:[];
+    return oemResult(200,{brand,history:rows});
+  }
   if(method==="GET" && asset!==null){
     if(!/^[0-9a-f]{64}$/.test(asset)||!["library","dealer"].includes(scope))return oemFailure(400,"Invalid artwork reference.");
     const result=scope==="dealer"
@@ -199,8 +205,10 @@ export async function oemBrandLibrary({db,platform,method,brand,asset,scope,inpu
     return result.rowCount?{status:200,image:result.rows[0].image}:oemFailure(404,"Artwork unavailable.");
   }
   if(method==="POST"){
-    if(!(await platform.query("SELECT 1 FROM public.oem_brand_references WHERE id=$1",[brand])).rowCount)
+    const manufacturer=(await platform.query("SELECT name FROM public.oem_brand_references WHERE id=$1",[brand])).rows[0];
+    if(!manufacturer)
       return oemFailure(404,"Manufacturer unavailable.");
+    if(["publish-footer","withdraw-footer"].includes(input?.action))return changeBrandPlacement(db,{brand,name:manufacturer.name,actor,input});
     const {revision,sourceNote,rightsNote,png}=input||{};
     if(!Number.isSafeInteger(revision)||revision<0||typeof sourceNote!=="string"||!sourceNote.trim()||sourceNote.length>600||
        typeof rightsNote!=="string"||!rightsNote.trim()||rightsNote.length>600||typeof png!=="string"||png.length>699052||
@@ -223,5 +231,74 @@ export async function oemBrandLibrary({db,platform,method,brand,asset,scope,inpu
     FROM public.oem_brand_reference_art a WHERE a.brand=r.id),'[]'::jsonb) AS artwork
     FROM public.oem_brand_references r ORDER BY lower(r.name)`)).rows;
   const local=new Map((await db.query("SELECT brand,revision,source_note,rights_note,digest,recorded_at FROM oem_dealer_art")).rows.map(row=>[row.brand,row]));
-  return oemResult(200,{canReview,brands:refs.map(row=>({...row,dealerArtwork:local.get(row.id)||null}))});
+  const placements=new Map((await brandPlacements(db)).map(row=>[row.brand,row]));
+  return oemResult(200,{canReview,brands:refs.map(row=>({...row,dealerArtwork:local.get(row.id)||null,placement:placements.get(row.id)||null}))});
+}
+
+const placementColumns = `brand text NOT NULL, sequence int NOT NULL, name text NOT NULL, revision int NOT NULL,
+  digest text NOT NULL, published boolean NOT NULL, surface text NOT NULL, ends_on date, actor text NOT NULL,
+  source_note text NOT NULL, rights_note text NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(brand,sequence)`;
+const latestBrandPlacement = "SELECT DISTINCT ON (brand) * FROM oem_brand_placements ORDER BY brand,sequence DESC";
+async function hasBrandPlacement(db) {
+  return Boolean((await db.query("SELECT to_regclass('oem_brand_placements') AS present")).rows[0].present);
+}
+
+// This join is shared by the footer, its image endpoint, and the workspace. Matching a digest
+// alone would let an old approval survive a rights change that kept the same PNG.
+async function brandPlacements(db, {publicOnly=false, brand=null, sequence=null, digest=null, image=false}={}) {
+  if (!await hasBrandPlacement(db)) return [];
+  const {rows} = await db.query(`
+    WITH placements AS (${latestBrandPlacement}), checked AS (
+      SELECT p.brand,p.sequence,p.name,p.revision,p.digest,p.published,p.surface,to_char(p.ends_on,'YYYY-MM-DD') AS ends_on,
+        ((p.ends_on+1)::timestamp AT TIME ZONE coalesce(s.settings->'profile'->>'driveTimezone','America/Chicago')) AS expires_at,
+        CASE WHEN NOT p.published THEN 'Withdrawn'
+          WHEN a.revision IS DISTINCT FROM p.revision OR a.digest IS DISTINCT FROM p.digest THEN 'Artwork changed'
+          WHEN p.ends_on < (now() AT TIME ZONE coalesce(s.settings->'profile'->>'driveTimezone','America/Chicago'))::date THEN 'Expired'
+          WHEN s.settings->'profile'->>'siteTemplate' IS DISTINCT FROM 'franchise' THEN 'Franchise template required'
+          ELSE 'Published' END AS state ${image?',a.image':''}
+      FROM placements p LEFT JOIN oem_dealer_art a USING(brand) LEFT JOIN client_profile s ON s.id=1
+      WHERE ($1::text IS NULL OR p.brand=$1) AND ($2::integer IS NULL OR p.sequence=$2) AND ($3::text IS NULL OR p.digest=$3)
+    ) SELECT * FROM checked WHERE NOT $4::boolean OR state='Published' ORDER BY name,brand`,
+    [brand,sequence,digest,publicOnly]);
+  return rows;
+}
+export function publicBrandPlacements(db, match={}) {
+  return brandPlacements(db,{...match,publicOnly:true});
+}
+export async function changeBrandPlacement(db,{brand,name,actor,input}) {
+  const {action,revision,sequence,endsOn,surface,checked} = input;
+  const publish = action==="publish-footer";
+  if (!Number.isSafeInteger(sequence)||sequence<0||sequence>=2147483647||!Number.isSafeInteger(revision)||revision<1)
+    return oemFailure(422,"Reload the current artwork before changing its placement.");
+  if (publish && (checked!==true || !["light","dark"].includes(surface))) return oemFailure(422,"Confirm permission for the selected footer background.");
+  if (publish && endsOn!==null && (typeof endsOn!=="string" || !/^[1-9]\d{3}-\d\d-\d\d$/.test(endsOn) ||
+    Number.isNaN(Date.parse(endsOn)) || new Date(endsOn).toISOString().slice(0,10)!==endsOn)) return oemFailure(422,"Enter a valid last display date.");
+  return db.transaction(async conn=>{
+    const art=(await conn.query("SELECT revision,digest,source_note,rights_note FROM oem_dealer_art WHERE brand=$1 FOR UPDATE",[brand])).rows[0];
+    if (!art || art.revision!==revision) return oemFailure(409,"The artwork changed. Review the current revision.");
+    if (!await hasBrandPlacement(conn)) {
+      await conn.query("SELECT pg_advisory_xact_lock(81456,1)");
+      await conn.query("CREATE TABLE IF NOT EXISTS oem_brand_placements ("+placementColumns+")");
+    }
+    const last=(await conn.query("SELECT * FROM oem_brand_placements WHERE brand=$1 ORDER BY sequence DESC LIMIT 1",[brand])).rows[0];
+    if ((last?.sequence||0)!==sequence) return oemFailure(409,"Another editor changed this placement. Refresh the library.");
+    if (!publish && !last?.published) return oemFailure(409,"There is no published permission to withdraw.");
+    if (publish) {
+      const setting=(await conn.query(`SELECT settings->'profile'->>'siteTemplate' AS template,
+        to_char(now() AT TIME ZONE coalesce(settings->'profile'->>'driveTimezone','America/Chicago'),'YYYY-MM-DD') AS today
+        FROM client_profile WHERE id=1 FOR SHARE`)).rows[0];
+      if (setting?.template!=="franchise") return oemFailure(422,"Select the franchise template before publishing a manufacturer mark.");
+      if (endsOn && endsOn<setting.today) return oemFailure(422,"The last display date has already passed at this dealership.");
+    }
+    const evidence=publish?art:last;
+    await conn.query(`INSERT INTO oem_brand_placements(brand,sequence,name,revision,digest,published,surface,ends_on,actor,source_note,rights_note)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[brand,sequence+1,name,evidence.revision,evidence.digest,publish,
+        publish?surface:last.surface,publish?endsOn:last.ends_on,actor,evidence.source_note,evidence.rights_note]);
+    return oemResult(200,{sequence:sequence+1});
+  });
+}
+export function brandFooterMarkup(rows,esc) {
+  if (!rows.length) return "";
+  const items=rows.map(p=>'<li class="mark-'+p.surface+'"><img loading="lazy" src="/manufacturer-marks/'+encodeURIComponent(p.brand)+'/'+p.sequence+'-'+p.digest+'.png" alt="'+esc(p.name)+'"></li>');
+  return '<section class="manufacturer-strip" aria-label="Manufacturer brands"><ul>'+items.join("")+'</ul></section>';
 }

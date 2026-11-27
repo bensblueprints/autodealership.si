@@ -11,12 +11,12 @@
     byId("download").href=api+"?id="+encodeURIComponent(id)+"&download=1";
     const c=report.coverage,coverage=byId("coverage");
     coverage.replaceChildren();
-    for(const [label,value] of [["Published pages",c.publishedPages],["Pages with sources",c.sourcedPages],["Live offers",c.liveOffers+" / "+c.currentOffers],["Visible slides",c.visibleBanners+" / "+c.enabledSlides]]){
+    for(const [label,value] of [["Published pages",c.publishedPages],["Pages with sources",c.sourcedPages],["Live offers",c.liveOffers+" / "+c.currentOffers],["Visible slides",c.visibleBanners+" / "+c.enabledSlides],...(report.brandMarks?.length?[["Manufacturer marks",report.brandMarks.filter(m=>m.state==="Published").length+" / "+report.brandMarks.length]]:[])]){
       const item=element("div","");item.append(element("dt",label),element("dd",value));coverage.append(item);
     }
     const findings=byId("findings");findings.replaceChildren();
     if(!report.findings.length){
-      findings.append(element("p",c.sourcedPages||c.currentOffers||c.enabledSlides?"No issues found in the checked placements.":"No sourced page copy, current website offers or enabled slides to check."));
+      findings.append(element("p",c.sourcedPages||c.currentOffers||c.enabledSlides||report.brandMarks?.length?"No issues found in the checked placements.":"No sourced page copy, current website offers or enabled slides to check."));
       return;
     }
     for(const [level,title] of [["attention","Needs attention"],["upcoming","Expires within 14 days"]]){
@@ -24,9 +24,9 @@
       const group=element("section",""),list=element("ul","");
       group.dataset.level=level;group.append(element("h4",title+" ("+matches.length+")"),list);
       for(const f of matches){
-        const item=element("li",""),copy=element("div",""),a=element("a",{page:"Review page",offer:"Review program",banner:"Review banners"}[f.kind]);
-        const link=new URL(location.href);link.search="";link.hash={page:"pages",offer:"oem",banner:"banners"}[f.kind];
-        if(f.kind!=="banner")link.searchParams.set(f.kind==="page"?"page":"program",f.key);
+        const item=element("li",""),copy=element("div",""),a=element("a",{page:"Review page",offer:"Review program",banner:"Review banners",brand:"Review artwork"}[f.kind]);
+        const link=new URL(location.href);link.search="";link.hash={page:"pages",offer:"oem",banner:"banners",brand:"oem"}[f.kind];
+        if(f.kind!=="banner")link.searchParams.set(f.kind==="page"?"page":f.kind==="brand"?"brand":"program",f.key);
         a.href=link.href;a.target="_blank";a.rel="noopener";
         copy.append(element("strong",f.title),element("p",f.description));
         if(f.expiresAt)copy.append(element("small","Ends "+date(f.expiresAt,report.timezone)));

@@ -116,7 +116,42 @@
   const element=(tag,text)=>Object.assign(document.createElement(tag),{textContent:text});
   const picker=document.querySelector("#brand-picker"),detail=document.querySelector("#brand-reference");
   const status=document.querySelector("#brand-library-state"),upload=document.querySelector("#brand-upload"),add=document.querySelector("#brand-add");
-  let library,loading=false,saving=false;
+  const placement=document.querySelector("#brand-placement"),proof=document.querySelector("#brand-proof");
+  const withdraw=document.querySelector("#brand-withdraw");
+  let library,loading=false,saving=false,requestedBrand=new URL(location.href).searchParams.get("brand");
+  function renderPlacement(brand){
+    const d=brand?.dealerArtwork,p=brand?.placement;
+    placement.hidden=!d;
+    if(!d)return;
+    placement.reset();placement.querySelector("[role=status]").textContent="";
+    const franchise=Store.settings().profile?.siteTemplate==="franchise";
+    document.querySelector("#brand-placement-state").textContent=(p?p.state+" · Artwork revision "+p.revision+(p.ends_on?" · Through "+p.ends_on:""):"Private artwork · Revision "+d.revision)
+      +(franchise?"":". Choose the franchise template to publish manufacturer marks.");
+    placement.querySelector("fieldset").disabled=!library.canReview || !franchise;
+    placement.elements.surface.value=p?.surface||"light";placement.elements.endsOn.value=p?.ends_on||"";
+    proof.dataset.surface=placement.elements.surface.value;
+    const img=proof.querySelector("img");img.alt=brand.name;img.src="api/oem-brand-library?"+new URLSearchParams({brand:brand.id,asset:d.digest,scope:"dealer"});
+    placement.querySelector("[type=submit]").textContent=p?.state==="Published"?"Update footer permission":"Publish footer mark";
+    withdraw.hidden=!library.canReview || !p?.published;
+  }
+  placement.elements.surface.onchange=()=>{proof.dataset.surface=placement.elements.surface.value;};
+  async function changePlacement(action){
+    if(saving)return;
+    const brand=library?.brands.find(row=>row.id===picker.value);
+    if(!brand?.dealerArtwork || !library.canReview)return;
+    saving=true;picker.disabled=true;withdraw.disabled=true;const submit=placement.querySelector("[type=submit]");submit.disabled=true;
+    const message=placement.querySelector("[role=status]");message.textContent="Saving…";
+    try{
+      const response=await fetch("api/oem-brand-library?brand="+encodeURIComponent(brand.id),{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action,revision:brand.dealerArtwork.revision,sequence:brand.placement?.sequence||0,surface:placement.elements.surface.value,
+          endsOn:placement.elements.endsOn.value||null,checked:placement.elements.checked.checked})});
+      const result=await response.json();if(!response.ok)throw Error(result.error||"Could not save footer permission.");
+      await load(brand.id);if(library)message.textContent=action==="withdraw-footer"?"The mark has been removed from the website.":"The approved mark is on the franchise website footer.";
+    }catch(error){message.textContent=error.message;}
+    finally{saving=false;submit.disabled=false;withdraw.disabled=false;picker.disabled=!library;}
+  }
+  placement.onsubmit=event=>{event.preventDefault();changePlacement("publish-footer");};
+  withdraw.onclick=()=>changePlacement("withdraw-footer");
   function image(brand,digest,scope,title){
     const img=document.createElement("img");
     img.alt=title;img.loading="lazy";img.src="api/oem-brand-library?"+new URLSearchParams({brand,asset:digest,scope});
@@ -126,6 +161,7 @@
     const brand=library?.brands.find(row=>row.id===picker.value);
     detail.replaceChildren();add.hidden=!(brand && library.canReview);add.open=false;
     upload.reset();upload.querySelector("[role=status]").textContent="";
+    renderPlacement(brand);
     if(!brand)return;
     const heading=element("h4",brand.name),sources=document.createElement("ul");
     detail.append(heading,element("p",brand.guidance.note),element("small",brand.guidance.market+" · Sources checked "+brand.reviewed));
@@ -145,16 +181,19 @@
       const d=brand.dealerArtwork,block=element("div","");block.className="brand-supplied";
       block.append(element("h5","Dealership artwork"),image(brand.id,d.digest,"dealer",brand.name+" · Revision "+d.revision),
         element("p","Source · "+d.source_note),element("p","Permitted use · "+d.rights_note));
+      if(brand.placement){
+        const history=element("a","Download footer approval history");history.href="api/oem-brand-library?"+new URLSearchParams({brand:brand.id,scope:"history"});history.download="";block.append(history);
+      }
       detail.append(block);
     }
   }
-  async function load(selected=picker.value){
+  async function load(selected=requestedBrand||picker.value){
     if(loading)return;
     loading=true;picker.disabled=true;status.textContent="Loading manufacturer sources…";
     try{
       const r=await readDealerDesk("api/oem-brand-library",{cache:"no-store"});
       if(!r.ok)throw Error(r.status===403?"Sign in to view manufacturer references.":"Manufacturer references are unavailable. Reopen this tab to retry.");
-      library=await r.json();picker.replaceChildren(new Option("Select a manufacturer",""));
+      library=await r.json();await Store.profileReady;requestedBrand=null;picker.replaceChildren(new Option("Select a manufacturer",""));
       for(const brand of library.brands)picker.add(new Option(brand.name,brand.id));
       picker.value=selected;picker.disabled=false;render();
       status.textContent=library.brands.length+" manufacturers · OEM certification coming soon";

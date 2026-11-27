@@ -144,6 +144,16 @@ main>.desk-nav .desk-group button.active{box-shadow:inset 3px 0 currentColor}
 #brand-library label{display:block;margin:.65rem 0 .35rem}#brand-picker,#brand-upload{width:min(100%,36rem)}
 #brand-reference{max-width:52rem;overflow-wrap:anywhere}#brand-reference ul{list-style:none;padding:0}#brand-reference li{display:flex;gap:.5rem 1rem;justify-content:space-between;align-items:baseline;flex-wrap:wrap;padding:.65rem 0;border-bottom:1px solid var(--line)}
 #brand-reference a{color:var(--lime);text-underline-offset:.2em}#brand-reference small,#brand-library-state,#brand-library small{color:var(--sub)}
+#brand-placement { display: grid; gap: .8rem; margin: 1rem 0; padding: clamp(16px,3vw,26px); border: 1px solid var(--line); border-radius: 12px; }
+#brand-placement h4, #brand-placement p { margin: 0; } #brand-placement h4 { font-size: 1.1rem; }
+#brand-placement fieldset { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px 16px; padding: 0; margin: 0; border: 0; }
+#brand-placement legend { padding: .5rem 0; font-weight: 600; } #brand-placement label { margin: 0; }
+#brand-placement :is(figure,small,.brand-consent) { grid-column: 1/-1; }
+#brand-proof { margin: 0; } #brand-proof img { display: block; width: 152px; height: 78px; padding: 14px 20px; box-sizing: border-box; object-fit: contain; border: 1px solid var(--line); border-radius: 4px; background: white; }
+#brand-proof[data-surface=dark] img { background: black; } #brand-proof figcaption { color: var(--sub); font-size: .8rem; margin-top: 4px; }
+#brand-placement .brand-consent { display: flex; align-items: flex-start; gap: 8px; } #brand-placement .brand-consent input { width: auto; flex: none; }
+#brand-placement button { justify-self: start; min-height: 44px; } #brand-placement [role=status]:empty { display: none; }
+@media(max-width:550px){#brand-placement fieldset { grid-template-columns: minmax(0,1fr); }}
 .brand-thumbnails{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:.65rem}#brand-reference figure{margin:0;max-width:100%}
 #brand-reference img{box-sizing:border-box;width:11.5rem;max-width:100%;height:4.75rem;object-fit:contain;padding:8px;background:white;border:1px solid var(--line);border-radius:6px}
 #brand-reference figcaption{font-size:.88rem;margin:.3rem 0 .6rem}#brand-add{margin:1rem 0;padding:1rem;border:1px solid var(--line);border-radius:10px}#brand-add summary{cursor:pointer;font-weight:600}

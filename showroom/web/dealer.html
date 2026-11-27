@@ -44,6 +44,18 @@
     <div class="sectionhead"><div><h3 id="brand-library-title">Manufacturer brand library</h3><p>Look up website standards, enrollment resources and private logo references.</p></div></div>
     <label for="brand-picker">Manufacturer</label><select id="brand-picker" disabled><option value="">Select a manufacturer</option></select>
     <p id="brand-library-state" role="status"></p><div id="brand-reference"></div>
+    <form id="brand-placement" hidden aria-labelledby="brand-placement-title">
+      <div><h4 id="brand-placement-title">Manufacturer footer mark</h4><p id="brand-placement-state"></p></div>
+      <fieldset><legend>Public appearance</legend>
+        <figure id="brand-proof"><img alt=""><figcaption>Footer preview</figcaption></figure>
+        <label>Approved background <select name="surface"><option value="light">White</option><option value="dark">Black</option></select></label>
+        <label>Last display date <input name="endsOn" type="date"></label>
+        <small>Leave the date empty if your permission has no end date.</small>
+        <label class="brand-consent"><input name="checked" type="checkbox" required> I verified permission to use this exact artwork on this dealership’s public website footer.</label>
+        <button class="primary" type="submit">Publish footer mark</button>
+      </fieldset>
+      <button id="brand-withdraw" class="quiet" type="button" hidden>Withdraw footer mark</button><p role="status"></p>
+    </form>
     <details id="brand-add" hidden><summary>Store dealership artwork</summary>
       <form id="brand-upload"><label>Logo file <input name="logo" type="file" accept="image/png" required></label>
       <small>Use the supplied PNG, up to 500 KB and 4096 pixels per side.</small>

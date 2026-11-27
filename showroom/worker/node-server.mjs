@@ -502,6 +502,15 @@ createServer(async(req,res)=>{
       if(result===null){res.writeHead(404,headers).end("Vehicle feed is not enabled.");return;}
       res.writeHead(200,{...headers,"Content-Type":feedPublic?"application/xml; charset=utf-8":"application/json"}).end(req.method==="HEAD"?undefined:feedPublic?result:JSON.stringify(result));return;
     }
+    if(route.pathname.startsWith("/manufacturer-marks/")){
+      const match=/^\/manufacturer-marks\/([a-z0-9-]{1,65})\/([1-9]\d{0,9})-([a-f0-9]{64})\.png$/.exec(route.pathname);
+      const headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","X-Robots-Tag":"noindex","Cross-Origin-Resource-Policy":"same-origin"};
+      if(!["GET","HEAD"].includes(req.method)){res.writeHead(405,{...headers,Allow:"GET, HEAD"}).end();return;}
+      if(!match || Number(match[2])>2147483647 || prefix || (!tenant && base.hostname!=="demo.autodealership.si")){res.writeHead(404,headers).end();return;}
+      const [row]=await worker.publicBrandPlacements(db,{brand:match[1],sequence:Number(match[2]),digest:match[3],image:true});
+      if(!row){res.writeHead(404,headers).end();return;}
+      res.writeHead(200,{...headers,"Content-Type":"image/png","Content-Security-Policy":"default-src 'none'; sandbox"}).end(req.method==="HEAD"?undefined:row.image);return;
+    }
     if(route.pathname==="/api/oem-brand-library"){
       const headers={"Content-Type":"application/json","Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","X-Robots-Tag":"noindex","Cross-Origin-Resource-Policy":"same-origin"};
       const send=(code,value)=>res.writeHead(code,headers).end(JSON.stringify(value));
@@ -516,6 +525,7 @@ createServer(async(req,res)=>{
       const actor=(clerkRole||platformStaff)?claims.subject:grant?(grant.engineer?"engineer:"+grant.engineer:"platform owner"):account?.email||"dealer administrator";
       const result=await worker.oemBrandLibrary({db,platform:pool,method:req.method,brand:route.searchParams.get("brand"),
         asset:route.searchParams.get("asset"),scope:route.searchParams.get("scope"),input,actor,canReview});
+      if(req.method==="GET" && route.searchParams.get("scope")==="history" && result.status===200)headers["Content-Disposition"]='attachment; filename="manufacturer-'+route.searchParams.get("brand")+'-footer-history.json"';
       if(result.image){
         res.writeHead(200,{...headers,"Content-Type":"image/png","Content-Security-Policy":"default-src 'none'; sandbox"}).end(result.image);return;
       }
@@ -1139,6 +1149,10 @@ createServer(async(req,res)=>{
           const data=worker.DealerLocation.schema(publicLocation,publicName,origin);
           if(data)content=content.replace("</head>",()=>'<script type="application/ld+json">'+JSON.stringify(data).replaceAll("<","\\u003c")+'</script></head>');
         }
+      }
+      if(seo && storefront==="franchise"){
+        const marks=await worker.publicBrandPlacements(db);
+        if(marks.length)content=content.replace('<footer aria-label="Dealer access"',()=>worker.brandFooterMarkup(marks,esc)+'<footer aria-label="Dealer access"');
       }
       if(seo && storefront!=="classic"){
         content=content.replace(/<body(?=[\s>])/i,()=>'<body data-store-template="'+storefront+'"');
