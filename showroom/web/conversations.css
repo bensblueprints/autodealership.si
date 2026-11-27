@@ -1,0 +1,18 @@
+.conv-workspace {display:grid;grid-template-columns:minmax(210px,.8fr) minmax(0,1.8fr);gap:20px;align-items:start}
+.conv-queue,.conv-detail {border:1px solid var(--line);border-radius:12px;background:var(--panel,#151e29);padding:16px}
+.conv-queue label,.conv-detail label {display:grid;gap:5px;font-size:.86rem;font-weight:600;color:var(--sub)}
+.conv-queue>label {margin-bottom:10px}.conv-queue :is(input,select),.conv-detail :is(input,select,textarea){width:100%;min-width:0;color:var(--text)}
+.conv-list {display:grid;margin:14px 0;gap:6px}
+#conversations button {border:1px solid var(--line);border-radius:7px;padding:8px 12px;cursor:pointer;color:var(--text);background:#263344}
+#conversations button:disabled {opacity:.55;cursor:default}#conversations [hidden]{display:none}
+#conversations button.primary {background:var(--lime,#c6ed74);color:#111820}
+#conversations .conv-row {display:grid;grid-template-columns:1fr auto;gap:5px;text-align:left;align-items:center;overflow-wrap:anywhere}
+#conversations .conv-row[aria-pressed=true]{border-color:var(--lime);background:#20343c}
+.conv-row small {grid-column:1/-1;color:var(--sub)}.conv-stage{font-size:.75rem;font-weight:650}
+.conv-detail h3 {margin:6px 0;font-size:1.55rem}.conv-contact,.conv-detail small {color:var(--sub);overflow-wrap:anywhere}
+.conv-assignment,.conv-compose {display:flex;gap:10px;align-items:end;flex-wrap:wrap}.conv-assignment label,.conv-compose label{flex:1;min-width:140px}
+.conv-compose label:has(textarea){flex-basis:100%}.conv-compose p{margin:4px 0;flex-basis:100%}
+.conv-history {display:grid;gap:10px;list-style:none;padding:0 4px 0 0;max-height:45vh;overflow:auto}
+.conv-history li{max-width:90%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;overflow-wrap:anywhere}.conv-history p{white-space:pre-wrap;margin:5px 0}
+.conv-sent{justify-self:end;background:#233344}.conv-received{justify-self:start}.conv-history strong{font-size:.82rem}
+@media(max-width:760px){.conv-workspace{grid-template-columns:1fr}.conv-list{max-height:32vh;overflow:auto}.conv-detail{padding:14px}.conv-history{max-height:45vh}}

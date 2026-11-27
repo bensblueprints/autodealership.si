@@ -3,6 +3,7 @@ from http.cookies import SimpleCookie
 from urllib.parse import parse_qs, urlsplit
 from pathlib import Path
 import resend_connect as email
+import dealer_mail
 
 COOKIE = "__Host-adsi_email"
 BASE = "/onboarding/email"
@@ -67,8 +68,15 @@ def post(handler, connect, operation, data):
             site = email.session(db,token)
             if operation == "status":
                 result = email.status(db,site)
+                result["mailbox"]=bool(db.execute("SELECT 1 FROM public.dealer_mailboxes WHERE site=%s",(site["id"],)).fetchone())
             elif str(site["id"]) != data.get("site"):
                 raise email.Problem(409,"Another dealership is open in this browser. Reopen its email settings to continue.")
+            elif operation == "mailbox":
+                if data.get("enabled") is True: dealer_mail.enable(db,site["id"],email.access(connect,site["id"]))
+                elif data.get("enabled") is False: db.execute("DELETE FROM public.dealer_mailboxes WHERE site=%s",(site["id"],))
+                else: raise email.Problem(400,"Choose whether to enable the dealer mailbox.")
+                result=email.status(db,site)
+                result["mailbox"]=data["enabled"]
             elif operation == "connect":
                 result = email.begin(db,site["id"],token)
             elif operation == "disconnect":

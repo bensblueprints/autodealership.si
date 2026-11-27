@@ -574,7 +574,7 @@ createServer(async(req,res)=>{
         await db.query("UPDATE bhph_offers SET offer=$2,revision=revision+1 WHERE vehicle=$1 AND revision=$3 RETURNING revision",[vehicle,offer,data.revision]);
       return result.rowCount?reply(200,result.rows[0]):reply(409,{error:"Pricing changed in another session. Reopen the editor."});
     }
-    if(route.pathname==="/api/inquiries" || route.pathname==="/api/inquiries/team" || route.pathname==="/api/inquiries/history" || route.pathname==="/api/inquiries/texts"){
+    if(route.pathname==="/api/inquiries" || route.pathname==="/api/inquiries/team" || route.pathname==="/api/inquiries/history" || route.pathname==="/api/inquiries/texts" || route.pathname==="/api/conversations" || route.pathname==="/api/conversations/email"){
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
       const currentActor=()=>{
         if(clerkRole || platformStaff)return {id:"clerk:"+claims.subject,label:platformStaff?"Platform staff":"Dealership staff"};
@@ -584,6 +584,23 @@ createServer(async(req,res)=>{
       };
       const team=()=>worker.followupTeam(pool,{site,organization:clerkOrg,actor:currentActor(),manager:!!managesUsers||clerkRole==="org:admin"});
       const smsActor=()=>({...currentActor(),manager:!!managesUsers || clerkRole==="org:admin"});
+      if(route.pathname.startsWith("/api/conversations")){
+        if(!privateAdmin)return reply(403,{error:"Dealer sign-in required."});
+        const mailbox=async()=>tenant && (await pool.query("SELECT to_regclass('public.dealer_mailboxes') AS t")).rows[0].t &&
+          (await pool.query("SELECT g.domain FROM public.dealer_mailboxes m JOIN public.dealer_email_grants g ON g.site=m.site AND g.domain=m.domain AND g.domain_id=m.domain_id WHERE m.site=$1 AND g.verified AND NOT g.reconnect",[site])).rows[0]?.domain||null;
+        if(req.method==="GET" && route.pathname==="/api/conversations"){
+          const offset=Number(route.searchParams.get("offset")||0);
+          if(!Number.isSafeInteger(offset)||offset<0||offset>1000000)return reply(400,{error:"Invalid page."});
+          const result=await worker.readSalesConversations(db,{team:await team(),id:route.searchParams.get("id"),queue:route.searchParams.get("queue"),search:route.searchParams.get("search"),offset});
+          if(result.status===200 && result.data.opportunity)result.data.mailbox=await mailbox();
+          return reply(result.status,result.data);
+        }
+        if(req.headers.origin!==base.origin||!req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Open the dealer dashboard."});
+        let data;try{data=JSON.parse(body);}catch{return reply(400,{error:"Invalid conversation request."});}
+        const result=req.method==="PUT" && route.pathname==="/api/conversations"?await worker.changeSalesOpportunity(db,data,await team()):
+          req.method==="POST" && route.pathname==="/api/conversations/email"?await worker.queueConversationMail(db,data,smsActor(),await mailbox()):{status:405,data:{}};
+        return reply(result.status,result.data);
+      }
       if(route.pathname==="/api/inquiries/texts"){
         if(!privateAdmin)return reply(403,{error:"Dealer sign-in required."});
         if(req.method==="GET"){
@@ -611,13 +628,8 @@ createServer(async(req,res)=>{
         if(!privateAdmin)return reply(403,{});
         if(input?.action==="save-text-draft"){
           if(!/^[0-9a-f-]{36}$/i.test(input.id) || typeof input.text!=="string" || !input.text.trim() || input.text.length>1000 || typeof input.revision!=="string")return reply(400,{error:"Check the draft and reopen the inquiry."});
-          const draft={text:input.text.trim(),revision:randomUUID(),updatedAt:new Date().toISOString()};
-          const actor=smsActor();
-          const saved=await db.query(`UPDATE shopper_leads SET body=jsonb_set(body,'{textDraft}',CASE WHEN body#>>'{textDraft,text}'=$5 THEN body->'textDraft' ELSE $2::jsonb END)
-            WHERE id=$1 AND body#>>'{textReplyRequest,version}'=$3 AND coalesce(body#>>'{textDraft,revision}','')=$4
-              AND ($6 OR body#>>'{followUp,owner,id}' IS NULL OR body#>>'{followUp,owner,id}'=$7) RETURNING body->'textDraft' AS draft`,
-            [input.id,draft,worker.InquiryContact.version,input.revision,draft.text,actor.manager,actor.id]);
-          return saved.rowCount?reply(200,saved.rows[0].draft):reply(409,{error:"Reopen this inquiry to check its draft, salesperson and text request."});
+          const saved=await worker.saveOpportunityDraft(db,input,smsActor());
+          return reply(saved.status,saved.data);
         }
         if(input?.action && input.action!=="save-follow-up")return reply(400,{error:"Unknown inquiry action."});
         const result=await worker.updateInquiry(db,input,await team(),!input?.action);
@@ -642,7 +654,7 @@ createServer(async(req,res)=>{
       for(const k of ["name","email","phone","message","source"])lead[k]=String(input[k]||"").slice(0,2000);
       try{const preference=worker.InquiryContact.request(input,lead.createdAt);if(preference)lead.textReplyRequest=preference;}
       catch(err){return reply(400,{error:err.message});}
-      const saved=await db.query("INSERT INTO shopper_leads VALUES($1,$2) ON CONFLICT(id) DO NOTHING",[lead.id,lead]);
+      const saved=await worker.recordShopperInquiry(db,lead);
       if(!saved.rowCount){
         const prior=(await db.query("SELECT body FROM shopper_leads WHERE id=$1",[lead.id])).rows[0]?.body;
         if(!voiceInquiry || !prior || !["source","name","phone","message","carId"].every(key=>prior[key]===lead[key]))return reply(409,{error:"Inquiry reference already in use."});

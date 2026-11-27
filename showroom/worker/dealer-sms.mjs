@@ -31,7 +31,8 @@ async function smsPermission(c,lead,actor,route){
   const pref=lead?.textReplyRequest;
   if(pref?.version!=="inquiry-text-reply-v1" || pref.purpose!=="vehicle-inquiry" || !smsPhone.test(pref.number))return "A shopper request for a text about this inquiry is required.";
   if(lead.status==="Closed")return "Reopen this inquiry before replying.";
-  const owner=lead.followUp?.owner;
+  let owner=lead.followUp?.owner;
+  if(lead.opportunityId)owner=(await c.query("SELECT owner FROM sales_opportunities WHERE id=$1",[lead.opportunityId])).rows[0]?.owner||owner;
   if(owner && owner.id!==actor.id && !actor.manager)return "The assigned salesperson or a manager can reply.";
   const contact=(await c.query("SELECT blocked,changed_at FROM inquiry_sms_contacts WHERE phone=$1",[pref.number])).rows[0];
   if(contact?.blocked)return "This shopper has opted out of texts.";
@@ -147,6 +148,7 @@ export async function dealerSmsWebhook(db,{route,origin,path,params,signature}){
     if(inserted.rowCount){
       const command=(params.get("OptOutType")||body.trim()).toUpperCase();
       const stop=["STOP","STOPALL","UNSUBSCRIBE","CANCEL","END","QUIT","REVOKE","OPTOUT"].includes(command);
+      await opportunityFromSms(c,phone,body,stop || ["START","UNSTOP","HELP","INFO"].includes(command));
       if(stop || ["START","UNSTOP"].includes(command)){
         if(stop)await c.query("INSERT INTO inquiry_sms_contacts VALUES($1,true,now()) ON CONFLICT(phone) DO UPDATE SET blocked=true,changed_at=now()",[phone]);
         else await c.query("UPDATE inquiry_sms_contacts SET blocked=false,changed_at=now() WHERE phone=$1 AND blocked",[phone]);

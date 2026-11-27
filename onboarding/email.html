@@ -8,7 +8,7 @@
 <section id="team" hidden><h2>Resend team</h2><p id="summary"></p><button class="primary" id="connect">Connect Resend</button> <button id="disconnect" hidden>Disconnect team</button>
 <div id="confirm" hidden><p>Disconnecting removes this dealership’s access to the team.</p><button id="remove">Confirm disconnect</button> <button id="cancel">Keep connection</button></div></section>
 <section id="sender" hidden><h2>Sending domain</h2><p>Use a dedicated subdomain of a domain your dealership owns. Your main mailbox can keep its current DNS records.</p><form id="domain-form"><label for="domain">Dealership sending subdomain</label><input id="domain" required autocomplete="off" placeholder="mail.yourdealership.com"><button class="primary" id="save">Find or add domain in Resend</button> <button type="button" id="verify" hidden>Check DNS verification</button></form>
-<p id="dns-state"></p><ul id="records"></ul></section></main><script>
+<p id="dns-state"></p><ul id="records"></ul></section><section id="mailbox-section" hidden><h2>Sales conversations</h2><p id="mailbox-state"></p><button type="button" id="mailbox-toggle"></button></section></main><script>
 "use strict";
 const el = id => document.getElementById(id);
 const ticket = location.hash.slice(1);
@@ -20,7 +20,10 @@ async function api(action, fields = {}) {
   const data = await r.json(); if(!r.ok)throw Error(data.error || "Could not open email settings.");return data;
 }
 function render(s) {
-  current=s;el("title").textContent=s.name+" email";el("team").hidden=false;
+  current=s;el("mailbox-section").hidden=!s.verified||s.reconnect;
+  el("mailbox-state").textContent=s.mailbox?"Staff can send and receive inquiry replies at sales@"+s.domain+".":"Enable receiving on this dedicated subdomain in Resend and verify its incoming MX record. Then connect sales@"+(s.domain||"your subdomain")+" to Conversations.";
+  el("mailbox-toggle").textContent=s.mailbox?"Pause dealer mailbox":"Connect dealer mailbox";
+  el("title").textContent=s.name+" email";el("team").hidden=false;
   el("back").href="https://"+s.slug+".autodealership.si/dealer";el("back").hidden=false;
   el("summary").textContent=s.reconnect?"Resend needs a new authorization for this dealership.":s.connected?"This dealership has authorized a Resend team. Usage and provider billing belong to the selected team.":"Sign in to Resend with the dealer’s business account and choose this dealership’s team. Approve access to manage its sending domain. Resend requires full access for domain verification.";
   el("connect").hidden=s.connected&&!s.reconnect;el("connect").textContent=s.reconnect?"Reconnect Resend":"Connect Resend";
@@ -33,6 +36,7 @@ async function run(button,work){
   document.querySelectorAll("button").forEach(b=>b.disabled=true);el("message").textContent="";
   try{await work();}catch(err){el("message").textContent=err.message;}finally{document.querySelectorAll("button").forEach(b=>b.disabled=false);}
 }
+el("mailbox-toggle").onclick=e=>run(e.target,async()=>render(await api("mailbox",{enabled:!current.mailbox})));
 el("connect").onclick=e=>run(e.target,async()=>{location.assign((await api("connect")).url);});
 el("disconnect").onclick=()=>{el("confirm").hidden=false;el("cancel").focus();};
 el("cancel").onclick=()=>{el("confirm").hidden=true;el("disconnect").focus();};

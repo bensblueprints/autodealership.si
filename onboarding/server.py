@@ -10,6 +10,8 @@ from tenant_database import provision
 from psycopg.rows import dict_row
 import resend_connect
 import resend_routes
+import dealer_mail
+import threading
 import platform_mail
 import platform_mail_routes
 
@@ -33,6 +35,7 @@ with connect() as db:
         CREATE TABLE IF NOT EXISTS public.engineer_sessions(token text PRIMARY KEY,engineer uuid NOT NULL REFERENCES public.client_engineers(id),expires timestamptz NOT NULL);
         ALTER TABLE public.client_sites ADD COLUMN IF NOT EXISTS engineer uuid REFERENCES public.client_engineers(id)""")
     db.execute(resend_connect.SCHEMA)
+    db.execute(dealer_mail.MAILBOX_SCHEMA)
     db.execute(platform_mail.SCHEMA)
 def digest(token):return hashlib.sha256(token.encode()).hexdigest()
 def encoded_password(password,salt):
@@ -255,5 +258,6 @@ class Handler(BaseHTTPRequestHandler):
         except psycopg.errors.UniqueViolation:self.reply(409,{"error":"That subdomain is already reserved."})
         except (ValueError,TypeError,KeyError) as err:self.reply(400,{"error":str(err)})
         except Exception:self.reply(500,{"error":"Could not complete this change."})
+threading.Thread(target=dealer_mail.work,args=(connect,),daemon=True).start()
 ThreadingHTTPServer(("127.0.0.1",18485),Handler).serve_forever()
 
