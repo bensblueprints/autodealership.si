@@ -15,7 +15,7 @@ const campaignError = (status, error) => campaignReply(status, {error});
 const conversionRows = `SELECT 'test_drive_booked:'||confirmation AS event_id,'test_drive_booked' AS event,
     body->>'createdAt' AS occurred_at,body->>'vin' AS vin,
     COALESCE(body->'conversion'->>'channel','unrecorded') AS channel
-  FROM appointments WHERE body->>'createdAt' BETWEEN $1 AND $2
+  FROM appointments WHERE body->>'createdAt' BETWEEN $1 AND $2 AND coalesce(body#>>'{conversion,channel}','')<>'dealer'
   UNION ALL SELECT 'shopper_inquiry:'||id,'shopper_inquiry',body->>'createdAt',body->'car'->>'vin',
     CASE WHEN body->>'source'='Voice concierge' THEN 'concierge' ELSE 'showroom' END
   FROM shopper_leads WHERE body->>'createdAt' BETWEEN $1 AND $2`;

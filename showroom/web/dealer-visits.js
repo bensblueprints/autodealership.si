@@ -40,6 +40,7 @@
     if(row.phone){
       const phone=el("a","Call shopper");phone.href="tel:"+row.phone.replace(/[^+0-9]/g,"");actions.append(phone);
     }
+    const profile=el("button","View client");profile.type="button";profile.onclick=()=>DealerClients.open({visit:row.confirmation});actions.append(profile);
     if(state(row)!=="canceled"){
       const edit=el("button",state(row)==="scheduled"?"Manage visit":"Correct outcome");edit.type="button";edit.onclick=()=>open(row);actions.append(edit);
     }

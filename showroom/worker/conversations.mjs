@@ -7,18 +7,36 @@ async function opportunityTables(c){
     CREATE TABLE IF NOT EXISTS sales_email_messages(id uuid PRIMARY KEY,opportunity uuid NOT NULL,provider_id text UNIQUE,direction text NOT NULL,address text NOT NULL,subject text NOT NULL,body text NOT NULL,state text NOT NULL,actor text,created_at timestamptz NOT NULL DEFAULT now());
     CREATE INDEX IF NOT EXISTS sales_email_thread ON sales_email_messages(opportunity,created_at DESC)`);
 }
-async function attachOpportunity(c,lead){
-  const phone=InquiryContact.phoneNumber(lead.phone)||null,email=conversationEmail(lead.email)||null;
-  const key=phone?"tel:"+phone:email?"email:"+email:"inquiry:"+lead.id;
+async function lockClientIdentity(c){
+  await c.query("SELECT pg_advisory_xact_lock(hashtext(current_database()||'.'||current_schema()),81455)");
+}
+async function clientIdentity(c,lead){
+  const supplied=String(lead.phone||"").trim(),digits=supplied.replace(/\D/g,"");
+  const phone=InquiryContact.phoneNumber(supplied.replace(/\./g," "))||(/^\+?[\d ().-]+$/.test(supplied) && /^\d{7,15}$/.test(digits)?(supplied.startsWith("+")?"+":"")+digits:null);
+  const email=conversationEmail(lead.email)||null;
+  let key=phone?"tel:"+phone:email?"email:"+email:"inquiry:"+(lead.id||lead.confirmation);
+  // Serialize contact matching within one rooftop, including simultaneous inquiry and booking submissions.
+  await lockClientIdentity(c);
+  if(email){
+    const matches=(await c.query("SELECT thread_key,phone FROM sales_opportunities WHERE email=$1 AND ($2::text IS NULL OR phone IS NULL OR phone=$2) ORDER BY id LIMIT 2",[email,phone])).rows;
+    if(matches.length===1 && (!phone || !matches[0].phone)){
+      const exact=phone && (await c.query("SELECT 1 FROM sales_opportunities WHERE thread_key=$1",[key])).rowCount;
+      if(!exact)key=matches[0].thread_key;
+    }
+  }
   // A reply to the same store and number stays in the same conversation across different vehicles.
   const owner=lead.followUp?.owner;
   const result=await c.query(`INSERT INTO sales_opportunities(id,thread_key,name,phone,email,owner,updated_at)
     VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(thread_key) DO UPDATE SET
     updated_at=greatest(sales_opportunities.updated_at,excluded.updated_at),
     name=CASE WHEN sales_opportunities.name=sales_opportunities.phone THEN excluded.name ELSE sales_opportunities.name END,
-    email=coalesce(sales_opportunities.email,excluded.email) RETURNING id`,
+    email=coalesce(sales_opportunities.email,excluded.email),phone=coalesce(sales_opportunities.phone,excluded.phone),
+    thread_key=CASE WHEN sales_opportunities.phone IS NULL AND excluded.phone IS NOT NULL THEN 'tel:'||excluded.phone ELSE sales_opportunities.thread_key END RETURNING id`,
     [crypto.randomUUID(),key,lead.name||phone||email||"Shopper",phone,email,owner||null,Number.isFinite(Date.parse(lead.createdAt))?lead.createdAt:new Date().toISOString()]);
-  const id=result.rows[0].id;
+  return result.rows[0].id;
+}
+async function attachOpportunity(c,lead){
+  const id=await clientIdentity(c,lead);
   await c.query("UPDATE shopper_leads SET body=jsonb_set(body,'{opportunityId}',to_jsonb($2::text)) WHERE id=$1",[lead.id,id]);
   return id;
 }
@@ -32,11 +50,14 @@ export async function recordShopperInquiry(db,lead){
 }
 async function backfillOpportunities(c){
   await opportunityTables(c);
+  if(!(await c.query("SELECT 1 FROM shopper_leads WHERE NOT body ? 'opportunityId' LIMIT 1")).rowCount)return;
+  await lockClientIdentity(c);
   const missing=await c.query("SELECT id,body FROM shopper_leads WHERE NOT body ? 'opportunityId' ORDER BY body->>'createdAt',id FOR UPDATE");
   for(const {id,body} of missing.rows)await attachOpportunity(c,{...body,id});
 }
 async function opportunityFromSms(c,phone,text,control){
   await opportunityTables(c);
+  await lockClientIdentity(c);
   // Resolve older requests before creating an SMS-only inquiry.
   const missing=await c.query("SELECT body FROM shopper_leads WHERE NOT body ? 'opportunityId' AND body#>>'{textReplyRequest,number}'=$1 FOR UPDATE",[phone]);
   for(const {body} of missing.rows)await attachOpportunity(c,body);

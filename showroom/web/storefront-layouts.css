@@ -23,9 +23,6 @@
 [data-store-template="independent"] .template-links a {border-radius:16px}
 [data-store-template="bhph"] .template-links a:has(small) {min-height:100px;border-top:3px solid currentColor}
 [data-store-template="bhph"] .template-links small {font-variant-numeric:tabular-nums}
-[data-store-template="bhph"] #top {display:flex;flex-direction:column}
-[data-store-template="bhph"] #sale-slides {order:-3}
-[data-store-template="bhph"] #dealer-template {order:-2}
 [data-store-template="bhph"] .hero {min-height:0;height:clamp(275px,32vw,390px)}
 .dealer-template[hidden] {display:none}
 body .hero.template-art-hero{height:auto;min-height:320px;aspect-ratio:12/5;background:#11181b}

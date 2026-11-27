@@ -146,7 +146,7 @@ const bucket={
     }
     if(key.startsWith("appointments/")){
       const record=JSON.parse(body);
-      const result=await db.query("INSERT INTO appointments(key,confirmation,body) SELECT $1,$2,$3::jsonb || jsonb_build_object('car',jsonb_strip_nulls(jsonb_build_object('year',body->'year','make',body->'make','model',body->'model','stock',body->'stock','image',body->'image'))) FROM client_cars WHERE vin=$4 AND NOT EXISTS (SELECT 1 FROM inventory_status WHERE vin=$4) ON CONFLICT DO NOTHING",[key,record.confirmation,body,record.vin]);
+      const result=await worker.recordClientVisit(db,key,record);
       return result.rowCount?{}:null;
     }
     const etag=randomUUID();
@@ -635,7 +635,7 @@ createServer(async(req,res)=>{
         await db.query("UPDATE bhph_offers SET offer=$2,revision=revision+1 WHERE vehicle=$1 AND revision=$3 RETURNING revision",[vehicle,offer,data.revision]);
       return result.rowCount?reply(200,result.rows[0]):reply(409,{error:"Pricing changed in another session. Reopen the editor."});
     }
-    if(route.pathname==="/api/inquiries" || route.pathname==="/api/inquiries/team" || route.pathname==="/api/inquiries/history" || route.pathname==="/api/inquiries/texts" || route.pathname==="/api/conversations" || route.pathname==="/api/conversations/email"){
+    if(route.pathname==="/api/reputation" || route.pathname==="/api/clients" || route.pathname==="/api/inquiries" || route.pathname==="/api/inquiries/team" || route.pathname==="/api/inquiries/history" || route.pathname==="/api/inquiries/texts" || route.pathname==="/api/conversations" || route.pathname==="/api/conversations/email"){
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
       const currentActor=()=>{
         if(clerkRole || platformStaff)return {id:"clerk:"+claims.subject,label:platformStaff?"Platform staff":"Dealership staff"};
@@ -645,6 +645,19 @@ createServer(async(req,res)=>{
       };
       const team=()=>worker.followupTeam(pool,{site,organization:clerkOrg,actor:currentActor(),manager:!!managesUsers||clerkRole==="org:admin"});
       const smsActor=()=>({...currentActor(),manager:!!managesUsers || clerkRole==="org:admin"});
+      if(route.pathname==="/api/clients" || route.pathname==="/api/reputation"){
+        if(!privateAdmin)return reply(403,{error:"Dealer sign-in required."});
+        let input=Object.fromEntries(route.searchParams);
+        if(req.method!=="GET"){
+          if(!["POST","PUT"].includes(req.method))return reply(405,{error:"Unsupported client action."});
+          if(req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Open the dealer dashboard."});
+          if(body.length>12000)return reply(413,{error:"Client request is too large."});
+          try{input=JSON.parse(body);}catch{return reply(400,{error:"Invalid client request."});}
+        }
+        const handler=route.pathname==="/api/reputation"?worker.reputationDesk:worker.salesClients;
+        const result=await handler(db,req.method,input,await team());
+        return reply(result.status,result.data);
+      }
       if(route.pathname.startsWith("/api/conversations")){
         if(!privateAdmin)return reply(403,{error:"Dealer sign-in required."});
         const mailbox=async()=>tenant && (await pool.query("SELECT to_regclass('public.dealer_mailboxes') AS t")).rows[0].t &&

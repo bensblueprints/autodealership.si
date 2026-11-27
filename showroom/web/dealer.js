@@ -362,6 +362,8 @@
     }
     if(key==="text-account"){ $("setup-menu").open=true;TextAccount.load(); }
     if(key==="conversations")ConversationDesk.load();
+    if(key==="clients")DealerClients.load();
+    if(key==="reputation")DealerReputation.load();
     if(key==="inventory")renderInventory(Store.cars(true));
     if(key==="inquiries" || key==="today")Store.loadLeads();
     if(["banners","pages","voice","oem"].includes(key))$("setup-menu").open=true;

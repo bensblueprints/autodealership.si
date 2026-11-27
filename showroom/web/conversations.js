@@ -46,7 +46,7 @@ const ConversationDesk=(()=>{
         li.append(el("strong",[m.channel,m.direction==="in"?"Shopper":m.actor||"Dealer"].join(" · ")));
         if(m.subject)li.append(el("div",m.subject));li.append(el("p",m.body||"Media message"),el("small",[m.stock && "Stock #"+m.stock,m.state,format(m.created_at)].filter(Boolean).join(" · ")));log.append(li);
       }
-      const refresh=btn("Refresh messages",()=>show(id));box.append(identity,heading,contact,edit,status,refresh,log);
+      const refresh=btn("Refresh messages",()=>show(id));box.append(identity,heading,contact,btn("View client",()=>DealerClients.open({id})),edit,status,refresh,log);
       if(!data.canEdit){box.append(el("p","The assigned salesperson or dealer owner can reply."));return;}
       const stocks=data.leads.filter(l=>l.textReplyRequest),form=el("form",undefined,"conv-compose"),channel=el("select"),stock=el("select"),subject=el("input"),body=el("textarea");
       if(stocks.length)channel.add(new Option("Text message","sms"));if(o.email)channel.add(new Option("Email","email"));
