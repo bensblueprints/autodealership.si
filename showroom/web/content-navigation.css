@@ -12,6 +12,7 @@
   font: 650 1rem/1.35 system-ui, sans-serif;
   text-decoration: underline;
 }
+.content-skip:not(:focus) {clip-path:inset(50%);pointer-events:none}
 .content-skip:focus { transform: none; outline: 3px solid #2676bb; outline-offset: 2px; }
 .page-trail {display:flex;align-items:center;flex-wrap:wrap;gap:.25rem .6rem;color:var(--muted);font-size:.88rem;line-height:1.45}
 .page-trail a {display:inline-flex;align-items:center;min-height:32px;color:inherit;text-decoration:underline;text-underline-offset:.2em}

@@ -42,17 +42,18 @@ const db={async query(sql,args){
     await conn.query("COMMIT");return result;}
   catch(e){await conn.query("ROLLBACK");throw e;}finally{conn.release();}
 }};
-db.transaction=async function(action){
+db.transaction=async function(action,{snapshot=false}={}){
+  const begin=snapshot?"BEGIN ISOLATION LEVEL REPEATABLE READ":"BEGIN";
   const tenant=scope.getStore(), control=await pool.connect();
   let local;
   try{
-    await control.query("BEGIN");
+    await control.query(begin);
     if(tenant){
       const route=(await control.query("SELECT database_name FROM public.client_sites WHERE id=$1 FOR SHARE",[tenant.id])).rows[0];
       if(!route || (route.database_name && route.database_name!==tenant.schema))throw Error("Invalid dealership database route");
       if(route.database_name){
         local=await dealerPool(route.database_name).connect();
-        await local.query("BEGIN");
+        await local.query(begin);
       }else await control.query("SET LOCAL search_path TO "+tenant.schema);
     }
     const result=await action(local||control,control);
@@ -269,6 +270,26 @@ const textUsageTimer=setInterval(async()=>{
   finally{checkingTextUsage=false;}
 },300000);
 textUsageTimer.unref();
+let checkingStorefronts=false;
+async function checkFranchiseStorefronts(){
+  if(checkingStorefronts)return;
+  checkingStorefronts=true;
+  try{
+    let after=null;
+    do{
+      const {rows}=await pool.query("SELECT id,name,slug,verified_domain FROM public.client_sites WHERE ($1::uuid IS NULL OR id>$1) ORDER BY id LIMIT 32",[after]);
+      for(const site of rows){
+        const tenant={...site,schema:"client_"+site.id.replaceAll("-","")};
+        try{await scope.run(tenant,()=>worker.runStorefrontReport(db,{id:randomUUID(),daily:true,tenant:true,store:site.name,site:site.id,host:site.verified_domain||site.slug+".autodealership.si",actor:"Scheduled check"}));}
+        catch(error){console.warn("Storefront check pending for",site.id,error.code||error.name);}
+      }
+      after=rows.length===32?rows[31].id:null;
+    }while(after);
+  }catch(error){console.warn("Storefront check queue unavailable",error.code||error.name);}
+  finally{checkingStorefronts=false;}
+}
+setTimeout(checkFranchiseStorefronts,60000).unref();
+setInterval(checkFranchiseStorefronts,3600000).unref();
 createServer(async(req,res)=>{
   try{
     const base=new URL((req.headers["x-forwarded-proto"]==="https"?"https":"http")+"://"+req.headers.host);
@@ -522,6 +543,23 @@ createServer(async(req,res)=>{
       if(req.method!=="GET"){res.writeHead(405,{...headers,Allow:"GET"}).end();return;}
       const offers=(await worker.websiteOffers(db,!!tenant)).map(({id,...publicOffer})=>publicOffer);
       res.writeHead(200,headers).end(JSON.stringify(offers));return;
+    }
+    if(route.pathname==="/api/storefront-reports"){
+      const headers={"Content-Type":"application/json","Cache-Control":"private, no-store","X-Robots-Tag":"noindex","X-Content-Type-Options":"nosniff"};
+      const send=(status,data)=>res.writeHead(status,headers).end(JSON.stringify(data));
+      if(!privateAdmin)return send(403,{error:"Dealer sign-in required."});
+      if(req.method==="GET"){
+        const id=route.searchParams.get("id");
+        const result=await worker.readStorefrontReports(db,id);
+        if(id && result.status===200 && route.searchParams.get("download")==="1")headers["Content-Disposition"]='attachment; filename="storefront-review-'+id+'.json"';
+        return send(result.status,result.data);
+      }
+      if(req.method!=="POST")return send(405,{error:"Use GET or POST."});
+      if(req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return send(403,{error:"Open the dealer workspace."});
+      let input;try{input=JSON.parse(body);}catch{return send(400,{error:"Invalid report request."});}
+      const actor=(clerkRole||platformStaff)?claims.subject:grant?(grant.email||"Platform owner"):account?.email||"Dealer administrator";
+      const result=await worker.runStorefrontReport(db,{id:input?.id,tenant:!!tenant,store:tenant?.name||"Demo showroom",site,host:tenant?(tenant.verified_domain||tenant.slug+".autodealership.si"):"demo.autodealership.si",actor});
+      return send(result.status,result.data);
     }
     if(route.pathname==="/api/oem-programs"){
       const headers={"Content-Type":"application/json","Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"};

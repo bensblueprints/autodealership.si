@@ -46,7 +46,7 @@
     byId("oem-approve").disabled=busy || !unchanged || !form.elements.namedItem("checked").checked;
     byId("oem-withdraw").disabled=busy || !unchanged;
   }
-  let newId;
+  let newId,requestedProgram=new URL(location.href).searchParams.get("program");
   function open(row){
     current=row;newId=row?.program_id||crypto.randomUUID();form.reset();
     for(const k of fields)form.elements.namedItem(k).value=row?.details[k]||"";
@@ -84,6 +84,10 @@
         const edit=el("button",row.state==="draft" && canReview?"Review draft":"Open program");edit.onclick=()=>open(row);
         const evidence=el("a","Download evidence");evidence.href="api/oem-programs?export="+encodeURIComponent(row.program_id);evidence.download="";
         actions.className="campaign-actions";actions.append(edit,evidence);card.append(summary,actions);list.append(card);
+      }
+      if(requestedProgram){
+        const target=data.programs.find(p=>p.program_id===requestedProgram);requestedProgram=null;
+        if(target && !dialog.open)open(target);
       }
       status.textContent=message;
     }catch(error){if(serial===loadVersion){status.textContent=error.message;list.replaceChildren();byId("oem-new").disabled=true;}}

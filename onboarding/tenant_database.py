@@ -17,6 +17,7 @@ TABLES = {
     "website_page_editions": "page_key text NOT NULL,edition integer NOT NULL,content jsonb NOT NULL,stamp text NOT NULL,actor text NOT NULL,recorded_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(page_key,edition)",
     "client_profile": "id integer PRIMARY KEY,settings jsonb NOT NULL,etag text NOT NULL",
     "vehicle_photo_assets": "site text NOT NULL,digest text NOT NULL,jpeg bytea NOT NULL,PRIMARY KEY(site,digest)",
+    "storefront_review_reports": "id uuid PRIMARY KEY, daily_date date UNIQUE, checked_at timestamptz NOT NULL DEFAULT now(), report jsonb NOT NULL",
     "oem_program_revisions": "program_id uuid NOT NULL, revision integer NOT NULL, state text NOT NULL, details jsonb NOT NULL, actor text NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(program_id,revision)",
     "oem_banner_reviews": "digest text PRIMARY KEY, program_id uuid NOT NULL, program_revision integer NOT NULL, creative jsonb NOT NULL, actor text NOT NULL, approved_at timestamptz NOT NULL DEFAULT now()",
     "marketing_campaigns": "id uuid PRIMARY KEY, revision integer NOT NULL, state text NOT NULL, brief jsonb NOT NULL, history jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now()",
@@ -53,7 +54,7 @@ def provision(control, site_id, name, legacy=False, template="independent"):
                 continue
             if table == "vehicle_photo_assets":
                 source = sql.SQL("SELECT * FROM public.vehicle_photo_assets WHERE site={}").format(sql.Literal(str(site_id)))
-            elif table in ("marketing_campaigns","oem_program_revisions","oem_banner_reviews","website_page_editions","website_page_review_events","inventory_lot_dates","inventory_vin_drafts","inquiry_sms_contacts","inquiry_sms_messages","sms_usage_evidence","sales_opportunities","sales_email_messages","staff_mail_messages","staff_calls","shopper_leads","sales_client_intakes","sales_client_contracts","dealer_review_settings","purchase_review_optouts","purchase_review_emails") and not control.execute(
+            elif table in ("marketing_campaigns","storefront_review_reports","oem_program_revisions","oem_banner_reviews","website_page_editions","website_page_review_events","inventory_lot_dates","inventory_vin_drafts","inquiry_sms_contacts","inquiry_sms_messages","sms_usage_evidence","sales_opportunities","sales_email_messages","staff_mail_messages","staff_calls","shopper_leads","sales_client_intakes","sales_client_contracts","dealer_review_settings","purchase_review_optouts","purchase_review_emails") and not control.execute(
                 "SELECT to_regclass(%s) AS name", (database + "." + table,)
             ).fetchone()["name"]:
                 continue

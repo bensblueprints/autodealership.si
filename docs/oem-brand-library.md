@@ -22,3 +22,11 @@ psql -v ON_ERROR_STOP=1 "$PLATFORM_DATABASE_URL" -f /private/staging/oem-referen
 Use `--source-pdf PATH` to supply a previously downloaded copy of the reviewed filing. The import checks the original hash before writing its SQL file, creates the central tables, and updates the reference catalog in one transaction. A repeated import preserves dealer uploads. The generated SQL contains the private image collection and belongs outside Git and public hosting.
 
 Test the seeded catalog and isolation against a disposable PostgreSQL database with `BRAND_LIBRARY_TEST_URL` set and run `node --test showroom/tests/oem-brand-library.test.mjs`.
+
+## Reviewing the storefront
+
+Open **Dealer dashboard → Website settings → OEM programs → Storefront review** and select **Run check**. Each report records the dealership, hostname, template, time zone and the findings at the time of the check. The report picker shows the 30 most recent checks. **Download report** exports the selected record as JSON.
+
+**Needs attention** links to the affected page, program or banner editor. For example, when the only eligible vehicle sells, the offer loses its placement. **Expires within 14 days** lists active placements or source approvals that are about to end. After making a correction, run another check to compare results. Each saved report retains its original findings.
+
+The service checks franchise rooftops hourly for a missing daily report, using each dealership’s local date. Independent and Buy Here Pay Here dealers can run checks on demand. Coverage comes from the platform’s publishing records. Manufacturer acceptance, visual layout audits and co-op reimbursement retain their separate evidence requirements.
