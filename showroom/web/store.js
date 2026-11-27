@@ -207,9 +207,13 @@
   }
   const profileReady=loadProfile().catch(()=>{});
   function paymentPlansAllowed(car){return (!window.postgresInventory || profileLoaded) && sharedProfile?.financingEnabled!==false && car?.financingEnabled!==false;}
-  function aprAllowed(car){
-    return paymentPlansAllowed(car) && sharedProfile?.options?.aprFinancingEnabled!==false && car?.aprFinancingEnabled!==false;
+  function estimateAllowed(mode,car){
+    if(!["finance","lease"].includes(mode))return false;
+    const options=window.postgresInventory?(sharedProfile?.options||{}):settings().options;
+    return paymentPlansAllowed(car) && options.aprFinancingEnabled!==false && car?.aprFinancingEnabled!==false &&
+      options[mode]!==false && car?.[mode+"EstimateEnabled"]!==false;
   }
+  function aprAllowed(car){return estimateAllowed("finance",car)||estimateAllowed("lease",car);}
   function settings() {
     const stored=read("settings",{});
     return {dealerName:window.clientSite?.name||"Capital City CDJR",tradeUrl:"",...stored,...sharedProfile,
@@ -235,7 +239,7 @@
     const lead=read("lead:"+id,null);
     if(lead)write("lead:"+id,{...lead,notes:{...lead.notes,[field]:answer}});
   }
-  window.Store = {loadProfile,profileLoaded:()=>profileLoaded,loadLeads,inquiryState:()=>inquiryState,showroomSkin:()=>sharedProfile?.profile?.skin||"midnight",aprAllowed,financingAllowed:aprAllowed,attachNote, cars,inventoryReady,catalogState:()=>catalogState,reloadCatalog:syncCatalog,refreshInventoryStatus,statusFor:vin=>inventoryStatus[vin],leads,addLead,setStatus,saveCar,settings,saveSettings,optionGroups,profileReady };
+  window.Store = {loadProfile,profileLoaded:()=>profileLoaded,loadLeads,inquiryState:()=>inquiryState,showroomSkin:()=>sharedProfile?.profile?.skin||"midnight",aprAllowed,estimateAllowed,financingAllowed:aprAllowed,attachNote, cars,inventoryReady,catalogState:()=>catalogState,reloadCatalog:syncCatalog,refreshInventoryStatus,statusFor:vin=>inventoryStatus[vin],leads,addLead,setStatus,saveCar,settings,saveSettings,optionGroups,profileReady };
   window.addEventListener("storage",e=>{if(e.key===prefix+"settings"||e.key===null)loadProfile().catch(()=>{});if (!e.key || e.key.startsWith(prefix)){view=null;window.dispatchEvent(new Event("showroom:update"));}});
 })();
 

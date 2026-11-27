@@ -81,6 +81,13 @@ const DealerSitePages=(()=>{
       return '<section class="page-copy-section"><h2>'+heading+"</h2>"+body+"</section>";
     }).join("");
   }
+  function paymentPageAllowed(key,options={},apr=true){
+    if(!requiresApr.has(key))return true;
+    if(!apr)return false;
+    if(["leasing","lease-specials"].includes(key))return options.lease!==false;
+    if(key==="payment-calculator")return options.finance!==false || options.lease!==false;
+    return options.finance!==false;
+  }
   function list(settings={},tenant=true,apr=true){
     const saved=settings?.pages||{};
     const overrides=Array.isArray(saved)?Object.fromEntries(saved.filter(p=>p?.key).map(p=>[p.key,p])):saved;
@@ -89,7 +96,7 @@ const DealerSitePages=(()=>{
       const enabled=edit?(edit.enabled!==false):base.key==="all-inventory"||templates[templateKey(settings.profile?.siteTemplate)].pages.includes(base.key)||(!tenant&&!base.editorial);
       const blocks=Array.isArray(edit?.blocks)?edit.blocks.filter(b=>b && Object.hasOwn(blockKinds,b.kind) && typeof b.heading==="string" && typeof b.text==="string" && b.heading.trim() && b.text.trim()):[];
       return {...base,title:edit?.title?.trim()||base.title,body,...(blocks.length?{blocks}:{}),
-        enabled:enabled && (!base.editorial || !!body.trim() || !!blocks.length) && (apr || !requiresApr.has(base.key)),
+        enabled:enabled && (!base.editorial || !!body.trim() || !!blocks.length) && paymentPageAllowed(base.key,settings.options,apr),
         url:safeUrl(edit?.url??(!tenant&&base.demoPath?demoOrigin+base.demoPath:""))};
     });
   }
@@ -102,7 +109,7 @@ const DealerSitePages=(()=>{
     incoming:car=>/in transit|incoming/i.test(car.status||""),
     "ev-inventory":car=>/^(electric|electricity|battery electric)$/i.test(car.fuel||"")
   };
-  return {catalog,list,safeUrl,requiresApr,inventoryFilters,templates,templateKey,blockKinds,blocksForDraft,blockMarkup};
+  return {catalog,list,safeUrl,requiresApr,paymentPageAllowed,inventoryFilters,templates,templateKey,blockKinds,blocksForDraft,blockMarkup};
 })();
 if(typeof window!=="undefined"){
   const nativeRoutes=()=>window.postgresInventory && (window.clientSite || location.hostname==="demo.autodealership.si") && !location.pathname.startsWith("/clients/");

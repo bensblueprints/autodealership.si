@@ -74,12 +74,13 @@ const DealerClients=(()=>{
     for(const key of options)stage.add(new Option(stages[key],key));if(options.includes(deal.stage))stage.value=deal.stage;
     amount.type="number";amount.min="0.01";amount.step=".01";amount.max="999999999.99";if(deal.cents!==null)amount.value=(Number(deal.cents)/100).toFixed(2);
     note.rows=2;note.maxLength=2000;const field=label("Contract value (USD)",amount),fields=el("div",undefined,"client-fields");
-    function mode(){field.hidden=stage.value==="followup";amount.required=stage.value==="signed";}stage.onchange=mode;mode();
-    fields.append(label("Sales stage",stage),field,label("Sales note",note));form.append(fields,save,status);more.append(form);article.append(more);
+    const permission=el("input");permission.type="checkbox";const consent=label("Customer agreed to a purchase follow-up email",permission);consent.className="choice";
+    function mode(){field.hidden=stage.value==="followup";amount.required=stage.value==="signed";consent.hidden=stage.value!=="signed" || deal.stage==="signed" || !data.client.email;}stage.onchange=mode;mode();
+    fields.append(label("Sales stage",stage),field,label("Sales note",note),consent);form.append(fields,save,status);more.append(form);article.append(more);
     form.onsubmit=async e=>{
       e.preventDefault();save.disabled=true;
       const cents=field.hidden||amount.value===""?null:Math.round(Number(amount.value)*100);
-      try{await api({id:data.client.id,vin:deal.vin,revision:deal.revision,stage:stage.value,cents,note:note.value},"PUT");await refreshed(data.client.id);get("client-result").textContent="Sales update saved.";}
+      try{const saved=await api({id:data.client.id,vin:deal.vin,revision:deal.revision,stage:stage.value,cents,note:note.value,reviewPermission:!consent.hidden && permission.checked},"PUT");await refreshed(data.client.id);get("client-result").textContent=["Sales update saved.",saved.review].filter(Boolean).join(" ");}
       catch(err){status.textContent=err.message;save.disabled=false;}
     };return article;
   }

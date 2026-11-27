@@ -11,6 +11,7 @@ from psycopg.rows import dict_row
 import resend_connect
 import resend_routes
 import dealer_mail
+import review_mail
 import threading
 import platform_mail
 import platform_mail_routes
@@ -259,5 +260,6 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,TypeError,KeyError) as err:self.reply(400,{"error":str(err)})
         except Exception:self.reply(500,{"error":"Could not complete this change."})
 threading.Thread(target=dealer_mail.work,args=(connect,),daemon=True).start()
+threading.Thread(target=review_mail.work,args=(connect,),daemon=True).start()
 ThreadingHTTPServer(("127.0.0.1",18485),Handler).serve_forever()
 

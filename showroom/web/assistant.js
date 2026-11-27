@@ -153,7 +153,7 @@
     const mode = /\blease\b/.test(words) ? "lease" : "finance";
     function monthlyPayments(car){
       const payments=mode==="lease"?[]:(car.bhph?.schedules||[]).filter(s=>s.frequency==="Monthly").map(s=>s.payment/100);
-      if(Store.aprAllowed(car) && Store.settings().options?.[mode]!==false && Store.settings().options?.payment!==false){
+      if(Store.estimateAllowed(mode,car) && Store.settings().options?.[mode]!==false && Store.settings().options?.payment!==false){
         const estimate=window.Retail?.amount(car,mode);
         if(estimate!=null)payments.push(estimate);
       }
@@ -211,10 +211,12 @@
   function financingContext(car){
     const o=car?.bhph;
     const aprAvailable=Store.aprAllowed(car);
-    if(!o)return aprAvailable?"":" Only the cash price is listed for this vehicle.";
+    const modes=["finance","lease"].filter(mode=>Store.estimateAllowed(mode,car));
+    const policy=modes.length===1?" The only conventional estimate available is "+modes[0]+".":"";
+    if(!o)return aprAvailable?policy:" Only the cash price is listed for this vehicle.";
     const choice=vehicleDoc()?.defaultView?.bhphChoice;
     const selected=currentCar()?.id===car.id && choice?.revision===o.revision && o.schedules.find(s=>s.frequency===choice.frequency && s.months===choice.months);
-    const intro="Stock "+(car.stock||car.id)+". Cash price "+BHPH.money(o.cash)+". "+(aprAvailable?"":"This listing offers Buy Here Pay Here. APR estimates are turned off. ");
+    const intro=policy+"Stock "+(car.stock||car.id)+". Cash price "+BHPH.money(o.cash)+". "+(aprAvailable?"":"This listing offers Buy Here Pay Here. APR estimates are turned off. ");
     if(selected)return intro+"Selected schedule: "+BHPH.summary(o,selected);
     return intro+"BHPH price "+BHPH.money(o.price)+", cash down "+BHPH.money(o.down)+", remaining "+BHPH.money(o.balance)+". Available schedules: "+o.schedules.map(s=>s.months+" months "+s.frequency.toLowerCase()+" ("+(s.count-1)+" payments of "+BHPH.money(s.payment)+", final payment "+BHPH.money(s.final)+")").join("; ")+".";
   }
@@ -419,6 +421,10 @@
     if(!/test.drive|book/i.test(query)){
       const asksAboutPlan=/(?:pay(?:ment|out)?|pay[ -]off) schedule|read.*schedule|selected plan|buy here|bhph|cash down|down payment|weekly|biweekly|monthly payment|cash price/i.test(query);
       const asksAboutFinance=/financ|lease|payments?|\bapr\b/i.test(query);
+      const requested=/\bleas(?:e|ing)\b/i.test(query)?"lease":/\bapr\b|bank financ/i.test(query)?"finance":null;
+      if(requested && !Store.estimateAllowed(requested,shown)){
+        addLine("The dealership has turned off "+requested+" estimates"+(shown?" for this vehicle.":".")+(shown?financingContext(shown):""));return;
+      }
       if(shown && ((shown.bhph && asksAboutPlan) || (!Store.aprAllowed(shown) && (asksAboutPlan || asksAboutFinance)))){
         addLine(financingContext(shown).trim());return;
       }
@@ -533,7 +539,7 @@
               count:matches.length,
               vehicles:matches.slice(0,8).map(car=>({
                 id:car.id,stock:car.stock,vin:car.vin,year:car.year,make:car.make,model:car.model,trim:car.trim,
-                aprEstimates:Store.aprAllowed(car),buyHerePayHere:car.bhph?financingContext(car).trim():null,
+                aprEstimates:Store.estimateAllowed("finance",car),leaseEstimates:Store.estimateAllowed("lease",car),buyHerePayHere:car.bhph?financingContext(car).trim():null,
                 body:car.body,price:car.price??null,miles:car.miles??null,location:car.location,condition:car.condition,
                 availability:car.availability || "Confirm with dealer",observedAt:car.observedAt,
                 features:relevant(car.features||[],query,12),packages:relevant(car.packages||[],query,6)

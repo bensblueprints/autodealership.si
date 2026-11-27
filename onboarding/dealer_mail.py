@@ -47,17 +47,21 @@ def address(value):
     return addr if len(addr)<=254 and re.fullmatch(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+",addr) else ""
 
 @contextmanager
-def store(connect, site):
+def store(connect, site, require_mailbox=True, domain_id=None):
     with connect() as control:
-        row=control.execute("""SELECT t.database_name FROM public.client_sites t JOIN public.dealer_mailboxes m ON m.site=t.id
-          JOIN public.dealer_email_grants g ON g.site=t.id AND g.domain_id=m.domain_id AND g.domain=m.domain
-          WHERE t.id=%s AND g.verified AND NOT g.reconnect FOR SHARE OF t,m,g""",(site,)).fetchone()
+        if require_mailbox:
+            row=control.execute("""SELECT t.database_name FROM public.client_sites t JOIN public.dealer_mailboxes m ON m.site=t.id
+              JOIN public.dealer_email_grants g ON g.site=t.id AND g.domain_id=m.domain_id AND g.domain=m.domain
+              WHERE t.id=%s AND g.verified AND NOT g.reconnect FOR SHARE OF t,m,g""",(site,)).fetchone()
+        else:
+            row=control.execute("""SELECT t.database_name FROM public.client_sites t JOIN public.dealer_email_grants g ON g.site=t.id
+              WHERE t.id=%s AND g.verified AND NOT g.reconnect AND (%s::text IS NULL OR g.domain_id=%s) FOR SHARE OF t,g""",(site,domain_id,domain_id)).fetchone()
         if not row: raise provider.Problem(409,"Dealer mailbox disconnected.")
         schema="client_"+uuid.UUID(str(site)).hex
         if row["database_name"] and row["database_name"] != schema: raise ValueError("Invalid database route.")
         with psycopg.connect(os.environ["CLIENT_DATABASE_URL"],**({"dbname":schema} if row["database_name"] else {}),row_factory=dict_row) as db:
             if not row["database_name"]: db.execute(sql.SQL("SET LOCAL search_path TO {}").format(sql.Identifier(schema)))
-            if not db.execute("SELECT to_regclass('sales_email_messages') AS t").fetchone()["t"]:
+            if require_mailbox and not db.execute("SELECT to_regclass('sales_email_messages') AS t").fetchone()["t"]:
                 db.execute("SELECT pg_advisory_xact_lock(81454,2)")
                 for table in ("sales_opportunities","sales_email_messages"):
                     db.execute(sql.SQL("CREATE TABLE IF NOT EXISTS {} ({})").format(sql.Identifier(table),sql.SQL(TABLES[table])))

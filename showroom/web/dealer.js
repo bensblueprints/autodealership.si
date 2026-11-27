@@ -248,7 +248,12 @@
   }
   function openEditor(car=null,focusField="") {
     $("saveWithBhph").hidden=!!window.clientSite && !clientSite.bhph;
-    editing=car;form.reset();form.elements.vehicleFinancing.value=paymentMode(car);$("formError").textContent="";$("editTitle").textContent=car?"Edit vehicle":"Add vehicle";
+    editing=car;form.reset();form.elements.vehicleFinancing.value=paymentMode(car);
+    for(const [key,input] of [["finance","vehicleFinanceEstimate"],["lease","vehicleLeaseEstimate"]]){
+      form.elements[input].checked=car?.[key+"EstimateEnabled"]!==false;
+    }
+    const syncVehicleModes=()=>{for(const input of ["vehicleFinanceEstimate","vehicleLeaseEstimate"])form.elements[input].disabled=form.elements.vehicleFinancing.value!=="apr";};
+    form.elements.vehicleFinancing.onchange=syncVehicleModes;syncVehicleModes();$("formError").textContent="";$("editTitle").textContent=car?"Edit vehicle":"Add vehicle";
     form.querySelector(".editor-details").open=false;
     form.elements.lotDate.value=car?.lotDate||"";
     form.elements.lotDate.max=InventoryWorklist.today(Store.settings().profile?.driveTimezone);
@@ -326,7 +331,7 @@
     try {
       const f=new FormData(form),car={};
       for(const key of textFields) car[key]=String(f.get(key)||"").trim();
-      Object.assign(car,paymentFlags(form.elements.vehicleFinancing.value));
+      Object.assign(car,paymentFlags(form.elements.vehicleFinancing.value),{financeEstimateEnabled:form.elements.vehicleFinanceEstimate.checked,leaseEstimateEnabled:form.elements.vehicleLeaseEstimate.checked});
       car.vin=car.vin.replace(/\s+/g,"").toUpperCase();
       if(window.clientSite && !/^[A-HJ-NPR-Z0-9]{17}$/.test(car.vin))throw Error("Enter a 17-character VIN. VINs use letters and numbers and exclude I, O and Q.");
       car.vpicDetails=window.vpicDetailsFor?.(car.vin)??(editing?.vin===car.vin?editing.vpicDetails:undefined);
@@ -486,14 +491,15 @@
     for(const key of [...profileFields,...socialFields])fields[key].value=profile[key]||"";
     darkLogo.load(profile.logo);lightLogo.load(profile.logoLightBackground);
     const groups=$("shopOptions");
-    groups.replaceChildren();
+    groups.replaceChildren();$("store-estimates").replaceChildren();
     for(const [heading,options] of Object.entries(Store.optionGroups)) {
       const section=node("fieldset"), choices=node("div",null,"option-grid");
       section.append(node("legend",heading),choices);
       for(const [key,label] of Object.entries(options)) {
         const choice=node("label",null,"choice"),box=node("input");
         box.type="checkbox";box.name="option-"+key;box.checked=settings.options[key];
-        choice.append(box,document.createTextNode(label));choices.append(choice);
+        choice.append(box,document.createTextNode(key==="finance"?"Show finance with APR":key==="lease"?"Show lease estimates":label));
+        (["finance","lease"].includes(key)?$("store-estimates"):choices).append(choice);
       }
       groups.append(section);
     }

@@ -635,6 +635,13 @@ createServer(async(req,res)=>{
         await db.query("UPDATE bhph_offers SET offer=$2,revision=revision+1 WHERE vehicle=$1 AND revision=$3 RETURNING revision",[vehicle,offer,data.revision]);
       return result.rowCount?reply(200,result.rows[0]):reply(409,{error:"Pricing changed in another session. Reopen the editor."});
     }
+    if(route.pathname==="/api/purchase-feedback"){
+      const send=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"private, no-store","X-Robots-Tag":"noindex"}).end(JSON.stringify(data));
+      if(req.method!=="POST" || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return send(403,{error:"Open the feedback page."});
+      if(body.length>6000)return send(413,{error:"Feedback too long."});
+      let data;try{data=JSON.parse(body);}catch{return send(400,{error:"Invalid feedback request."});}
+      const result=await worker.customerFeedback(db,data);return send(result.status,result.data);
+    }
     if(route.pathname==="/api/reputation" || route.pathname==="/api/clients" || route.pathname==="/api/inquiries" || route.pathname==="/api/inquiries/team" || route.pathname==="/api/inquiries/history" || route.pathname==="/api/inquiries/texts" || route.pathname==="/api/conversations" || route.pathname==="/api/conversations/email"){
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
       const currentActor=()=>{
@@ -655,7 +662,13 @@ createServer(async(req,res)=>{
           try{input=JSON.parse(body);}catch{return reply(400,{error:"Invalid client request."});}
         }
         const handler=route.pathname==="/api/reputation"?worker.reputationDesk:worker.salesClients;
-        const result=await handler(db,req.method,input,await team());
+        let sender=null;
+        if(tenant && (route.pathname==="/api/reputation" || input?.stage==="signed" && input?.reviewPermission===true) &&
+          (await pool.query("SELECT to_regclass('public.dealer_email_grants') AS t")).rows[0].t){
+          const grant=(await pool.query("SELECT domain,domain_id FROM public.dealer_email_grants WHERE site=$1 AND verified AND NOT reconnect AND domain_id IS NOT NULL",[site])).rows[0];
+          if(grant)sender={...grant,origin:"https://"+tenant.slug+".autodealership.si"};
+        }
+        const result=await handler(db,req.method,input,await team(),sender);
         return reply(result.status,result.data);
       }
       if(route.pathname.startsWith("/api/conversations")){
@@ -756,6 +769,9 @@ createServer(async(req,res)=>{
     if(route.pathname==="/api/client-inventory" && req.method==="PUT"){
       if(!privateAdmin || req.headers.origin!==base.origin){res.writeHead(403).end();return;}
       let car;try{car=JSON.parse(body);}catch{}
+      if(car && ["financeEstimateEnabled","leaseEstimateEnabled"].some(k=>Object.hasOwn(car,k) && typeof car[k]!=="boolean")){
+        res.writeHead(422,{"Content-Type":"application/json"}).end(JSON.stringify({error:"Invalid vehicle estimate settings."}));return;
+      }
       const field=!car || !/^[A-HJ-NPR-Z0-9]{17}$/.test(car.vin)?"Enter a valid 17-character VIN (letters I, O and Q are excluded).":!car.stock?"Enter the stock number.":!car.make?"Enter the make.":!car.model?"Enter the model.":null;
       if(field){res.writeHead(400,{"Content-Type":"application/json"}).end(JSON.stringify({error:field}));return;}
       const identity=(await vinIdentities([car.vin],true))[0];
@@ -873,7 +889,7 @@ createServer(async(req,res)=>{
         storefront=registry.templateKey(settings.profile?.siteTemplate);
         showCash=settings.options?.cash!==false && settings.options?.pricing!==false;
         showAlternatives=settings.options?.relatedVehicles!==false;
-        sitePages=registry.list(settings,!!tenant,settings.finance!==false && settings.apr!==false).filter(item=>item.enabled);
+        sitePages=registry.list(settings,!!tenant,settings.finance!=="false" && settings.apr!==false).filter(item=>item.enabled);
       }
       if(template || legacy){
         page=sitePages.find(item=>item.key===template?.key);

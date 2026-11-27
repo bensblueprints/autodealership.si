@@ -13,7 +13,7 @@
     lease:{months:36, rate:6, down:0, residual:55}
   };
   function amount(car, mode="cash", input=terms[mode]) {
-    if ((mode!=="cash" && !Store.aprAllowed(car)) || !hasNumber(car.price)) return null;
+    if ((mode!=="cash" && !Store.estimateAllowed(mode,car)) || !hasNumber(car.price)) return null;
     const price = Number(car.price);
     if (!Number.isFinite(price) || price < 0) return null;
     if (mode === "cash") return price;
@@ -83,14 +83,15 @@
   function num(label,key,value,max,step="1",min=0) {
     return '<label>'+label+'<input type="number" name="'+key+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+value+'" required></label>';
   }
-  function payment(car,mode=enabled("finance")?"finance":"lease") {
-    if (!Store.aprAllowed(car))return;
+  function payment(car,mode) {
+    const modes=["finance","lease"].filter(key=>Store.estimateAllowed(key,car));
+    if(!modes.length)return;
+    if(!modes.includes(mode))mode=modes[0];
     if (amount(car) === null) {
       present("Price available from dealer", "<p>Contact the dealership for the asking price before estimating a monthly payment.</p>"+button("close","Done"));
       return;
     }
     const t=terms[mode];
-    const modes=["finance","lease"].filter(enabled);
     present("Calculate your payment",'<p class="retail-model">'+html(name(car))+' · '+money(car.price)+'</p><div class="retail-tabs">'+modes.map(m=>button("mode",m==="finance"?"Finance":"Lease",'data-mode="'+m+'" aria-pressed="'+(m===mode)+'"')).join("")+'</div><form class="retail-form"><div class="retail-fields">'+num("Term in months","months",t.months,120,"1",1)+num(mode==="finance"?"APR (%)":"Equivalent APR (%)","rate",t.rate,50,"0.01")+num("Down payment ($)","down",Math.min(t.down,car.price),car.price,"0.01")+(mode==="lease"?num("Residual value (%)","residual",t.residual,100,"0.1"):"")+'</div><div class="retail-estimate"><small>Estimated monthly payment</small><output aria-live="polite"></output></div><p class="retail-note">Illustrative terms. Taxes, registration and fees are excluded.'+(mode==="lease"?' Residual uses '+(car.msrp?'listed MSRP':'asking price as an assumed MSRP')+'. Lease eligibility and actual terms require dealer confirmation.':' Financing is subject to lender approval.')+'</p></form>');
     const form=dialog.querySelector("form");
     function update() {

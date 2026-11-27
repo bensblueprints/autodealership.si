@@ -60,7 +60,7 @@
   const featuredKeys = ["3rd row seat","adaptive cruise control","android auto","apple carplay","automatic climate control","awd","backup camera","blind spot monitor","bluetooth","fog lights","forward collision warning","hands free liftgate","heated seats","keyless entry","navigation","moonroof"];
   const featureKey = feature => aliases[keyFor(feature)] || keyFor(feature);
   let mode = "cash", minimum = null, maximum = null, layout = "browse", sort = "recommended", options = {};
-  const enabled = key => options[key] !== false && (!["finance","lease"].includes(key)||Store.aprAllowed());
+  const enabled = key => options[key] !== false && (!["finance","lease"].includes(key)||Store.estimateAllowed(key));
   function resetBhph(){
     get("bhph-only").checked=false;
     for(const id of ["max-cash-down","bhph-frequency","bhph-installment"])get(id).value="";
@@ -116,7 +116,7 @@
     return value === null || value === undefined || !Number.isFinite(Number(value)) ? null : Number(value);
   }
   function matches(car) {
-    if(mode!=="cash" && !Store.aprAllowed(car))return false;
+    if(mode!=="cash" && !Store.estimateAllowed(mode,car))return false;
     const down=document.getElementById("max-cash-down")?.value;
     if(down && (!car.bhph || car.bhph.down>Math.round(Number(down)*100)))return false;
     if(get("bhph-only").checked && !car.bhph)return false;

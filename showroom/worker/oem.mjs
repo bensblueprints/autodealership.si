@@ -142,7 +142,8 @@ export async function oemProgramsApi({db,method,input,actor,canReview,exportId,t
 async function offerInventory(db,vins){
   if(!vins.length)return [];
   return (await db.query(`SELECT vin,body->>'stock' AS stock,concat_ws(' ',body->>'year',body->>'make',body->>'model') AS label,
-    coalesce(body->>'financingEnabled','true')<>'false' AND coalesce(body->>'aprFinancingEnabled','true')<>'false' AS apr
+    coalesce(body->>'financingEnabled','true')<>'false' AND coalesce(body->>'aprFinancingEnabled','true')<>'false' AS apr,
+    coalesce(body->>'financeEstimateEnabled','true')<>'false' AS finance,coalesce(body->>'leaseEstimateEnabled','true')<>'false' AS lease
     FROM client_cars c WHERE vin=ANY($1::text[]) AND NOT EXISTS(SELECT 1 FROM inventory_status s WHERE s.vin=c.vin)
     AND lower(coalesce(body->>'status','')) NOT IN ('sold','deleted','reserved') ORDER BY vin`,[vins])).rows;
 }
@@ -150,10 +151,10 @@ async function offerInventory(db,vins){
 export async function websiteOffers(db,tenant){
   if(!(await db.query("SELECT to_regclass('oem_program_revisions') AS present")).rows[0].present)return [];
   const settings=(await db.query(`SELECT settings->'profile'->>'siteTemplate' AS template,settings->'profile'->>'driveTimezone' AS zone,
-    settings->'pages' AS pages,settings->>'financingEnabled' AS finance,settings->'options'->>'aprFinancingEnabled' AS apr
+    settings->'pages' AS pages,settings->'options' AS options,settings->>'financingEnabled' AS finance,settings->'options'->>'aprFinancingEnabled' AS apr
     FROM client_profile WHERE id=1`)).rows[0]||{};
   const apr=settings.finance!=="false" && settings.apr!=="false";
-  const visible=new Set(DealerSitePages.list({pages:settings.pages,profile:{siteTemplate:settings.template}},tenant,apr).filter(p=>p.enabled).map(p=>p.key));
+  const visible=new Set(DealerSitePages.list({pages:settings.pages,options:settings.options,profile:{siteTemplate:settings.template}},tenant,apr).filter(p=>p.enabled).map(p=>p.key));
   const programs=(await db.query(`SELECT program_id AS id,details->'websiteOffer' AS offer,details->>'disclosure' AS disclosure,
     details->>'endsOn' AS day,(((details->>'endsOn')::date+1)::timestamp AT TIME ZONE $1) AS expires
     FROM (SELECT DISTINCT ON(program_id) program_id,state,details FROM oem_program_revisions ORDER BY program_id,revision DESC) latest
@@ -163,8 +164,8 @@ export async function websiteOffers(db,tenant){
   const inventory=new Map(selected.map(car=>[car.vin,car]));
   return programs.flatMap(({id,offer,disclosure,day,expires})=>{
     const financing=DealerSitePages.requiresApr.has(offer.page);
-    if(financing && !apr)return [];
-    const cars=offer.vins.map(v=>inventory.get(v)).filter(car=>car && (!financing || car.apr)).map(({vin,stock,label})=>({vin,stock,label}));
+    if(!DealerSitePages.paymentPageAllowed(offer.page,settings.options,apr))return [];
+    const cars=offer.vins.map(v=>inventory.get(v)).filter(car=>car && (!financing || DealerSitePages.paymentPageAllowed(offer.page,car,car.apr))).map(({vin,stock,label})=>({vin,stock,label}));
     const page=visible.has(offer.page)?offer.page:null;
     if((offer.vins.length && !cars.length) || (!page && !cars.length))return [];
     return [{id,headline:offer.headline,disclosure,day,expiresAt:expires.toISOString(),page,cars}];

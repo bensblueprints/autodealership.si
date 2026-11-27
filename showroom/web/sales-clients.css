@@ -14,6 +14,7 @@
 #clients small,.client-contact,.client-timeline p{color:var(--client-muted)}.client-stage{width:fit-content;color:#ceebea;background:#203e44;border:1px solid #40616a;border-radius:6px;padding:3px 8px;font-size:.77rem}
 .client-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,185px),1fr));align-items:start;gap:12px;margin:12px 0}
 .client-fields label{display:grid;gap:5px;font-size:.9rem;font-weight:600}.client-fields :is(input,textarea,select){width:100%;min-width:0;box-sizing:border-box}.client-fields textarea{resize:vertical}.client-wide{grid-column:1/-1}
+.client-fields label.choice{display:flex;align-items:center;gap:8px}.client-fields .choice input{width:auto;flex:none}#review-mail{display:grid;gap:10px;margin:12px 0}
 .client-actions,.client-deal-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.client-deal-head{justify-content:space-between}.client-deal-head h4{margin:0;font-size:1.05rem}
 .client-deal,.client-booking{padding:15px;border:1px solid var(--client-line);border-radius:10px;margin:12px 0}
 .client-booking>summary,.client-deal summary{font-weight:650;padding:4px 0}.client-deal details{margin-top:8px}.client-deal small{display:block;margin-top:5px}

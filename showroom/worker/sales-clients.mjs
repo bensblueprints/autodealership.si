@@ -63,7 +63,7 @@ const editableClient=(op,team)=>team.manager || !op.owner || op.owner.id===team.
 async function clientRecord(c,id){
   return (await c.query("SELECT id,name,phone,email,owner FROM sales_opportunities WHERE id=$1 FOR UPDATE",[id])).rows[0];
 }
-export async function salesClients(db,method,input,team){
+export async function salesClients(db,method,input,team,sender){
   const fail=smsError,ok=data=>smsResult(200,data);
   if(!input || typeof input!=="object")return fail(400,"Invalid client request.");
   return db.transaction(async c=>{
@@ -143,6 +143,7 @@ export async function salesClients(db,method,input,team){
     await c.query(`INSERT INTO sales_client_contracts(client_id,vin,stage,cents,revision,history) VALUES($1,$2,$3,$4,1,jsonb_build_array($5::jsonb))
       ON CONFLICT(client_id,vin) DO UPDATE SET stage=excluded.stage,cents=excluded.cents,revision=sales_client_contracts.revision+1,
       updated_at=now(),history=sales_client_contracts.history||excluded.history`,[id,vin,stage,cents,event]);
-    return ok({id,revision:revision+1});
+    const review=stage==="signed" && deal.stage!=="signed" && input.reviewPermission===true?await queuePurchaseFeedback(c,op,vin,event.at,team,sender):null;
+    return ok({id,revision:revision+1,review});
   });
 }

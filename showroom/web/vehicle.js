@@ -5,7 +5,7 @@
   await Promise.all([Store.profileReady,Store.inventoryReady]);
   const car=Store.cars().find(record=>String(record.id)===id);
   const settings=Store.settings();
-  const enabled=key=>settings.options?.[key]!==false && (!["finance","payment","lease"].includes(key)||Store.aprAllowed(car));
+  const enabled=key=>settings.options?.[key]!==false && (!["finance","lease"].includes(key)||Store.estimateAllowed(key,car));
   const exists=value=>value!==null && value!==undefined && value!=="";
   const money=value=>!exists(value)?"Contact for price":new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:0,maximumFractionDigits:2}).format(value);
   const makeNode=(tag,value)=>{

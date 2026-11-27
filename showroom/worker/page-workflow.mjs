@@ -54,7 +54,7 @@ export async function pageWorkflow({db,key,method,input,tenant,actor,manager,exp
     const published=DealerSitePages.list({...profile,pages},!!tenant,true).find(p=>p.key===key);
     const live=editablePage({...published,enabled:overrides?overrides.enabled!==false:defaults.enabled});
     const apr=profile.financingEnabled!==false && profile.options?.aprFinancingEnabled!==false;
-    const allowsPage=apr || !DealerSitePages.requiresApr.has(key);
+    const allowsPage=DealerSitePages.paymentPageAllowed(key,profile.options,apr);
     const visible=allowsPage && published.enabled;
     const liveStamp=fingerprint(JSON.stringify([live,overrides===null,allowsPage]));
     const editions=(await conn.query(`SELECT edition,content,stamp,actor,recorded_at FROM website_page_editions
