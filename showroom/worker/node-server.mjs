@@ -196,6 +196,11 @@ async function voiceReport(site,month){
  return {...totals,terms,overageCents:terms?Math.round(Math.max(0,totals.seconds-terms.minutes*60)*terms.cents/60):null};
 }
 
+function breadcrumbSchema(crumbs,origin){
+  const items=crumbs.map(({name,path},i)=>({"@type":"ListItem",position:i+1,name,item:origin+path}));
+  return {"@context":"https://schema.org","@type":"BreadcrumbList",itemListElement:items};
+}
+
 async function vinIdentities(vins,decode){
   if(!vins.length)return [];
   const source=decode?"SELECT vin,public.vehicle_specs(vin) AS specs FROM unnest($1::text[]) AS v(vin)":"SELECT vin,specs FROM public.vin_spec_cache WHERE vin=ANY($1::text[])";
@@ -1000,7 +1005,7 @@ createServer(async(req,res)=>{
       if(unavailableTitle){
         const inventory=sitePages.find(p=>p.key==="all-inventory")?.path||"/#inventory";
         const sales=publicLocation?.teams.find(team=>team.key==="sales" && team.phone);
-        const recovery='<main id="vehicle-page" data-unavailable-listing><section class="listing-return"><h1>'+esc(unavailableTitle)+'</h1><p>Explore the current inventory at '+esc(publicName)+'.</p><a class="return-inventory" href="'+esc(inventory)+'">Browse inventory</a>'+
+        const recovery='<main id="vehicle-page" data-unavailable-listing tabindex="-1"><section class="listing-return"><h1>'+esc(unavailableTitle)+'</h1><p>Explore the current inventory at '+esc(publicName)+'.</p><a class="return-inventory" href="'+esc(inventory)+'">Browse inventory</a>'+
           (sales?'<a class="return-sales" href="'+esc(sales.phone)+'">Call sales</a>':'')+'</section>'+relatedHtml+'</main>';
         content=content.replace(/<main class="info-page"[\s\S]*?<\/main>/,()=>recovery)
           .replace('<script src="page.js"></script>','<script src="bhph.js"></script>')
@@ -1021,7 +1026,7 @@ createServer(async(req,res)=>{
         const inventory=sitePages.find(p=>p.key==="all-inventory");
         const crumbs=[{name:publicName||"Showroom",path:"/"},...(inventory?[{name:inventory.title,path:inventory.path}]:[]),{name:label,path:seo.path}];
         const trail='<nav id="vehicle-trail" aria-label="Breadcrumb">'+crumbs.map((c,i)=>i===crumbs.length-1?'<span aria-current="page">'+esc(c.name)+'</span>':'<a '+(i===crumbs.length-2?'id="back" ':'')+'href="'+esc(c.path)+'">'+esc(c.name)+'</a>').join("")+'</nav>';
-        const trailData={"@context":"https://schema.org","@type":"BreadcrumbList",itemListElement:crumbs.map((c,i)=>({"@type":"ListItem",position:i+1,name:c.name,item:origin+c.path}))};
+        const trailData=breadcrumbSchema(crumbs,origin);
         content=content.replace(/<nav id="vehicle-trail"[^>]*>[\s\S]*?<\/nav>/,()=>trail);
         content=content.replace('<div id="related-vehicle-slot"></div>',()=>relatedHtml);
         const photo=worker.publicVehiclePhoto(car.image,origin);
@@ -1048,7 +1053,7 @@ createServer(async(req,res)=>{
       if(page && assetUrl==="/index.html"){
         content=content.replace("<head>",'<head><base href="/">').replace("<body>",()=>'<body data-inventory-page="'+esc(page.key)+'">')
           .replace('href="#dealer-contact"',()=> 'href="'+esc(page.path)+'#dealer-contact"')
-          .replace('href="#top"','href="/"').replace('<h2>Explore inventory<span>.</span></h2>',()=>'<h1 class="inventory-page-title">'+esc(page.title)+'</h1><p class="inventory-page-intro">'+esc(page.body)+'</p>'+(page.url?'<a href="'+esc(page.url)+'">More from the dealership</a>':""))
+          .replace('href="#top" class="active"','href="/" class="active"').replace('<h2>Explore inventory<span>.</span></h2>',()=>'<h1 class="inventory-page-title">'+esc(page.title)+'</h1><p class="inventory-page-intro">'+esc(page.body)+'</p>'+(page.url?'<a href="'+esc(page.url)+'">More from the dealership</a>':""))
           .replace('<div class="cards" id="cards"></div>',()=>'<div class="cards" id="cards">'+pageTools+'</div>');
         if(page.blocks?.length)content=content.replace("</main>",()=>'<div class="page-blocks inventory-page-blocks">'+worker.DealerSitePages.blockMarkup(page.blocks)+'</div></main>');
       }else if(page){
@@ -1057,6 +1062,23 @@ createServer(async(req,res)=>{
           .replace('<p id="intro"></p>',()=>'<p id="intro">'+esc(page.body)+'</p>')
           .replace('<div id="page-blocks" class="page-blocks"></div>',()=>'<div id="page-blocks" class="page-blocks">'+worker.DealerSitePages.blockMarkup(page.blocks)+'</div>')
           .replace('<div id="tools"></div>',()=>'<div id="tools">'+pageTools+'</div>');
+      }
+      if(page){
+        // A disabled parent must never become a dead link in the public hierarchy.
+        const parents=sitePages.filter(p=>p.key!==page.key && page.path.startsWith(p.path)).sort((a,b)=>a.path.length-b.path.length);
+        const crumbs=[{name:publicName||"Showroom",path:"/"},...parents.map(p=>({name:p.title,path:p.path})),{name:page.title,path:page.path}];
+        const trail='<nav class="page-trail" aria-label="Breadcrumb">'+crumbs.map((c,i)=>i===crumbs.length-1?'<span aria-current="page">'+esc(c.name)+'</span>':'<a href="'+esc(c.path)+'">'+esc(c.name)+'</a>').join('<span class="separator" aria-hidden="true">/</span>')+'</nav>';
+        if(assetUrl==="/index.html")content=content.replace(/(<section id="inventory"[^>]*>)/,match=>match+trail);
+        else content=content.replace('<a class="crumb" href="index.html">← Showroom</a>',()=>trail);
+        const json=JSON.stringify(breadcrumbSchema(crumbs,origin)).replaceAll("<","\\u003c");
+        content=content.replace("</head>",()=>'<script type="application/ld+json">'+json+'</script></head>');
+      }
+      if(unavailableTitle)content=content.replace('class="content-skip" href="#content"','class="content-skip" href="#vehicle-page"');
+      if(page){
+        // Clean dealer pages use <base href="/"> for assets. A fragment alone resolves to the homepage.
+        const target=assetUrl==="/index.html"?"inventory":"content";
+        const href=esc(prefix+route.pathname+route.search+"#"+target);
+        content=content.replace(/(<a class="content-skip" href=")[^"]+"/,(_,before)=>before+href+'"');
       }
       if(seo && publicLocation){
         const dedicated=["contact","directions"].includes(page?.key);

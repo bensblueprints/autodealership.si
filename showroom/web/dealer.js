@@ -368,6 +368,10 @@
       btn.classList.toggle("active",active);
       btn.setAttribute("aria-pressed",String(active));
     }
+    const section=$(key);
+    section.tabIndex=-1;
+    section.classList.add("workspace-panel-focus");
+    document.querySelector(".content-skip").hash=key;
     if(key==="text-account"){ $("setup-menu").open=true;TextAccount.load(); }
     if(key==="conversations")ConversationDesk.load();
     if(key==="clients")DealerClients.load();
