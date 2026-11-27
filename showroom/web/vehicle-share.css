@@ -1,0 +1,29 @@
+.listing-share-dialog {
+  box-sizing: border-box;
+  width: min(28rem, calc(100% - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: clamp(20px, 4vw, 32px);
+  border: 1px solid var(--hair, #415066);
+  border-radius: 16px;
+  background: var(--card, #1b2532);
+  color: var(--ink, #fff);
+  box-shadow: 0 20px 75px #0005;
+}
+.listing-share-dialog::backdrop { background: #101620ac; }
+.listing-share-dialog .share-top, .listing-share-dialog .share-actions { display: flex; align-items: center; gap: 8px; }
+.listing-share-dialog .share-top { justify-content: space-between; }
+.listing-share-dialog .share-top strong, .listing-share-dialog label { color: inherit; font-size: .875rem; font-weight: 650; }
+.listing-share-dialog h2 { margin: 14px 0 3px; font-size: clamp(1.3rem, 4vw, 1.7rem); line-height: 1.2; overflow-wrap: anywhere; }
+.listing-share-dialog .share-stock { margin: 0 0 22px; color: inherit; overflow-wrap: anywhere; }
+.listing-share-dialog label { display: grid; gap: 6px; }
+.listing-share-dialog input { width: 100%; min-width: 0; box-sizing: border-box; padding: 10px; border-radius: 6px; color: inherit; background: transparent; border: 1px solid currentColor; font: inherit; }
+.listing-share-dialog .share-actions { flex-wrap: wrap; margin-top: 16px; }
+.listing-share-dialog :is(button, a) { position: static; display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 7px 12px; border: 1px solid currentColor; border-radius: 7px; background: transparent; color: inherit; text-decoration: none; font: 600 .875rem/1.2 system-ui; cursor: pointer; }
+.listing-share-dialog [data-copy] { color: var(--on-accent, #102a25); background: var(--acid, #86dfcc); border-color: transparent; }
+.listing-share-dialog [data-close] { min-width: 44px; font-size: 1.4rem; }
+.listing-share-dialog :is(button, a, input):focus-visible, #share-vehicle:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.listing-share-dialog [hidden], .listing-share-dialog [role=status]:empty { display: none; }
+.listing-share-dialog [role=status] { margin: 12px 0 0; color: inherit; font-size: .875rem; }
+.vehicle-identity { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 12px; }
+.vehicle-identity #identity { margin: 0; overflow-wrap: anywhere; }
+#share-vehicle { min-height: 44px; padding: 6px 0; border: 0; background: transparent; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; font: 600 .85rem/1.3 system-ui; }

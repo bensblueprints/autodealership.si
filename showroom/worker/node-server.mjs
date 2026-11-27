@@ -876,7 +876,7 @@ createServer(async(req,res)=>{
       const deskBootstrap=route.pathname==="/assets/cdjr-inventory.js" && route.searchParams.get("workspace")==="1";
       const cars=deskBootstrap?[]:(await db.query("SELECT c.body FROM client_cars c WHERE NOT EXISTS(SELECT 1 FROM inventory_status s WHERE s.vin=c.vin) ORDER BY "+(tenant?"c.vin":"c.position"))).rows.map(r=>r.body);
       const json=route.pathname==="/api/showroom-inventory";
-      const siteMeta=tenant?{slug:tenant.slug,name:tenant.name,agent:tenant.agent_id,bhph:tenant.bhph}:null;
+      const siteMeta=tenant?{slug:tenant.slug,name:tenant.name,agent:tenant.agent_id,bhph:tenant.bhph,publicOrigin:"https://"+(tenant.verified_domain||tenant.slug+".autodealership.si")}:null;
       const payload=json?JSON.stringify(cars):"window.postgresInventory=true;window.clientSite="+JSON.stringify(siteMeta)+";window.CdjrInventory="+JSON.stringify(cars)+";";
       const compress=payload.length>65536 && /\bgzip\b/.test(req.headers["accept-encoding"]||"");
       res.writeHead(200,{"Content-Type":json?"application/json":"application/javascript","Cache-Control":"no-store","Vary":"Accept-Encoding",...(compress?{"Content-Encoding":"gzip"}:{})});
@@ -1068,6 +1068,11 @@ createServer(async(req,res)=>{
         content=content.replace(/<nav id="vehicle-trail"[^>]*>[\s\S]*?<\/nav>/,()=>trail);
         content=content.replace('<div id="related-vehicle-slot"></div>',()=>relatedHtml);
         const photo=worker.publicVehiclePhoto(car.image,origin);
+        const shareMeta={"og:type":"website","og:site_name":publicName,"og:title":seo.title,"og:url":origin+seo.path,
+          "og:description":[car.stock && "Stock #"+car.stock,seo.description].filter(Boolean).join(" · ")};
+        if(photo && car.image_type!=="stock"){shareMeta["og:image"]=photo;shareMeta["og:image:alt"]=label;}
+        const preview=Object.entries(shareMeta).map(([property,value])=>'<meta property="'+property+'" content="'+esc(value)+'">').join("");
+        content=content.replace("</head>",()=>preview+"</head>");
         const initial=photo?'<img class="initial-photo" src="'+esc(photo)+'" alt="'+esc(label)+'" fetchpriority="high">'+(car.image_type==="stock"?'<small>Representative manufacturer photo</small>':''):'';
         const summary='<section class="page-section" id="vehicle-facts"><h1>'+esc(label)+'</h1>'+initial+publishedOfferHtml+'<dl class="overview-grid">'+facts.map(([key,value])=>'<div><dt>'+esc(key)+'</dt><dd>'+esc(value)+'</dd></div>').join("")+'</dl></section>';
         const data={"@context":"https://schema.org","@type":"Vehicle",name:label,url:origin+seo.path,vehicleIdentificationNumber:vin};

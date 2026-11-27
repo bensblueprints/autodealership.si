@@ -29,6 +29,7 @@
   const sticker=car.vin && car.factorySticker?.vin===car.vin ? car.factorySticker : null;
   document.title=title+" · "+get("brandname").textContent;
   get("listing").hidden=false;
+  get("share-vehicle").onclick=()=>VehicleShare.open(car);
   get("overline").textContent=[car.condition,car.body,car.status].filter(Boolean).join(" · ");
   get("title").textContent=[car.make,car.model].join(" ");
   get("trim").textContent=[car.year,car.trim].filter(Boolean).join(" · ");

@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#101210"><title>Vehicle details</title>
   <link rel="stylesheet" href="style.css"><link rel="stylesheet" href="retail.css"><link rel="stylesheet" href="vehicle.css"><link rel="stylesheet" href="vehicle-alternatives.css">
-  <script defer src="assets/cdjr-inventory.js"></script><script defer src="assets/cdjr-covers.js"></script><script defer src="inquiry-contact.js"></script><script defer src="store.js?v=capital1"></script><script defer src="retail.js"></script><script defer src="sticker-sources.js"></script><script defer src="sticker-view.js"></script><script defer src="dealer-pages.js"></script><script src="dealer-location.js"></script><script defer src="visit-calendar.js"></script><script defer src="vehicle.js"></script><script defer src="dealer-profile.js"></script>
+  <script defer src="assets/cdjr-inventory.js"></script><script defer src="assets/cdjr-covers.js"></script><script defer src="inquiry-contact.js"></script><script defer src="store.js?v=capital1"></script><script defer src="retail.js"></script><script defer src="sticker-sources.js"></script><script defer src="sticker-view.js"></script><script defer src="dealer-pages.js"></script><script src="dealer-location.js"></script><script defer src="visit-calendar.js"></script><link rel="stylesheet" href="vehicle-share.css"><script defer src="vehicle-share.js"></script><script defer src="vehicle.js"></script><script defer src="dealer-profile.js"></script>
 <link rel="stylesheet" href="dealer-profile.css"><link rel="stylesheet" href="skins.css"><script defer src="/bhph.js"></script><link rel="stylesheet" href="/bhph.css"><link rel="stylesheet" href="/storefront-layouts.css"><link rel="stylesheet" href="website-offers.css"><script defer src="website-offers.js"></script><link rel="stylesheet" href="content-navigation.css"><script defer src="content-navigation.js"></script></head>
 <body>
 <a class="content-skip" href="#vehicle-page">Skip to vehicle details</a>
@@ -17,7 +17,7 @@
       <div class="vehicle-gallery"><figure id="photo"><div id="photoMissing" class="photo-missing" hidden><svg aria-hidden="true"><use href="assets/inventory-icons.svg#car-side"></use></svg><span>Vehicle photo unavailable</span></div><img id="vehicle-photo" alt=""><button id="enlarge" type="button" aria-label="Enlarge vehicle photo">⛶ &nbsp; View photo</button><div class="photo-controls" hidden><button type="button" data-move="-1" aria-label="Previous vehicle photo">←</button><span aria-live="polite"></span><button type="button" data-move="1" aria-label="Next vehicle photo">→</button></div></figure><div id="photo-strip" role="group" aria-label="Choose a vehicle photo" hidden></div></div>
       <section class="offer" aria-label="Vehicle and purchase options">
         <p class="overline" id="overline"></p><h1 id="title"></h1><p class="trim" id="trim"></p>
-        <p id="identity"></p>
+        <div class="vehicle-identity"><p id="identity"></p><button type="button" id="share-vehicle">Share listing</button></div>
         <div class="selection" id="modes" aria-label="Purchase mode"></div>
         <p class="price-caption" id="price-label"></p><p class="price" id="price"></p><p id="terms"></p>
         <div id="website-offers"></div><div class="offer-actions" id="vehicle-actions">

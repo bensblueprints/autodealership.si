@@ -49,7 +49,7 @@ DealerOn’s public US Acura website tiers are $1,599, $2,229 and $2,999 per mon
 | Inventory, exports and Search Valet | Intake, VIN, faceted search, voice and BHPH budgets work. | Reconcile real feed totals/deletes, acknowledge an export, measure failed stock and feature searches. |
 | Specials, Symphony, Design Studio and video hero | Photo hero, slides, editable specials pages. | Approved offer record with expiry, versioned creatives, video fallback and automatic withdrawal across channels. |
 | Local SEO, structured data and blog | Published-page hierarchy and sitemap. News is an editorial landing page. | Repeating articles, authors, revisions, live structured-data checks and crawl monitoring. |
-| Loop alerts, send-by-text, eWallet and Lead Driver coupons | Favorites, inquiries and scoped text requests. | Subscriptions, price/stock alerts, vehicle sharing, coupon redemption and revocation. |
+| Loop alerts, send-by-text, eWallet and Lead Driver coupons | Favorites, inquiries, scoped text requests and VIN-specific links shared from the public listing or dealer inventory. | Subscriptions, price/stock alerts, coupon redemption and revocation. |
 | Behavioral offers, geofencing and experiments | Planned. | Permission-aware audience selection, randomized holdout and measured incremental appointments. |
 | PriceStak discounts, payments, affordability and locked offers | Cash, illustrative APR/lease and published BHPH schedules. | Region/lender rules, mutually exclusive rebates, disclosures, timestamped quotes and expiry. |
 | Basic/advanced listings and reputation | Store-local hours, location and contact info. | Authorized directory sync, conflict handling, review approval and location-level reporting. |

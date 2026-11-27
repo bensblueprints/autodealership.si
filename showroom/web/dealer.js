@@ -146,7 +146,11 @@
     const age=node("span",sold?(car.lotDate?"Arrived "+car.lotDate:"Arrival date unknown"):days===null?"Arrival date unknown":days===0?"Arrived today":days+" day"+(days===1?"":"s")+" on lot","lot-days");
     if(car.lotDate)age.title="Lot arrival "+car.lotDate;aside.append(age);
     const actions=node("div",null,"lot-actions"),edit=node("button","Edit listing","quiet");edit.type="button";edit.onclick=()=>openEditor(car);actions.append(edit);
-    if(!sold){const link=node("a","View listing ↗","quiet");link.href="vehicle.html?stock="+encodeURIComponent(car.vin||car.id);link.target="_blank";link.rel="noopener";actions.append(link);}
+    if(!sold){
+      const link=node("a","View listing ↗","quiet");link.href="vehicle.html?stock="+encodeURIComponent(car.vin||car.id);link.target="_blank";link.rel="noopener";
+      const share=node("button","Share listing","quiet");share.type="button";share.onclick=()=>VehicleShare.open(car);
+      actions.append(link,share);
+    }
     if(!window.clientSite||clientSite.bhph){const pricing=node("button",car.bhph?"Edit BHPH":"Enable BHPH","quiet");pricing.type="button";pricing.onclick=()=>BHPH.edit(car);actions.append(pricing);}
     const action=node("button",sold?"Return to inventory":"Mark sold","quiet");action.type="button";action.onclick=()=>setCarAvailability(car,sold?"available":"sold",action);
     const del=node("button","Delete","quiet lot-danger");del.type="button";del.onclick=()=>{
