@@ -3,10 +3,26 @@
   let heroImage="", publishedSlides=[], publishedEnabled=false;
   let slides=[],revision=0,loaded=false;
   const mode=get("hero-mode"),choice=get("template-art-choice"),picker=get("template-art-picker");
+  let heroFocus={...HeroFraming.defaults};
+  for(const size of ["desktop","mobile"]){
+    const control=get("focus-"+size);
+    for(const position of HeroFraming.positions){
+      const [x,y]=position.split(" ");
+      const label=x==="center"&&y==="center"?"Center":(y==="center"?"":y+" ")+(x==="center"?"center":x);
+      control.add(new Option(label[0].toUpperCase()+label.slice(1),position));
+    }
+    control.onchange=()=>{heroFocus={...heroFocus,[size]:control.value};dirty=true;previewHero();};
+  }
   function previewHero(){
     const show=mode.value==="artwork" && Boolean(choice.value);
     picker.hidden=!show;
-    get("hero-preview").hidden=mode.value!=="dealership" || !heroImage;
+    const visible=mode.value==="dealership" && !!heroImage;
+    get("photo-framing").hidden=!visible;
+    if(visible)for(const size of ["desktop","mobile"]){
+      const img=get(size==="desktop"?"hero-preview":"hero-preview-mobile");
+      if(img.getAttribute("src")!==heroImage)img.src=heroImage;
+      img.style.objectPosition=heroFocus[size];get("focus-"+size).value=heroFocus[size];
+    }
     if(show)for(const size of ["desktop","mobile"]){
       const img=get("art-"+size),src="api/template-art/"+choice.value+"/"+size+".jpg";
       if(img.getAttribute("src")!==src)img.src=src;
@@ -90,7 +106,8 @@
     programs=catalog.programs;canReview=catalog.canReview;franchise=data.franchise;timezone=data.timezone;
     if(replace || !loaded){
       heroImage=data.heroImage||"";get("hero-mode").value=data.heroMode||"vehicle";
-      artworkChoices(data);previewHero();if(heroImage)get("hero-preview").src=heroImage;
+      heroFocus=HeroFraming.valid(data.heroFocus)?data.heroFocus:{...HeroFraming.defaults};
+      artworkChoices(data);previewHero();
       slides=data.slides;publishedSlides=structuredClone(slides);publishedEnabled=data.enabled;revision=data.revision;
       get("banner-enabled").checked=data.enabled;dirty=false;loaded=true;
     }
@@ -108,12 +125,12 @@
       const ctx=canvas.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();
       const limit=isHero?2400000:1000000;let image=canvas.toDataURL("image/jpeg",.85);if(image.length>limit)image=canvas.toDataURL("image/jpeg",.55);
       if(image.length>limit)throw Error("Choose a smaller image.");
-      if(isHero){heroImage=image;get("hero-preview").src=image;get("hero-preview").hidden=false;mode.value="dealership";previewHero();msg.textContent="Saving dealership photo…";await persist(publishedSlides,publishedEnabled);msg.textContent="Dealership photo saved to the homepage.";return;}
+      if(isHero){heroImage=image;heroFocus={...HeroFraming.defaults};mode.value="dealership";dirty=true;previewHero();msg.textContent="Saving dealership photo…";await persist(publishedSlides,publishedEnabled);msg.textContent="Dealership photo saved to the homepage.";return;}
       slides.push({image,alt:"",link:""});dirty=true;render();msg.textContent="Add an offer description, then save.";
     }catch(e){msg.textContent=e.message;}finally{controls.disabled=false;input.value="";}
   };
   async function persist(items,enabled){
-    const res=await fetch("/api/banner-editor",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({heroImage,heroMode:mode.value,heroArtwork:mode.value==="artwork"?choice.value:null,slides:items,revision,enabled})});
+    const res=await fetch("/api/banner-editor",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({heroImage,heroFocus,heroMode:mode.value,heroArtwork:mode.value==="artwork"?choice.value:null,slides:items,revision,enabled})});
     const result=await res.json().catch(()=>({}));
     if(!res.ok)throw Error(result.error||(res.status===413?"Image upload is too large.":"Save failed. Reopen the dashboard if your session expired."));
     revision=result.revision;

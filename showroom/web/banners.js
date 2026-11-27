@@ -1,33 +1,23 @@
 const panel=document.querySelector("#sale-slides");
+function enableHeroConcierge(){
+  const button=document.querySelector("[data-hero-concierge]");
+  if(button && !document.documentElement.dataset.previewLayout){
+    button.hidden=false;button.onclick=()=>window.dispatchEvent(new Event("open-assistant"));
+  }
+}
+enableHeroConcierge();
 async function showPromotions(){
   const layout=document.documentElement.dataset.previewLayout;
-  const endpoint=layout?"/api/storefront-preview/banners?layout="+encodeURIComponent(layout):"/api/banners";
+  const endpoint=layout?"/api/storefront-preview/banners?media=links&layout="+encodeURIComponent(layout):"api/banners?media=links";
   const response=await fetch(endpoint);
   if(!response.ok)return;
   const config=await response.json(),heroImage=config.heroImage;
   let slides=config.slides,governed=config.governed,tag=response.headers.get("ETag");
-  const art=config.heroArtwork;
-  if(heroImage || art){
-    const photo=new Image();
-    const picture=document.createElement("picture");
-    if(art){
-      const mobile=document.createElement("source");mobile.media="(max-width: 700px)";
-      mobile.srcset="api/template-art/"+art+"/mobile.jpg";
-      picture.append(mobile,photo);
-    }
-    photo.onload=()=>{
-      photo.onload=null;
-      const original=document.querySelector(".hero");
-      if(!original)return;
-      const hero=document.createElement("section");hero.className=art?"hero template-art-hero":"hero";hero.setAttribute("aria-label","Dealership showroom");
-      hero.innerHTML='<div class="scrim"></div><div class="herotext"><div class="eyebrow">Our showroom</div><h1></h1><div class="actions"><a class="primary" href="#inventory">Browse inventory</a><button type="button" class="secondary">Ask concierge</button></div></div>';
-      hero.querySelector("h1").textContent=window.Store.settings().dealerName;
-      hero.querySelector("button").onclick=()=>document.querySelector("#assistantlaunch").click();
-      photo.alt=art?"":"Dealership exterior";
-      if(!art)photo.style.cssText="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center";
-      hero.prepend(art?picture:photo);original.before(hero);original.style.display="none";
-    };
-    photo.src=art?"api/template-art/"+art+"/desktop.jpg":heroImage;
+  const original=document.querySelector('[aria-label="Featured vehicle"]');
+  if(original && !original.hasAttribute("data-hero-resolved") && !document.body.dataset.inventoryPage && (heroImage || config.heroArtwork)){
+    await window.Store.profileReady;
+    const hero=HeroFraming.markup({photo:heroImage,art:config.heroArtwork,focus:config.heroFocus},window.Store.settings().dealerName);
+    if(hero){original.insertAdjacentHTML("beforebegin",hero);original.hidden=true;enableHeroConcierge();}
   }
   if(!slides.length && !governed)return;
   let index=0,paused=matchMedia("(prefers-reduced-motion: reduce)").matches,timer,expiry,pending=false;

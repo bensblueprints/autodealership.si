@@ -67,6 +67,15 @@ db.transaction=async function(action,{snapshot=false}={}){
     throw error;
   }finally{local?.release();control.release();}
 };
+async function homepageBanner(columns, condition="", parameters=[]){
+  try{
+    return (await db.query("SELECT "+columns+" FROM homepage_banners WHERE id=1"+condition,parameters)).rows[0];
+  }catch(error){
+    // A legacy rooftop can have inventory before its optional banner table is provisioned.
+    if(error.code==="42P01" && error.message.includes('"homepage_banners"'))return null;
+    throw error;
+  }
+}
 await db.query("CREATE TABLE IF NOT EXISTS homepage_banners (id integer PRIMARY KEY, revision integer NOT NULL, config jsonb NOT NULL)");
 await db.query("CREATE TABLE IF NOT EXISTS bhph_offers(vehicle text PRIMARY KEY, revision integer NOT NULL, offer jsonb NOT NULL)");
 await pool.query("CREATE TABLE IF NOT EXISTS public.vehicle_photo_assets(site text NOT NULL, digest text NOT NULL, jpeg bytea NOT NULL, PRIMARY KEY(site,digest))");
@@ -914,14 +923,23 @@ createServer(async(req,res)=>{
       return;
     }
     if(route.pathname==="/assets/cdjr-covers.js"){res.writeHead(200,{"Content-Type":"application/javascript"}).end("window.CdjrCovers={};");return;}
+    const heroRoute=/^\/api\/dealership-hero\/([1-9]\d{0,9})\.jpg$/.exec(route.pathname);
+    if(heroRoute){
+      const headers={"Cache-Control":"private, no-cache","X-Content-Type-Options":"nosniff"};
+      if(!["GET","HEAD"].includes(req.method)){res.writeHead(405,{...headers,Allow:"GET, HEAD"}).end();return;}
+      const row=await homepageBanner("config->>'heroImage' AS image"," AND revision::text=$1 AND config->>'heroMode'='dealership'",[heroRoute[1]]);
+      if(!row?.image?.startsWith("data:image/jpeg;base64,")){res.writeHead(404,headers).end();return;}
+      const bytes=Buffer.from(row.image.slice("data:image/jpeg;base64,".length),"base64");
+      res.writeHead(200,{...headers,"Content-Type":"image/jpeg","Content-Length":bytes.length}).end(req.method==="HEAD"?undefined:bytes);return;
+    }
     const artRoute=/^\/api\/template-art\/([a-f0-9]{64})\/(desktop|mobile)\.jpg$/.exec(route.pathname);
     if(artRoute){
       const headers={"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","X-Robots-Tag":"noindex"};
       if(!["GET","HEAD"].includes(req.method)){res.writeHead(405,{...headers,Allow:"GET, HEAD"}).end();return;}
       const [,id,size]=artRoute;
       if(!privateAdmin){
-        const selected=await db.query("SELECT 1 FROM homepage_banners WHERE id=1 AND config->>'heroMode'='artwork' AND config->>'heroArtwork'=$1",[id]);
-        if(!selected.rowCount){res.writeHead(404,headers).end();return;}
+        const selected=await homepageBanner("1"," AND config->>'heroMode'='artwork' AND config->>'heroArtwork'=$1",[id]);
+        if(!selected){res.writeHead(404,headers).end();return;}
       }
       const {rows}=await pool.query("SELECT "+(size==="mobile"?"mobile":"desktop")+" AS image FROM public.template_hero_art WHERE id=$1",[id]);
       if(!rows.length){res.writeHead(404,headers).end();return;}
@@ -932,7 +950,7 @@ createServer(async(req,res)=>{
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
       if(editor && !privateAdmin)return reply(403,{error:"Use Dealer sign in to manage banners."});
       if(req.method==="GET"){
-        const row=(await db.query("SELECT revision,config FROM homepage_banners WHERE id=1")).rows[0];
+        const row=await homepageBanner("revision,config");
         const config=row?.config??{enabled:false,slides:[]};
         const settings=(await db.query("SELECT settings->'profile'->>'siteTemplate' AS template,settings->'profile'->>'driveTimezone' AS timezone FROM client_profile WHERE id=1")).rows[0]||{};
         const franchise=(previewLayout||settings.template)==="franchise",timezone=settings.timezone||"America/Chicago";
@@ -942,7 +960,8 @@ createServer(async(req,res)=>{
           return reply(200,{...config,art,revision:row?.revision??0,franchise,timezone,states:checked.map(row=>row.status)});
         }
         const slides=config.enabled?checked.filter(row=>["Standard banner","Approved"].includes(row.status)).map(({slide,disclosure,expiresAt})=>({image:slide.image,alt:slide.alt,link:slide.link,disclosure,expiresAt})):[];
-        const publicConfig={heroArtwork:config.heroMode==="artwork"?config.heroArtwork:null,heroImage:config.heroMode==="dealership"?config.heroImage:null,slides,governed:franchise||checked.some(row=>row.slide.program)};
+        const heroImage=config.heroMode==="dealership" && config.heroImage?(route.searchParams.get("media")==="links"?"api/dealership-hero/"+row.revision+".jpg":config.heroImage):null;
+        const publicConfig={heroArtwork:config.heroMode==="artwork"?config.heroArtwork:null,heroImage,heroFocus:config.heroFocus||worker.HeroFraming.defaults,slides,governed:franchise||checked.some(row=>row.slide.program)};
         const json=JSON.stringify(publicConfig),tag='"'+createHash("sha256").update(json).digest("hex")+'"';
         if(req.headers["if-none-match"]===tag){res.writeHead(304,{"Cache-Control":"private, no-cache",ETag:tag}).end();return;}
         res.writeHead(200,{"Content-Type":"application/json","Cache-Control":"private, no-cache",ETag:tag}).end(json);return;
@@ -968,9 +987,11 @@ createServer(async(req,res)=>{
       if(!["vehicle","dealership","artwork"].includes(heroMode) || typeof heroImage!=="string" || heroImage.length>2400000 || (heroImage && !/^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]+=*$/.test(heroImage)) || (heroMode==="dealership" && !heroImage))return reply(400,{error:"Upload a dealership photo before enabling the dealership hero."});
       const heroArtwork=heroMode==="artwork"?data.heroArtwork:null;
       if(heroMode==="artwork" && (!/^[a-f0-9]{64}$/.test(heroArtwork||"") || !(await pool.query("SELECT 1 FROM public.template_hero_art WHERE id=$1",[heroArtwork])).rowCount))return reply(400,{error:"Choose an available template image."});
-      const config=JSON.stringify({enabled:data.enabled,slides,heroMode,heroImage,heroArtwork});
+      if(data.heroFocus!==undefined && !worker.HeroFraming.valid(data.heroFocus))return reply(400,{error:"Choose a desktop and mobile framing position."});
+      const heroFocus=data.heroFocus && {desktop:data.heroFocus.desktop,mobile:data.heroFocus.mobile};
+      const config=JSON.stringify({enabled:data.enabled,slides,heroMode,heroImage,heroArtwork,heroFocus});
       const saved=data.revision===0?await db.query("INSERT INTO homepage_banners VALUES(1,1,$1) ON CONFLICT DO NOTHING RETURNING revision",[config]):
-        await db.query("UPDATE homepage_banners SET config=$1,revision=revision+1 WHERE id=1 AND revision=$2 RETURNING revision",[config,data.revision]);
+        await db.query("UPDATE homepage_banners SET config=jsonb_strip_nulls(jsonb_build_object('heroFocus',config->'heroFocus')) || $1::jsonb,revision=revision+1 WHERE id=1 AND revision=$2 RETURNING revision",[config,data.revision]);
       return saved.rowCount?reply(200,saved.rows[0]):reply(409,{error:"Another editor saved changes. Reload the dashboard before editing again."});
     }
     if(route.pathname==="/dealer-login")req.url="/dealer-signin.html";
@@ -1122,6 +1143,12 @@ createServer(async(req,res)=>{
         content=content.replace('<div id="listing" hidden>',()=>summary+'<div id="listing" hidden>').replace("</head>",()=>'<script type="application/ld+json">'+JSON.stringify(data).replaceAll("<","\\u003c")+'</script><script type="application/ld+json">'+JSON.stringify(trailData).replaceAll("<","\\u003c")+'</script></head>');
       }
       if(seo?.path==="/" && req.method==="GET"){
+        const selected=await homepageBanner("revision,config->>'heroMode' AS mode,config->>'heroArtwork' AS art,config->'heroFocus' AS focus,(config->>'heroImage') LIKE 'data:image/jpeg;base64,%' AS photo");
+        const hero=worker.HeroFraming.markup({
+          photo:selected?.mode==="dealership" && selected.photo?"api/dealership-hero/"+selected.revision+".jpg":null,
+          art:selected?.mode==="artwork"?selected.art:null,focus:selected?.focus
+        },publicName);
+        content=content.replace('<section class="hero" aria-label="Featured vehicle">',()=>hero+'<section class="hero" data-hero-resolved aria-label="Featured vehicle"'+(hero?' hidden':'')+'>');
         const cars=(await db.query("SELECT vin,body->>'year' AS year,body->>'make' AS make,body->>'model' AS model,body->>'stock' AS stock,body->>'image' AS image"+available+" ORDER BY vin LIMIT 24")).rows;
         const cards=cars.map(car=>{
           const title=[car.year,car.make,car.model].filter(Boolean).join(" ");

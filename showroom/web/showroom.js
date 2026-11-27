@@ -202,7 +202,7 @@
     const hero=list[slide%list.length];
     $('details').disabled=!hero;
     $('prev').disabled=$('next').disabled=list.length<2;
-    if(hero){
+    if(hero && !$('heroimg').closest('.hero').hidden){
       $('heroimg').hidden=!hero.image;
       $('heroimg').closest('.hero').classList.toggle('hero-no-photo',!hero.image);
       if(hero.image)$('heroimg').src=hero.image;else $('heroimg').removeAttribute('src');
