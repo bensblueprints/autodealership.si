@@ -1,6 +1,14 @@
 (() => {
   "use strict";
-  if (window.parent !== window && window.parent.location.origin === location.origin && window.parent.document.querySelector("#showroom-concierge")) { window.addEventListener("open-assistant",()=>parent.dispatchEvent(new Event("open-assistant"))); return; }
+  if (window.parent !== window && window.parent.location.origin === location.origin && window.parent.document.querySelector("#showroom-concierge")) {
+    window.addEventListener("open-assistant",()=>parent.dispatchEvent(new Event("open-assistant")));
+    document.addEventListener("click",event=>{
+      if(event.defaultPrevented || event.button!==0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey)return;
+      const link=event.target.closest("a[href]");
+      if(link && !parent.dispatchEvent(new CustomEvent("showroom:follow-vehicle",{detail:link.href,cancelable:true})))event.preventDefault();
+    },true);
+    return;
+  }
   const agentId = window.clientSite?clientSite.agent:"agent_7301m87be6t1fasvq15wzgg7wd3g";
   const style = document.createElement("link");
   style.rel = "stylesheet";
@@ -187,7 +195,8 @@
     return last;
   }
   function currentCar(){
-    const id=new URL(listing?.src || location.href).searchParams.get("stock");
+    if((listing?listing.contentDocument:document)?.querySelector("[data-unavailable-listing]"))return null;
+    const id=new URL(listing?.contentDocument?.URL || listing?.src || location.href).searchParams.get("stock");
     return id && Store.cars().find(c=>c.id===id || c.vin===id);
   }
   const vehicleDoc=()=>listing ? listing.contentDocument : document;
@@ -218,14 +227,20 @@
     addLine(prompt);
     if(session)session.sendUserMessage("Website navigation event: the shopper selected "+title(car)+", ID "+car.id+". Briefly offer the available next steps: "+prompt+financingContext(car));
   }
+  function followVehicle(href){
+    const url=new URL(href,location.href);
+    if(url.origin!==location.origin || !url.pathname.endsWith("/vehicle.html"))return false;
+    const car=Store.cars().find(c=>c.id===url.searchParams.get("stock"));
+    return car && openCar(car,url.searchParams.get("book")==="1");
+  }
   document.addEventListener("click",e=>{
     if(!session && !connecting && panel.hidden || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button!==0)return;
-    const a=e.target.closest('a[href]');if(!a)return;
-    const url=new URL(a.href);
-    if(url.origin!==location.origin || !url.pathname.endsWith("/vehicle.html"))return;
-    const car=Store.cars().find(c=>c.id===url.searchParams.get("stock"));
-    if(car){e.preventDefault();openCar(car,url.searchParams.get("book")==="1");}
+    const link=e.target.closest("a[href]");
+    if(link && followVehicle(link.href))e.preventDefault();
   },true);
+  window.addEventListener("showroom:follow-vehicle",e=>{
+    if(listing && typeof e.detail==="string" && followVehicle(e.detail))e.preventDefault();
+  });
   let activeWorkflow;
   let review=null;
   function watchActions(doc){
@@ -347,8 +362,17 @@
       document.body.append(listing);
     }
     listing.onload=()=>{
-      activeWorkflow=null;review=null;watchActions(listing.contentDocument);
-      if(!book && notify)announceCar(car);
+      const doc=listing.contentDocument;
+      activeWorkflow=null;review=null;
+      if(!doc)return;
+      watchActions(doc);
+      const loaded=new URL(doc.URL);
+      const shown=currentCar();
+      if(shown && loaded.href!==location.href)history.pushState({conciergeCar:shown.id,book:loaded.searchParams.get("book")==="1"},"",loaded.href);
+      if(doc.querySelector("[data-unavailable-listing]")){
+        for(const link of doc.querySelectorAll(".return-inventory,.related-heading a"))link.target="_top";
+        if(notify){const message="This listing is unavailable. You can explore the dealership’s current inventory.";addLine(message);session?.sendContextualUpdate?.(message);}
+      }else if(shown && loaded.searchParams.get("book")!=="1" && notify)announceCar(shown);
       const back=listing.contentDocument?.getElementById("back");
       if(back)back.onclick=e=>{e.preventDefault();history.back();};
     };

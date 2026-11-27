@@ -744,7 +744,7 @@ createServer(async(req,res)=>{
     const esc=value=>String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
     const origin=publicDealer?"https://"+(tenant.verified_domain || tenant.slug+".autodealership.si"):demoBrowse?"https://demo.autodealership.si":"";
     const available=" FROM client_cars c WHERE NOT EXISTS (SELECT 1 FROM inventory_status s WHERE s.vin=c.vin)";
-    let publicLocation,publicName,seo,page,vehicleFacts,storefront="classic",showCash=true,sitePages=[],pageTools="",assetUrl=req.url;
+    let publicLocation,publicName,seo,page,vehicleFacts,storefront="classic",showCash=true,showAlternatives=true,unavailableTitle="",relatedHtml="",sitePages=[],pageTools="",assetUrl=req.url;
     if(publicDealer || demoBrowse){
       let displayName=tenant?.name||"Capital City CDJR";
       if(demoBrowse)res.setHeader("X-Robots-Tag","noindex");
@@ -759,6 +759,7 @@ createServer(async(req,res)=>{
         publicLocation=worker.DealerLocation.facts(settings.profile||{});
         storefront=registry.templateKey(settings.profile?.siteTemplate);
         showCash=settings.options?.cash!==false && settings.options?.pricing!==false;
+        showAlternatives=settings.options?.relatedVehicles!==false;
         sitePages=registry.list(settings,!!tenant,settings.finance!==false && settings.apr!==false).filter(item=>item.enabled);
       }
       if(template || legacy){
@@ -797,10 +798,23 @@ createServer(async(req,res)=>{
       }else if(route.pathname==="/vehicle.html"){
         const vin=route.searchParams.get("stock")||"";
         const car=(await db.query("SELECT body->>'year' AS year, body->>'make' AS make, body->>'model' AS model, body->>'trim' AS trim, body->>'stock' AS stock, body->>'body' AS body, body->>'fuel' AS fuel, body->>'transmission' AS transmission,body->>'color' AS color,body->>'miles' AS miles,body->>'image' AS image,body->>'imageType' AS image_type,COALESCE((SELECT (offer->>'cash')::numeric/100 FROM bhph_offers WHERE vehicle=c.vin AND $2),CASE WHEN body->>'price' ~ '^[0-9]+([.][0-9]+)?$' THEN (body->>'price')::numeric END)::text AS price"+available+" AND c.vin=$1",[vin,!tenant||!!tenant.bhph])).rows[0];
-        if(!car){res.writeHead(404,{"Content-Type":"text/plain","X-Robots-Tag":"noindex"}).end("Vehicle unavailable");return;}
-        const label=[car.year,car.make,car.model,car.trim].filter(Boolean).join(" ")||vin;
-        vehicleFacts={label,vin,car};
-        seo={title:label+" | "+displayName,description:"View the "+label+" at "+displayName+". VIN "+vin+". Explore its features and request a test drive.",path:"/vehicle.html?stock="+encodeURIComponent(vin)};
+        let reference=car;
+        if(car){
+          const label=[car.year,car.make,car.model,car.trim].filter(Boolean).join(" ")||vin;
+          vehicleFacts={label,vin,car};
+          seo={title:label+" | "+displayName,description:"View the "+label+" at "+displayName+". VIN "+vin+". Explore its features and request a test drive.",path:"/vehicle.html?stock="+encodeURIComponent(vin)};
+        }else{
+          reference=(await db.query("SELECT c.body->>'make' AS make,c.body->>'model' AS model,c.body->>'body' AS body FROM inventory_status s JOIN client_cars c USING(vin) WHERE s.vin=$1 AND s.status='sold'",[vin])).rows[0];
+          unavailableTitle=reference?"This vehicle has sold":"Vehicle unavailable";
+          res.setHeader("X-Robots-Tag","noindex, follow");
+          if(req.method==="HEAD"){res.writeHead(404,{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store"}).end();return;}
+          assetUrl="/page.html";
+          seo={title:unavailableTitle+" | "+displayName,description:"Browse current inventory at "+displayName+"."};
+        }
+        if(showAlternatives && req.method==="GET"){
+          const cars=await worker.vehicleAlternatives(db,{vin,car:reference,showCash,useDealerCash:!tenant||!!tenant.bhph});
+          relatedHtml=worker.alternativesMarkup(cars,{esc,origin,inventoryPath:sitePages.find(p=>p.key==="all-inventory")?.path||"/#inventory",unavailable:!!unavailableTitle});
+        }
       }
     }
     if(!seo)res.setHeader("X-Robots-Tag","noindex");
@@ -811,6 +825,16 @@ createServer(async(req,res)=>{
       if((clerkRole || platformStaff || tenantDesk) && response.headers.get("content-type").includes("html") && ["/dealer","/dealer.html"].includes(route.pathname))content=content.replace("</head>",clerkScript+'<script>window.dealerClerkReady=Clerk.load({ui:{ClerkUI:window.__internal_ClerkUICtor}});window.dealerClerkReady.catch(()=>{});</script></head>');
       if(prefix)content=content.replace(/(["'`])\/(?!\/)(?=(?:api\/|dealer-login|bhph\.|banner|inventory|index\.html))/g,"$1"+prefix+"/");
       if(tenant && response.headers.get("content-type").includes("html"))content=content.replaceAll("Capital City CDJR",tenant.name.replace(/[&<>"]/g,x=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[x])));
+      if(unavailableTitle){
+        const inventory=sitePages.find(p=>p.key==="all-inventory")?.path||"/#inventory";
+        const sales=publicLocation?.teams.find(team=>team.key==="sales" && team.phone);
+        const recovery='<main id="vehicle-page" data-unavailable-listing><section class="listing-return"><h1>'+esc(unavailableTitle)+'</h1><p>Explore the current inventory at '+esc(publicName)+'.</p><a class="return-inventory" href="'+esc(inventory)+'">Browse inventory</a>'+
+          (sales?'<a class="return-sales" href="'+esc(sales.phone)+'">Call sales</a>':'')+'</section>'+relatedHtml+'</main>';
+        content=content.replace(/<main class="info-page"[\s\S]*?<\/main>/,()=>recovery)
+          .replace('<script src="page.js"></script>','<script src="bhph.js"></script>')
+          .replace("</head>",'<link rel="stylesheet" href="vehicle.css"><link rel="stylesheet" href="vehicle-alternatives.css"></head>')
+          .replace(/<b id="brandname">[^<]*<\/b>/,()=>'<b id="brandname">'+esc(publicName)+'</b>');
+      }
       let publishedOfferHtml="";
       if(vehicleFacts || page?.group==="Specials"){
         const offers=await worker.websiteOffers(db,!!tenant);
@@ -827,10 +851,8 @@ createServer(async(req,res)=>{
         const trail='<nav id="vehicle-trail" aria-label="Breadcrumb">'+crumbs.map((c,i)=>i===crumbs.length-1?'<span aria-current="page">'+esc(c.name)+'</span>':'<a '+(i===crumbs.length-2?'id="back" ':'')+'href="'+esc(c.path)+'">'+esc(c.name)+'</a>').join("")+'</nav>';
         const trailData={"@context":"https://schema.org","@type":"BreadcrumbList",itemListElement:crumbs.map((c,i)=>({"@type":"ListItem",position:i+1,name:c.name,item:origin+c.path}))};
         content=content.replace(/<nav id="vehicle-trail"[^>]*>[\s\S]*?<\/nav>/,()=>trail);
-        let photo="";
-        if(typeof car.image==="string" && /^(?:https:\/\/|\/?assets\/)/i.test(car.image)){
-          try{const u=new URL(car.image,origin+"/");if(u.protocol==="https:" && !u.username && !u.password)photo=u.href;}catch{}
-        }
+        content=content.replace('<div id="related-vehicle-slot"></div>',()=>relatedHtml);
+        const photo=worker.publicVehiclePhoto(car.image,origin);
         const initial=photo?'<img class="initial-photo" src="'+esc(photo)+'" alt="'+esc(label)+'" fetchpriority="high">'+(car.image_type==="stock"?'<small>Representative manufacturer photo</small>':''):'';
         const summary='<section class="page-section" id="vehicle-facts"><h1>'+esc(label)+'</h1>'+initial+publishedOfferHtml+'<dl class="overview-grid">'+facts.map(([key,value])=>'<div><dt>'+esc(key)+'</dt><dd>'+esc(value)+'</dd></div>').join("")+'</dl></section>';
         const data={"@context":"https://schema.org","@type":"Vehicle",name:label,url:origin+seo.path,vehicleIdentificationNumber:vin};
@@ -892,8 +914,8 @@ createServer(async(req,res)=>{
         const links=groups.map(g=>'<section><h3>'+esc(g)+'</h3><ul>'+sitePages.filter(p=>p.group===g).map(p=>'<li><a href="'+esc(p.path)+'">'+esc(p.title)+'</a></li>').join("")+'</ul></section>').join("");
         content=content.replace('<footer aria-label="Dealer access"',()=>'<footer id="dealer-page-links"><nav aria-label="Dealership pages"><div class="dealer-page-groups">'+links+'</div></nav></footer><footer aria-label="Dealer access"');
       }
-      if(seo)content=content.replace(/<title>.*?<[/]title>/i,()=>"<title>"+esc(seo.title)+"</title>").replace("</head>",()=>'<meta name="description" content="'+esc(seo.description)+'"><link rel="canonical" href="'+esc(origin+seo.path)+'"></head>');
-      res.writeHead(response.status,{"Content-Type":response.headers.get("content-type"),"Cache-Control":"no-store"}).end(content);return;
+      if(seo)content=content.replace(/<title>.*?<[/]title>/i,()=>"<title>"+esc(seo.title)+"</title>").replace("</head>",()=>'<meta name="description" content="'+esc(seo.description)+'">'+(seo.path?'<link rel="canonical" href="'+esc(origin+seo.path)+'">':'')+'</head>');
+      res.writeHead(unavailableTitle?404:response.status,{"Content-Type":response.headers.get("content-type"),"Cache-Control":"no-store"}).end(content);return;
     }
     res.writeHead(response.status,Object.fromEntries(response.headers));
     if(req.method==="HEAD"||!response.body)res.end();

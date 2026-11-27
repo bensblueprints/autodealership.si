@@ -56,7 +56,7 @@
       transmission:"Transmission",miles:"Mileage",engine:"Engine",color:"Exterior color",interior:"Interior",drivetrain:"Drivetrain",body:"Body style",doors:"Doors",location:"Location",status:"Inventory status",price:"Price or payment range"},
     "Price and payment tabs": {cash:"Cash price",finance:"Finance estimate",lease:"Lease estimate"},
     "Shopping tools": {compare:"Compare vehicles",pricing:"Pricing and details tabs",payment:"Payment calculator",
-      trade:"Value a trade",availability:"Confirm availability"}
+      trade:"Value a trade",availability:"Confirm availability",relatedVehicles:"Show similar vehicles on listing pages"}
   };
   const defaultOptions=Object.fromEntries(Object.values(optionGroups).flatMap(group => Object.keys(group).map(key=>[key,true])));
   function read(key, fallback) {

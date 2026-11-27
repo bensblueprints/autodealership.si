@@ -1,0 +1,25 @@
+#similar-vehicles {margin:clamp(32px,5vw,72px) 0;color:var(--ink)}
+.related-heading {display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px 24px;margin-bottom:18px}
+.related-heading h2,.related-details h3 {margin:0;color:var(--ink);letter-spacing:-.035em;line-height:1.15}
+.related-heading h2 {font-size:clamp(1.45rem,3vw,2.1rem)}
+.related-heading a,.listing-return a {color:var(--ink);text-underline-offset:4px}
+#similar-vehicles ul {list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:18px;padding:0;margin:0}
+#similar-vehicles li {max-width:500px;width:100%;min-width:0}
+.related-card {display:block;height:100%;border:1px solid var(--hair);border-radius:12px;overflow:hidden;background:var(--card);color:var(--ink);text-decoration:none}
+.related-card:hover,.related-card:focus-visible {border-color:var(--ink)}
+.related-card:focus-visible,.listing-return a:focus-visible,.related-heading a:focus-visible {outline:3px solid var(--ink);outline-offset:3px}
+.related-photo {position:relative;aspect-ratio:16/9;overflow:hidden;display:grid;place-items:center;background:var(--control,var(--surface))}
+.related-photo img {width:100%;height:100%;object-fit:cover}
+.related-photo small {position:absolute;bottom:8px;left:8px;background:#101210;color:#fff;border-radius:4px;padding:4px 7px;font-size:.75rem}
+.related-placeholder,.related-details p,.related-details span,.listing-return p {color:var(--muted)}
+.related-details {padding:16px;overflow-wrap:anywhere}
+.related-details span {display:block;font-size:.8rem;margin-bottom:6px}
+.related-details h3 {font-size:1.18rem}
+.related-details p {font-size:.88rem;margin:8px 0}
+.related-details strong {display:block;margin-top:10px;color:var(--ink)}
+.listing-return {padding:clamp(32px,7vw,88px) 0 20px;max-width:66ch}
+.listing-return h1 {font-size:clamp(2rem,5vw,4rem);letter-spacing:-.05em;line-height:1.06;margin:0;color:var(--ink)}
+.listing-return p {font-size:1.07rem;line-height:1.5;margin:14px 0 22px}
+.listing-return .return-inventory {display:inline-flex;align-items:center;padding:10px 18px;min-height:44px;border-radius:8px;background:var(--acid);color:var(--on-accent,#101510);font-weight:650;text-decoration:none}
+.listing-return .return-sales {display:inline-flex;align-items:center;min-height:44px;padding:8px 16px}
+@media(max-width:700px){#similar-vehicles ul{grid-template-columns:1fr}#similar-vehicles li{max-width:none}}
