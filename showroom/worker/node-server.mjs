@@ -889,7 +889,7 @@ createServer(async(req,res)=>{
         storefront=registry.templateKey(settings.profile?.siteTemplate);
         showCash=settings.options?.cash!==false && settings.options?.pricing!==false;
         showAlternatives=settings.options?.relatedVehicles!==false;
-        sitePages=registry.list(settings,!!tenant,settings.finance!=="false" && settings.apr!==false).filter(item=>item.enabled);
+        sitePages=registry.list(settings,!!tenant,settings.finance!==false && settings.apr!==false).filter(item=>item.enabled);
       }
       if(template || legacy){
         page=sitePages.find(item=>item.key===template?.key);

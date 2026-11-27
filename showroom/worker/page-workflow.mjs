@@ -16,8 +16,9 @@ export async function pageReviewQueue(db){
     await ensurePageTables(conn);
     const rows=(await conn.query(`SELECT page_key AS key, content#>>'{values,title}' AS title, content#>>'{review,state}' AS state,
       content#>>'{review,by}' AS actor,recorded_at AS at FROM website_page_editions
-      WHERE edition=0 AND content#>>'{review,state}' IN ('pending','returned') ORDER BY recorded_at,page_key`)).rows;
-    return {status:200,data:{pages:rows}};
+      WHERE edition=0 ORDER BY recorded_at DESC,page_key`)).rows;
+    const isReview=row=>row.state==="pending" || row.state==="returned";
+    return {status:200,data:{pages:rows.filter(isReview),drafts:rows.filter(row=>!isReview(row))}};
   });
 }
 function editablePage(page) {

@@ -85,7 +85,7 @@ const DealerSitePages=(()=>{
     if(!requiresApr.has(key))return true;
     if(!apr)return false;
     if(["leasing","lease-specials"].includes(key))return options.lease!==false;
-    if(key==="payment-calculator")return options.finance!==false || options.lease!==false;
+    if(key==="payment-calculator")return options.finance!==false && options.payment!==false;
     return options.finance!==false;
   }
   function list(settings={},tenant=true,apr=true){

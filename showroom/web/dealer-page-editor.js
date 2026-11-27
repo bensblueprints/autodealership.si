@@ -70,13 +70,14 @@
       for(const {key,live} of pages){
         const button=document.createElement("button");button.type="button";button.dataset.page=key;
         button.setAttribute("aria-pressed",String(key===active));
-        button.append(control("span",live.title),control("small",live.enabled?"Live":"Hidden"));section.append(button);
+        button.append(control("span",live.title),control("small",draftKeys.has(key)?(live.enabled?"Live · draft":"Draft"):(live.enabled?"Live":"Hidden")));section.append(button);
       }
       index.append(section);
     }
     if(!grouped.size)index.append(control("p","No matching pages."));
   }
   let queueRead=0;
+  const draftKeys=new Set();
   async function refreshQueue(){
     const n=++queueRead, box=$("pageQueueItems");
     try{
@@ -84,12 +85,14 @@
       if(!response.ok)throw Error();
       const data=await response.json();if(n!==queueRead)return;
       box.replaceChildren();
-      for(const item of data.pages){
+      const items=[...data.pages,...(data.drafts||[])];
+      draftKeys.clear();items.forEach(item=>draftKeys.add(item.key));redrawIndex();
+      for(const item of items){
         const button=control("button","");button.type="button";button.dataset.reviewKey=item.key;
-        button.append(control("strong",item.title),control("small",(item.state==="pending"?"Awaiting review":"Changes requested")+" · "+date(item.at)));
+        button.append(control("strong",item.title),control("small",(item.state==="pending"?"Awaiting review":item.state==="returned"?"Changes requested":"Saved draft")+" · "+date(item.at)));
         box.append(button);
       }
-      if(!data.pages.length)box.append(control("p","No pages waiting for review or revision."));
+      if(!items.length)box.append(control("p","No unpublished changes."));
     }catch{if(n===queueRead)box.textContent="Review queue unavailable. Reopen Website pages to retry.";}
   }
   $("refreshPageQueue").onclick=refreshQueue;
@@ -100,6 +103,9 @@
   const missingContent=()=>{
     const blocks=readBlocks();return blocks.some(b=>!b.heading.trim()||!b.text.trim()) || (doc.requiresBody && fields.enabled.checked && !fields.body.value.trim() && !blocks.length);
   };
+  function canEnableForReview(){
+    return !fields.enabled.checked && !doc.live.enabled && doc.allowsPage && doc.review?.state!=="pending";
+  }
   function updateControls(){
     if(!doc)return;
     $("pageControls").disabled=busy;
@@ -116,7 +122,11 @@
     $("pageReturnWrap").hidden=!(pending && doc.manager);
     $("returnPage").disabled=busy||conflicted||!$("pageReturnNote").value.trim();
     $("publishPage").hidden=governed && !doc.manager;
-    $("publishPage").textContent=governed?"Approve and publish":"Publish saved draft";
+    const reviewerOnly=governed && !doc.manager;
+    const enableFirst=canEnableForReview();
+    $("reviewHiddenPage").hidden=reviewerOnly || !enableFirst || (!doc.draft && !dirty());
+    $("reviewPage").textContent=reviewerOnly?"Preview page":enableFirst?"Enable & review page":!fields.enabled.checked && doc.visible?"Review & unpublish":"Review & publish";
+    $("publishPage").textContent=fields.enabled.checked?(governed?"Approve and publish":"Publish page"):(doc.visible?"Unpublish page":"Save hidden version");
     $("discardPage").disabled=!dirty() && !doc.draft;
     $("discardPage").textContent=dirty()?"Undo unsaved edits":"Discard saved draft";
     $("pageRefresh").hidden=!conflicted;
@@ -174,9 +184,12 @@
   }
   async function act(action,extra={}){
     if(busy||!doc||conflicted)return;
-    const key=active;busy=true;updateControls();
-    const message={draft:"Draft saved. Your live page is unchanged.",restore:"Revision loaded as a draft. Review it before publishing.",discard:"Saved draft discarded.",publish:"Changes published.",submit:"Page sent for manager review.",withdraw:"Review request withdrawn.",return:"Draft returned to the editor."}[action];
+    const key=active, publishingVisible=action==="publish" && doc.draft?.values.enabled && doc.allowsPage;
+    busy=true;updateControls();
+    const message={draft:"Draft saved. Your live page is unchanged.",restore:"Revision loaded as a draft. Review it before publishing.",discard:"Saved draft discarded.",publish:publishingVisible?"Page published.":doc.draft?.values.enabled?"Version published. Dealership payment settings hide this page.":"Page is hidden from shoppers.",submit:"Page sent for manager review.",withdraw:"Review request withdrawn.",return:"Draft returned to the editor."}[action];
     try{
+      await window.dealerClerkReady?.catch(()=>{});
+      await window.Clerk?.session?.getToken({skipCache:true}).catch(()=>{});
       const response=await fetch("/api/website-pages?key="+encodeURIComponent(key),{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({action,version:doc.version,...extra})});
       const result=await response.json();
@@ -184,6 +197,7 @@
       buffer.delete(key);if(dialog.open)dialog.close();
       if(action==="publish")await Store.loadProfile().catch(()=>{});
       await Promise.all([openPage(key,message),refreshQueue()]);
+      return !!doc && active===key;
     }catch(error){status.textContent=error.message;$("pageReviewStatus").textContent=error.message;}
     finally{busy=false;updateControls();}
   }
@@ -202,14 +216,35 @@
     }
     if(values.url)box.append(control("small","Action destination"),control("p",values.url));
   }
-  $("reviewPage").onclick=()=>{
+  async function reviewChanges(keepHidden){
+    if(!doc || busy || conflicted)return;
+    const pending=doc.review?.state==="pending", reviewerOnly=(doc.franchise || pending) && !doc.manager;
+    if(!keepHidden && !reviewerOnly && canEnableForReview()){
+      fields.enabled.checked=true;updateControls();
+    }
+    if(!reviewerOnly && !pending && dirty() && !doc.draft?.stale){
+      if(!form.reportValidity())return;
+      if(missingContent()){
+        status.textContent="Add page content and finish each content block before publishing.";
+        const incomplete=Array.from(blockList.querySelectorAll("input,textarea")).find(field=>!field.value.trim());
+        (incomplete||fields.body).focus();
+        return;
+      }
+      if(!await act("draft",{values:read()}))return;
+    }
     preview($("pageBefore"),doc.live,true);preview($("pageAfter"),read());updateControls();
     $("pageReviewStatus").textContent=missingContent()?"Add page content and finish any incomplete blocks before publishing.":dirty()?"Save your edits as a draft before publishing.":doc.draft?.stale?"Save the reviewed draft again before publishing.":doc.draft?"Publishing applies this saved draft to your dealership website.":"There is no draft to publish.";
     if(doc.review?.state==="pending")$("pageReviewStatus").textContent=doc.manager?"Approve the saved draft or return it with a note.":"This saved draft is awaiting a dealership administrator.";
     else if(doc.review?.state==="returned")$("pageReviewStatus").textContent="Revise the draft to address the manager’s note.";
     else if(doc.franchise && !doc.manager && doc.draft)$("pageReviewStatus").textContent="Request manager review from the editor after saving your draft.";
+    else if(!doc.draft && !dirty() && doc.visible)$("pageReviewStatus").textContent="This version is already live.";
+    else if(doc.draft && !dirty() && !doc.draft.stale && !missingContent())$("pageReviewStatus").textContent=fields.enabled.checked
+      ?(doc.allowsPage?"Publish this version to "+doc.path+" on your dealership website.":"Dealership payment settings hide this page, even after publishing.")
+      :(doc.visible?"Unpublishing removes this page from your public website.":"This version will be saved with shopper visibility off.");
     $("pageChecked").checked=false;$("pageReturnNote").value="";updateControls();dialog.showModal();
-  };
+  }
+  $("reviewPage").onclick=()=>reviewChanges(false);
+  $("reviewHiddenPage").onclick=()=>reviewChanges(true);
   $("closePageReview").onclick=()=>dialog.close();
   $("publishPage").onclick=()=>act("publish",{checked:$("pageChecked").checked});
   $("pageChecked").onchange=updateControls;$("pageReturnNote").oninput=updateControls;
@@ -231,6 +266,8 @@
   form.oninput=()=>{status.textContent="Unsaved changes";updateControls();};
   form.onsubmit=e=>{e.preventDefault();act("draft",{values:read()});};
   document.querySelector('[data-view="pages"]').addEventListener("click",async()=>{
-    await Store.profileReady;if(busy)return;remember();refreshQueue();openPage(active||catalog()[0].key);
+    await Store.profileReady;if(busy)return;remember();refreshQueue();
+    const requested=new URL(location.href).searchParams.get("page");
+    openPage(active||(catalog().some(p=>p.key===requested)?requested:catalog()[0].key));
   });
 })();
