@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { editorialPage, commerceEditorial } from "./presentation.mjs";
 import { products, guides, planned, makes } from "./content.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -74,8 +75,8 @@ function page(key,title,desc,main,trail,noindex=false) {
   const content=`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#101113"><title>${plain(title)} | AutoDealership.SI</title>
 <link rel="canonical" href="${origin}${url}"><meta name="description" content="${plain(desc)}">${noindex ? '<meta name="robots" content="noindex,follow">' : ""}
-<link rel="stylesheet" href="/site.css">${assets}<script type="application/ld+json">${JSON.stringify(structured).replaceAll("<","\\u003c")}</script></head>
-<body>${header}<main id="page-content" class="catalog">${crumbs(trail)}${main}</main>${foot}</body></html>
+<link rel="stylesheet" href="/site.css">${assets}<link rel="stylesheet" href="/editorial.css?v=1"><script type="application/ld+json">${JSON.stringify(structured).replaceAll("<","\\u003c")}</script></head>
+<body>${header}<main id="page-content" class="catalog es-site">${main}</main>${foot}</body></html>
 `;
   const file=join(root,key,"index.html");mkdirSync(dirname(file),{recursive:true});writeFileSync(file,content);
   if(!noindex)indexable.add(url);
@@ -115,9 +116,9 @@ for(const [key,label,topic,desc,a,detailA,b,detailB] of catalog.values()){
   const fields=signIn?`<form class="dealer-find" action="/resources/dealer-sign-in/" id="dealer-finder"><label for="store-slug">Dealership subdomain</label><input id="store-slug" name="store" required autocomplete="off" placeholder="your-dealership" pattern="[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*" maxlength="63"><span>.autodealership.si</span><button>Open dealer dashboard →</button><noscript>Open your store’s subdomain and select Dealer sign-in in its footer.</noscript></form><div class="catalog-actions">${button("/admin","Platform admin",true)}${button("/onboarding/","Engineer sign-in",true)}</div>`:"";
   const recommended=(related[prefix] || related.contact).filter(k=>k!==key).slice(0,2);
   const notes = isPlanned(key) ? "Planned" : "";
-  page(key,isaProduct?label+" · "+topic:label,desc,`<section class="catalog-hero"><div>${heading(topic,label,desc,notes)}<div class="catalog-actions">${heroAction(key)}${!signIn&&key!=="contact"?button("/contact/","Talk to our team",true):""}</div>${fields}</div>
-  <div class="catalog-notes"><section><h2>${plain(a)}</h2><p>${plain(detailA)}</p></section><section><h2>${plain(b)}</h2><p>${plain(detailB)}</p></section></div></section>
-  <section class="catalog-related"><h2>Explore next</h2>${tiles(recommended)}</section>`,trail);
+  const heroTitle=key==="company/our-approach"?"From a vehicle listing to a showroom visit":label;
+  const body=editorialPage({key,trail:crumbs(trail),heading:heroTitle,desc,topic,actions:heroAction(key),fields,status:notes,related:tiles(recommended)});
+  page(key,isaProduct?label+" · "+topic:label,desc,body,trail);
 }
 for(const [key,[label,title,desc]] of Object.entries(category)){
   const descriptor=nav.find(item=>item[0]===key);
@@ -127,14 +128,15 @@ for(const [key,[label,title,desc]] of Object.entries(category)){
   }else{
     body=descriptor[2].map(([heading,keys])=>`<section class="catalog-collection"><h2>${plain(heading)}</h2>${tiles(keys)}</section>`).join("");
   }
-  page(key,title,desc,`<section class="catalog-overview">${heading(label,title,desc,key==="oem"?"Coming Soon":"")}${body}</section>`,[[label,null]]);
+  const trail=[[label,null]];
+  page(key,title,desc,editorialPage({key,trail:crumbs(trail),heading:title,desc,topic:label,actions:button(meeting,"Book a walkthrough"),status:key==="oem"?"Coming Soon":"",collection:body}),trail);
 }
 for(const make of makes){
   const key=brandPath(make);
   const desc=`AutoDealership.SI’s ${make} OEM website program is Coming Soon. Certification is a future milestone and dealer enrollment has yet to open.`;
-  const detail=`<section class="catalog-hero"><div>${heading("Manufacturer programs", make+" websites",desc,"Coming Soon")}<div class="catalog-actions">${button(meeting,"Discuss this manufacturer")}${button("/oem/","View all makes",true)}</div></div>
-  <div class="catalog-notes"><section><h2>What your team can review</h2><p>Explore the franchise showroom, inventory feed and artwork review process in a guided demonstration.</p></section><section><h2>Before enrollment</h2><p>Bring the current website program requirements from your ${plain(make)} representative. Enrollment and eligibility for reimbursement depend on the manufacturer’s written approval.</p></section></div></section>`;
-  page(key,make+" OEM program · Coming Soon",desc,detail,[["OEM programs","/oem/"],[make,null]],true);
+  const trail=[["OEM programs","/oem/"],[make,null]];
+  const detail=editorialPage({key,trail:crumbs(trail),heading:make+" websites",desc,topic:"Manufacturer programs",actions:button(meeting,"Discuss this manufacturer")+button("/oem/","View all makes",true),status:"Coming Soon"});
+  page(key,make+" OEM program · Coming Soon",desc,detail,trail,true);
 }
 // Preserve hand-authored sections and commerce pages while updating their shared header.
 for (const entry of ["index.html","ads-management/index.html","signup.html"]) {
@@ -143,6 +145,14 @@ for (const entry of ["index.html","ads-management/index.html","signup.html"]) {
   if(!html.includes('href="/navigation.css'))html=html.replace("</head>",assets+"</head>");
   html=html.replace(/<main(?=[ >])(?![^>]* id="page-content")/,'<main id="page-content"');
   if(entry==="ads-management/index.html")html=html.replace('<p class="eyebrow">Managed advertising</p>','<p class="eyebrow">Campaign Studio · Managed advertising</p>');
+  if(!html.includes('href="/editorial.css'))html=html.replace("</head>",'<link rel="stylesheet" href="/editorial.css?v=1"></head>');
+  html=html.replace(/<!--sales-editorial-->[\s\S]*?<!--end-sales-editorial-->/g,"");
+  if(entry!=="signup.html"){
+    const key=entry==="index.html"?"home":"ads-management";
+    html=html.replace("</main>","<!--sales-editorial-->"+commerceEditorial(key)+"<!--end-sales-editorial--></main>");
+  }else{
+    html=html.replace("</main>",'<!--sales-editorial--><section class="es-commerce"><div class="es-wrap es-story"><h2>What happens after signup?</h2><p>Book your onboarding meeting with the team. Bring your inventory source, dealership contact details and the name of the person who manages your domain. You can review your showroom on a staging address before pointing your customers to it.</p><a class="es-source" href="/company/our-approach/">See how onboarding works →</a></div></section><!--end-sales-editorial--></main>');
+  }
   writeFileSync(file,html);
 }
 writeFileSync(join(root,"sitemap.xml"),`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${[...indexable].sort().map(path=>`  <url><loc>${origin}${path}</loc></url>`).join("\n")}\n</urlset>\n`);

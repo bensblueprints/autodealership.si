@@ -1,0 +1,92 @@
+[
+  {
+    "name": "approach",
+    "prompt": "Create one premium editorial automotive photograph, wide landscape 3:2. Real camera, rich analog film color, pale warm highlights and deep blue-black shadows. No people, faces, silhouettes or human reflections. No visible writing, words, logos, emblems, numbers, copied brand badges, signage, interface, graphics or watermarks. Natural proportions, no collage. View from the dealer's delivery bay across a rust-red late-model wagon, three-quarter rear in the right foreground, towards a tall glass wall, afternoon light stretching over the polished floor, its line drawing the eye towards the showroom. A visual about the distance from an online listing to the actual keys.",
+    "job_id": "d91451a3-b910-45c9-8363-bcf9c897df8f",
+    "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3FexRxU2V7FefQUvOnG7eFCKfmw/hf_20261127_114305_d91451a3-b910-45c9-8363-bcf9c897df8f.webp",
+    "references": [],
+    "revision": 1,
+    "provider": "Higgsfield",
+    "model": "gpt_image_2_6",
+    "review": "Reviewed individually and against the automotive photo set. Red wagon in a sunlit delivery bay.",
+    "hashes": {
+      "approach.webp": "c101d05168207f7d2cb157c8cd80f534ce5c7192b29ba69b8a13a686dfc45f10"
+    },
+    "published_assets": {
+      "sales-site\\editorial\\approach-small.webp": "378fe38f605dd1d120261e053de0064a1b4f94f76b8501b72205e71368cc6998",
+      "sales-site\\editorial\\approach.webp": "2424dcd939129d39e7a766354ea603fec354fb63dcf592a6d221bc4ebedaaed2"
+    }
+  },
+  {
+    "name": "lot",
+    "prompt": "Create one premium editorial automotive photograph, wide landscape 3:2. Real camera, rich analog film color, pale warm highlights and deep blue-black shadows. No people, faces, silhouettes or human reflections. No visible writing, words, logos, emblems, numbers, copied brand badges, signage, interface, graphics or watermarks. Natural proportions, no collage. Independent Midwest vehicle lot at opening time shot from an elevated side angle. A neat diagonal of deep blue and pearl-white used sedans and trucks curves across charcoal asphalt. Small brick showroom with open bay, crisp early sun, a real modest working dealership.",
+    "job_id": "657e2990-ada6-4cd9-a699-16e4be965778",
+    "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3FexRxU2V7FefQUvOnG7eFCKfmw/hf_20261127_114516_657e2990-ada6-4cd9-a699-16e4be965778.webp",
+    "references": [],
+    "revision": 1,
+    "provider": "Higgsfield",
+    "model": "gpt_image_2_6",
+    "review": "Reviewed individually and against the automotive photo set. Outdoor inventory row with brick surroundings.",
+    "hashes": {
+      "lot.webp": "7e185db53dc8a021d949fe02bb8cd6e5afc27a836628c9c13824b42307480369"
+    },
+    "published_assets": {
+      "sales-site\\editorial\\lot-small.webp": "817b61094b5c7737032d89f53e66e8a69952fa095f0a4a82a268ef3f9e0ebab6",
+      "sales-site\\editorial\\lot.webp": "22e95d09f8d0be8da84a29c6b108ab0dd2d5ad7512aea9c53fd17ddf156d292f"
+    }
+  },
+  {
+    "name": "desk",
+    "prompt": "Create one premium editorial automotive photograph, wide landscape 3:2. Real camera, rich analog film color, pale warm highlights and deep blue-black shadows. No people, faces, silhouettes or human reflections. No visible writing, words, logos, emblems, numbers, copied brand badges, signage, interface, graphics or watermarks. Natural proportions, no collage. Tight editorial still life at an auto sales desk. One modern black telephone handset on its cradle, a blank charcoal stock tag and a single car key beside a muted rust writing pad; the reflected blue bodywork of a real car beyond the glass. Directional window light, elegant tactile close focus.",
+    "job_id": "cde72013-49d9-45d2-aebb-835b7c576a7e",
+    "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3FexRxU2V7FefQUvOnG7eFCKfmw/hf_20261127_114517_cde72013-49d9-45d2-aebb-835b7c576a7e.webp",
+    "references": [],
+    "revision": 1,
+    "provider": "Higgsfield",
+    "model": "gpt_image_2_6",
+    "review": "Reviewed individually and against the automotive photo set. Desk phone and car keys.",
+    "hashes": {
+      "desk.webp": "38fa7121025d778374396469d9afe829589c81f24e923dff72ec218070e73abf"
+    },
+    "published_assets": {
+      "sales-site\\editorial\\desk-small.webp": "e3eebc723a95b6fc1dce66552461c86d62fcdaae5a4d586f7f63cb7bd80656e7",
+      "sales-site\\editorial\\desk.webp": "c2086b4f83467bae682dec992b44356be1ec5ca3f1ccc0262f078c0a36159cf2"
+    }
+  },
+  {
+    "name": "franchise",
+    "prompt": "Create one premium editorial automotive photograph, wide landscape 3:2. Real camera, rich analog film color, pale warm highlights and deep blue-black shadows. No people, faces, silhouettes or human reflections. No visible writing, words, logos, emblems, numbers, copied brand badges, signage, interface, graphics or watermarks. Natural proportions, no collage. Wide interior of a clean, unbranded franchise service reception and display gallery. One pearl-white crossover on the floor at middle distance, precise architectural glass mullions, concrete and brushed aluminum, reflected soft dawn light, spare and credible.",
+    "job_id": "1cf0ad6f-558b-4ae0-ab99-c3668ab1fa10",
+    "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3FexRxU2V7FefQUvOnG7eFCKfmw/hf_20261127_114516_1cf0ad6f-558b-4ae0-ab99-c3668ab1fa10.webp",
+    "references": [],
+    "revision": 1,
+    "provider": "Higgsfield",
+    "model": "gpt_image_2_6",
+    "review": "Reviewed individually and against the automotive photo set. White crossover in a glass showroom.",
+    "hashes": {
+      "franchise.webp": "0c1897be9b69fc5c701dfeff2461c2b33d5c4da3155be6db367f2e54e1903f1d"
+    },
+    "published_assets": {
+      "sales-site\\editorial\\franchise-small.webp": "1beaadd297040e6ee3f529078ae9dbacc5f5514af77fafbb144c16436069ec33",
+      "sales-site\\editorial\\franchise.webp": "fa11c7f2db25ddd6114b0edbc273070ee400f5ceb95ad80e1c7796523acc949a"
+    }
+  },
+  {
+    "name": "road",
+    "prompt": "Create one premium editorial automotive photograph, wide landscape 3:2. Real camera, rich analog film color, pale warm highlights and deep blue-black shadows. No people, faces, silhouettes or human reflections. No visible writing, words, logos, emblems, numbers, copied brand badges, signage, interface, graphics or watermarks. Natural proportions, no collage. A single graphite coupe sits at the apex of a gently bending road on a Midwestern hillside. Aerial oblique wide image, quiet evergreen and wheat, a pale horizon and a thin orange lane marker, sharp photojournalistic details. The road should feel grounded, not a video game.",
+    "job_id": "2b59b7d7-c7c1-4e60-8781-aea701f58c8b",
+    "url": "https://d8j0ntlcm91z4.cloudfront.net/user_3FexRxU2V7FefQUvOnG7eFCKfmw/hf_20261127_114519_2b59b7d7-c7c1-4e60-8781-aea701f58c8b.webp",
+    "references": [],
+    "revision": 1,
+    "provider": "Higgsfield",
+    "model": "gpt_image_2_6",
+    "review": "Reviewed individually and against the automotive photo set. Graphite coupe on a winding road.",
+    "hashes": {
+      "road.webp": "c23063d11d11dca61ac77a59dc79c6b6f325214705335f59f7d3ee7068d18be5"
+    },
+    "published_assets": {
+      "sales-site\\editorial\\road-small.webp": "8302d872b3a386b7db299208998f7a578ba0887827817998e0b6dc2cb2d0c3d7",
+      "sales-site\\editorial\\road.webp": "b8e5eac718864e30d0a8762bdd5a02c2e67f3b38816e574aeb8116440a4c003b"
+    }
+  }
+]
