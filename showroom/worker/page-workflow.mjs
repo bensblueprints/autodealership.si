@@ -21,7 +21,7 @@ export async function pageReviewQueue(db){
   });
 }
 function editablePage(page) {
-  return {title:page.title, body:page.body, url:page.url, enabled:page.enabled};
+  return {title:page.title, body:page.body, url:page.url, enabled:page.enabled,...(page.blocks?.length?{blocks:DealerSitePages.blocksForDraft(page.blocks)}:{})};
 }
 
 function validatePageDraft(value) {
@@ -32,7 +32,8 @@ function validatePageDraft(value) {
   const title=value.title.trim(), body=value.body.trim(), url=value.url.trim();
   if (!title) throw Error("Enter a page title.");
   if (url && !DealerSitePages.safeUrl(url)) throw Error("Enter a valid HTTPS destination without embedded credentials.");
-  return {title,body,url:url ? DealerSitePages.safeUrl(url) : "",enabled:value.enabled};
+  const blocks=DealerSitePages.blocksForDraft(value.blocks);
+  return {title,body,url:url ? DealerSitePages.safeUrl(url) : "",enabled:value.enabled,...(blocks.length?{blocks}:{})};
 }
 
 export async function pageWorkflow({db,key,method,input,tenant,actor,manager,exportHistory,fingerprint,uuid}) {
@@ -81,6 +82,8 @@ export async function pageWorkflow({db,key,method,input,tenant,actor,manager,exp
     if (input?.version!==version) return fail(409,"Someone changed this page. Reload the editor to see the latest version.");
     const action=input.action;
     const snapshot=draft && editablePage(draft.content.values), reviewStamp=draft?.content.revision||draft?.stamp;
+    if(snapshot && (action==="submit" || action==="publish") && snapshot.blocks?.some(block=>!block.heading || !block.text))
+      return fail(422,"Complete each content block or remove it before sending the page for publication.");
     const event=(action,note="",edition=null)=>conn.query(`INSERT INTO website_page_review_events(id,page_key,action,draft_stamp,actor,note,content,edition)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,[uuid(),key,action,reviewStamp,actor,note,{...snapshot,preparedBy:draft.actor},edition]);
     if(pending && ["draft","restore","discard"].includes(action))return fail(409,"Withdraw the review request or return it to the editor before changing the draft.");
@@ -90,7 +93,7 @@ export async function pageWorkflow({db,key,method,input,tenant,actor,manager,exp
       if(action==="submit"){
         if(pending||returned)return fail(409,"Save a revised draft before requesting review again.");
         if(draft.content.base!==liveStamp)return fail(409,"The live page changed. Review and save the draft again.");
-        if(base.editorial && snapshot.enabled && !snapshot.body)return fail(422,"Add page content before requesting review.");
+        if(base.editorial && snapshot.enabled && !snapshot.body && !snapshot.blocks?.length)return fail(422,"Add page content before requesting review.");
         state="pending";
       }else{
         if(!pending)return fail(409,"This page is no longer waiting for review.");
@@ -117,9 +120,9 @@ export async function pageWorkflow({db,key,method,input,tenant,actor,manager,exp
         if (!values) return fail(404,"Revision unavailable.");
         values=editablePage(values);
       } else {
-        try {values=validatePageDraft(input.values);} catch(error) {return fail(422,error.message);}
+        try {values=validatePageDraft({...input.values,blocks:input.values?.blocks===undefined?(snapshot||live).blocks:input.values.blocks});} catch(error) {return fail(422,error.message);}
       }
-      if(returned && ["title","body","url","enabled"].every(field=>values[field]===snapshot[field]))return fail(422,"Revise the draft to address the review note.");
+      if(returned && JSON.stringify(editablePage(values))===JSON.stringify(snapshot))return fail(422,"Revise the draft to address the review note.");
       await conn.query(`INSERT INTO website_page_editions(page_key,edition,content,stamp,actor) VALUES($1,0,$2,$3,$4)
         ON CONFLICT(page_key,edition) DO UPDATE SET content=excluded.content,stamp=excluded.stamp,actor=excluded.actor,recorded_at=now()`,
         [key,{values,base:liveStamp},uuid(),actor]);
@@ -130,11 +133,11 @@ export async function pageWorkflow({db,key,method,input,tenant,actor,manager,exp
       if(returned)return fail(409,"Save a revised draft before publishing.");
       if(governed && input.checked!==true)return fail(422,"Review the saved copy, visibility and destination before approving.");
       const values=snapshot;
-      if (base.editorial && values.enabled && !values.body) return fail(422,"Add page content before publishing.");
+      if (base.editorial && values.enabled && !values.body && !values.blocks?.length) return fail(422,"Add page content before publishing.");
       const last=editions.find(e=>e.edition>0);
       let next=(last?.edition||0)+1;
       const record=(number,content,by)=>conn.query("INSERT INTO website_page_editions(page_key,edition,content,stamp,actor) VALUES($1,$2,$3,$4,$5)",[key,number,content,uuid(),by]);
-      if (!last || ["title","body","url","enabled"].some(field=>last.content[field]!==live[field]))
+      if (!last || JSON.stringify(editablePage(last.content))!==JSON.stringify(live))
         await record(next++,live,"Previous site content");
       await record(next,values,actor);
       await event(governed?"approve":"publish","",next);

@@ -62,14 +62,34 @@ const DealerSitePages=(()=>{
   function safeUrl(value){
     try{const u=new URL(value);return u.protocol==="https:" && !u.username && !u.password?u.href:"";}catch{return "";}
   }
+  const blockKinds={section:"Text section",checklist:"Checklist",question:"Question and answer"};
+  function blocksForDraft(input){
+    if(input===undefined)return [];
+    if(!Array.isArray(input)||input.length>12)throw Error("Use up to 12 content blocks per page.");
+    return input.map((b,i)=>{
+      if(!b || !Object.hasOwn(blockKinds,b.kind)||typeof b.heading!=="string"||b.heading.length>160||typeof b.text!=="string"||b.text.length>3000)
+        throw Error("Check the type, heading (160 characters) and text (3,000 characters) of block "+(i+1)+".");
+      return {kind:b.kind,heading:b.heading.trim(),text:b.text.trim()};
+    });
+  }
+  function blockMarkup(blocks=[]){
+    const escape=s=>s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    return blocks.filter(b=>b.heading && b.text && Object.hasOwn(blockKinds,b.kind)).map(b=>{
+      const heading=escape(b.heading),text=escape(b.text);
+      if(b.kind==="question")return '<details class="page-question"><summary>'+heading+'</summary><p>'+text+'</p></details>';
+      const body=b.kind==="checklist"?"<ul>"+text.split(/\r?\n/).map(line=>line.trim()).filter(Boolean).map(line=>"<li>"+line+"</li>").join("")+"</ul>":"<p>"+text+"</p>";
+      return '<section class="page-copy-section"><h2>'+heading+"</h2>"+body+"</section>";
+    }).join("");
+  }
   function list(settings={},tenant=true,apr=true){
     const saved=settings?.pages||{};
     const overrides=Array.isArray(saved)?Object.fromEntries(saved.filter(p=>p?.key).map(p=>[p.key,p])):saved;
     return catalog.map(base=>{
       const edit=overrides[base.key],body=edit?.body??base.body;
       const enabled=edit?(edit.enabled!==false):base.key==="all-inventory"||templates[templateKey(settings.profile?.siteTemplate)].pages.includes(base.key)||(!tenant&&!base.editorial);
-      return {...base,title:edit?.title?.trim()||base.title,body,
-        enabled:enabled && (!base.editorial || !!body.trim()) && (apr || !requiresApr.has(base.key)),
+      const blocks=Array.isArray(edit?.blocks)?edit.blocks.filter(b=>b && Object.hasOwn(blockKinds,b.kind) && typeof b.heading==="string" && typeof b.text==="string" && b.heading.trim() && b.text.trim()):[];
+      return {...base,title:edit?.title?.trim()||base.title,body,...(blocks.length?{blocks}:{}),
+        enabled:enabled && (!base.editorial || !!body.trim() || !!blocks.length) && (apr || !requiresApr.has(base.key)),
         url:safeUrl(edit?.url??(!tenant&&base.demoPath?demoOrigin+base.demoPath:""))};
     });
   }
@@ -82,7 +102,7 @@ const DealerSitePages=(()=>{
     incoming:car=>/in transit|incoming/i.test(car.status||""),
     "ev-inventory":car=>/^(electric|electricity|battery electric)$/i.test(car.fuel||"")
   };
-  return {catalog,list,safeUrl,requiresApr,inventoryFilters,templates,templateKey};
+  return {catalog,list,safeUrl,requiresApr,inventoryFilters,templates,templateKey,blockKinds,blocksForDraft,blockMarkup};
 })();
 if(typeof window!=="undefined"){
   const nativeRoutes=()=>window.postgresInventory && (window.clientSite || location.hostname==="demo.autodealership.si") && !location.pathname.startsWith("/clients/");

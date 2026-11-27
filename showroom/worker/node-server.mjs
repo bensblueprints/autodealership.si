@@ -870,7 +870,7 @@ createServer(async(req,res)=>{
           res.writeHead(301,{Location:page.path+(params.size?"?"+params:""),"Cache-Control":"no-cache"}).end();return;
         }
         assetUrl="/page.html";
-        seo={title:page.title+" | "+displayName,description:(page.body||page.title).slice(0,240),path:page.path};
+        seo={title:page.title+" | "+displayName,description:(page.body||page.blocks?.[0]?.text||page.title).slice(0,240),path:page.path};
         const filter=registry.inventoryFilters[page.key];
         if(filter){
           assetUrl="/index.html";
@@ -978,10 +978,12 @@ createServer(async(req,res)=>{
           .replace('href="#dealer-contact"',()=> 'href="'+esc(page.path)+'#dealer-contact"')
           .replace('href="#top"','href="/"').replace('<h2>Explore inventory<span>.</span></h2>',()=>'<h1 class="inventory-page-title">'+esc(page.title)+'</h1><p class="inventory-page-intro">'+esc(page.body)+'</p>'+(page.url?'<a href="'+esc(page.url)+'">More from the dealership</a>':""))
           .replace('<div class="cards" id="cards"></div>',()=>'<div class="cards" id="cards">'+pageTools+'</div>');
+        if(page.blocks?.length)content=content.replace("</main>",()=>'<div class="page-blocks inventory-page-blocks">'+worker.DealerSitePages.blockMarkup(page.blocks)+'</div></main>');
       }else if(page){
         content=content.replace("<head>",'<head><base href="/">').replace('href="#dealer-contact"',()=> 'href="'+esc(page.path)+'#dealer-contact"')
           .replace('<h1 id="heading"></h1>',()=>'<h1 id="heading">'+esc(page.title)+'</h1>')
           .replace('<p id="intro"></p>',()=>'<p id="intro">'+esc(page.body)+'</p>')
+          .replace('<div id="page-blocks" class="page-blocks"></div>',()=>'<div id="page-blocks" class="page-blocks">'+worker.DealerSitePages.blockMarkup(page.blocks)+'</div>')
           .replace('<div id="tools"></div>',()=>'<div id="tools">'+pageTools+'</div>');
       }
       if(seo && publicLocation){

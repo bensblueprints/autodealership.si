@@ -5,8 +5,48 @@
   let active="", doc, generation=0, busy=false, conflicted=false;
   const catalog=()=>window.DealerPages.defaults;
   const control=(tag,text)=>Object.assign(document.createElement(tag),{textContent:text});
-  const read=()=>({title:fields.title.value,body:fields.body.value,url:fields.url.value,enabled:fields.enabled.checked});
-  const equal=(first,second)=>["title","body","url","enabled"].every(key=>first[key]===second[key]);
+  const blockList=$("pageBlockList"),blockKind=$("pageBlockType");
+  const readBlocks=()=>Array.from(blockList.children,row=>({kind:row.dataset.kind,heading:row.querySelector("input").value,text:row.querySelector("textarea").value}));
+  const read=()=>({title:fields.title.value,body:fields.body.value,url:fields.url.value,enabled:fields.enabled.checked,blocks:readBlocks()});
+  const blockOrder=values=>JSON.stringify((values.blocks||[]).map(b=>[b.kind,b.heading,b.text]));
+  const equal=(first,second)=>["title","body","url","enabled"].every(key=>first[key]===second[key]) && blockOrder(first)===blockOrder(second);
+  function blockField(label,tag,value,max){
+    const wrap=control("label",label),input=document.createElement(tag);input.value=value;input.maxLength=max;
+    if(tag==="textarea")input.rows=3;wrap.append(input);return wrap;
+  }
+  function blockRow({kind,heading="",text=""}){
+    const row=document.createElement("fieldset");row.className="page-block-row";row.dataset.kind=kind;
+    const legend=control("legend",DealerSitePages.blockKinds[kind]),actions=document.createElement("div");
+    for(const [action,label] of [["up","Move up"],["down","Move down"],["remove","Remove"]]){
+      const button=control("button",label);button.type="button";button.dataset.action=action;button.className="quiet";actions.append(button);
+    }
+    actions.className="page-block-order";
+    row.append(legend,blockField(kind==="question"?"Question":"Heading","input",heading,160),
+      blockField(kind==="question"?"Answer":kind==="checklist"?"Items (one per line)":"Paragraphs","textarea",text,3000),actions);
+    return row;
+  }
+  function updateBlocks(locked){
+    const rows=Array.from(blockList.children);
+    blockKind.disabled=locked;$("addPageBlock").disabled=locked || rows.length>=12;
+    rows.forEach((row,i)=>{
+      row.disabled=locked;
+      row.querySelector("legend").textContent=(i+1)+". "+DealerSitePages.blockKinds[row.dataset.kind];
+      row.querySelector('[data-action="up"]').disabled=i===0;row.querySelector('[data-action="down"]').disabled=i===rows.length-1;
+    });
+  }
+  $("addPageBlock").onclick=()=>{
+    const row=blockRow({kind:blockKind.value});blockList.append(row);form.dispatchEvent(new Event("input"));row.querySelector("input").focus();
+    $("pageBlockStatus").textContent="Added "+DealerSitePages.blockKinds[row.dataset.kind].toLowerCase()+".";
+  };
+  blockList.onclick=e=>{
+    const button=e.target.closest("button[data-action]");if(!button)return;
+    const row=button.closest(".page-block-row");let focusTarget=row;
+    if(button.dataset.action==="up" && row.previousElementSibling)blockList.insertBefore(row,row.previousElementSibling);
+    if(button.dataset.action==="down" && row.nextElementSibling)blockList.insertBefore(row.nextElementSibling,row);
+    if(button.dataset.action==="remove"){focusTarget=row.nextElementSibling||row.previousElementSibling;row.remove();}
+    form.dispatchEvent(new Event("input"));(focusTarget?.querySelector("input")||$("addPageBlock")).focus();
+    $("pageBlockStatus").textContent=button.dataset.action==="remove"?"Block removed.":"Block order updated.";
+  };
   const saved=()=>doc.draft?.values||doc.live;
   const dirty=()=>doc && !equal(read(),saved());
   const date=value=>new Date(value).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"});
@@ -57,13 +97,16 @@
     const button=e.target.closest("[data-review-key]");if(!button||busy)return;
     remember();openPage(button.dataset.reviewKey);
   };
-  const missingContent=()=>doc.requiresBody && fields.enabled.checked && !fields.body.value.trim();
+  const missingContent=()=>{
+    const blocks=readBlocks();return blocks.some(b=>!b.heading.trim()||!b.text.trim()) || (doc.requiresBody && fields.enabled.checked && !fields.body.value.trim() && !blocks.length);
+  };
   function updateControls(){
     if(!doc)return;
     $("pageControls").disabled=busy;
     const pending=doc.review?.state==="pending", returned=doc.review?.state==="returned", governed=doc.franchise||pending;
     for(const k of ["title","body","url"])fields[k].readOnly=pending;
     fields.enabled.disabled=pending;
+    updateBlocks(pending||busy);
     $("savePageDraft").disabled=pending||conflicted || (!dirty() && !doc.draft?.stale);
     $("discardPage").hidden=pending;
     $("submitPage").hidden=pending || (doc.franchise && doc.manager && !returned);
@@ -82,7 +125,7 @@
   }
   function fill(values){
     for(const field of ["title","body","url"])fields[field].value=values[field];
-    fields.enabled.checked=values.enabled;
+    fields.enabled.checked=values.enabled;blockList.replaceChildren(...(values.blocks||[]).map(blockRow));$("pageBlockStatus").textContent="";
   }
   function renderHistory(){
     const list=$("pageRevisions");list.replaceChildren();$("pageHistory").hidden=false;
@@ -148,12 +191,20 @@
     const visibility=isLive?(doc.visible?"Visible to shoppers":"Hidden from shoppers"):
       !values.enabled?"Hidden from shoppers":missingContent()?"Page text required to publish":!doc.allowsPage?"Hidden while APR financing is disabled":"Visible when published";
     box.replaceChildren(control("small",visibility),
-      control("h4",values.title),control("p",values.body||"No page text."));
+      control("h4",values.title));
+    if(values.body)box.append(control("p",values.body));
+    if(values.blocks?.length){
+      const blocks=document.createElement("div");blocks.className="page-block-preview";
+      for(const b of values.blocks){
+        const section=document.createElement("section");section.append(control("small",DealerSitePages.blockKinds[b.kind]),control("strong",b.heading||"Heading required"),control("p",b.text||"Text required"));blocks.append(section);
+      }
+      box.append(blocks);
+    }
     if(values.url)box.append(control("small","Action destination"),control("p",values.url));
   }
   $("reviewPage").onclick=()=>{
     preview($("pageBefore"),doc.live,true);preview($("pageAfter"),read());updateControls();
-    $("pageReviewStatus").textContent=missingContent()?"Add page content before publishing this page.":dirty()?"Save your edits as a draft before publishing.":doc.draft?.stale?"Save the reviewed draft again before publishing.":doc.draft?"Publishing applies this saved draft to your dealership website.":"There is no draft to publish.";
+    $("pageReviewStatus").textContent=missingContent()?"Add page content and finish any incomplete blocks before publishing.":dirty()?"Save your edits as a draft before publishing.":doc.draft?.stale?"Save the reviewed draft again before publishing.":doc.draft?"Publishing applies this saved draft to your dealership website.":"There is no draft to publish.";
     if(doc.review?.state==="pending")$("pageReviewStatus").textContent=doc.manager?"Approve the saved draft or return it with a note.":"This saved draft is awaiting a dealership administrator.";
     else if(doc.review?.state==="returned")$("pageReviewStatus").textContent="Revise the draft to address the manager’s note.";
     else if(doc.franchise && !doc.manager && doc.draft)$("pageReviewStatus").textContent="Request manager review from the editor after saving your draft.";

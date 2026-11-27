@@ -208,3 +208,15 @@ main>.desk-nav .desk-group button.active{box-shadow:inset 3px 0 currentColor}
 @media(max-width:620px){.lot-queues{grid-template-columns:repeat(2,minmax(0,1fr))}.lot-queues button{padding:10px 12px}.lot-vehicle{padding:12px;grid-template-columns:60px minmax(0,1fr);gap:10px}.lot-vehicle .thumb{width:60px;height:52px}.lot-aside{grid-column:2;flex-direction:row;align-items:baseline;flex-wrap:wrap;text-align:left;gap:6px 12px}.lot-actions{grid-column:1/-1}.lot-actions .quiet{min-height:38px}}
 @media(max-width:360px){.lot-filters{grid-template-columns:1fr}.lot-vehicle{grid-template-columns:minmax(0,1fr)}.lot-vehicle .thumb{display:none}.lot-aside{grid-column:1}}
 .lot-vehicle .missing-cover{display:grid;place-items:center;color:var(--sub);font-size:.76rem;border:1px dashed var(--line)}
+
+.page-block-editor {min-width:0; margin:14px 0; padding:16px; background:var(--panel); border:1px solid var(--line); border-radius:12px}
+.page-block-tools {display:flex; flex-wrap:wrap; align-items:end; gap:10px}
+.page-block-tools h4 {flex:1 0 100%; margin:0; font-size:1rem}
+#pageBlockList {display:grid; gap:12px}
+#pageEditor .page-block-row {display:grid; gap:10px; min-width:0; margin:14px 0 0; padding:14px; border:1px solid var(--line); border-radius:8px}
+.page-block-row legend {color:var(--text); font-size:.9rem; font-weight:650; padding-inline:5px}
+.page-block-order {display:flex; flex-wrap:wrap; gap:6px}
+.page-block-order button {min-height:34px}
+#pageBlockStatus:not(:empty) {display:block; margin-top:8px}
+.page-block-preview section {display:grid; gap:4px; margin-top:14px; padding-top:10px; border-top:1px solid var(--line); overflow-wrap:anywhere}
+.page-block-preview p {white-space:pre-line}

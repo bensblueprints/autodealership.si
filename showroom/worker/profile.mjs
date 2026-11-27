@@ -47,7 +47,10 @@ function validateProfile(input){
       if(field==="url" && entry.url){const u=new URL(entry.url);if(u.username||u.password)throw Error("Invalid destination URL.");}
     }
     if("enabled" in page){if(typeof page.enabled!=="boolean")throw Error("Invalid page visibility.");entry.enabled=page.enabled;}
-    if(pageKeys.get(key).editorial && entry.enabled!==false && !entry.body)throw Error("Add dealership content before publishing this page.");
+    const blocks=DealerSitePages.blocksForDraft(page.blocks);
+    if(blocks.some(b=>!b.heading || !b.text))throw Error("Complete all published page blocks.");
+    if(blocks.length)entry.blocks=blocks;
+    if(pageKeys.get(key).editorial && entry.enabled!==false && !entry.body && !blocks.length)throw Error("Add dealership content before publishing this page.");
     pages[key]=entry;
   }
   const options={};
@@ -63,7 +66,7 @@ function pageOverrides(value){
 }
 function samePageOverrides(first,second){
   // Preserve the distinction between an inherited field and an explicit override.
-  const signature=pages=>JSON.stringify(Object.keys(pages).sort().map(key=>[key,...["title","body","url","enabled"].map(k=>pages[key]?.[k]??null)]));
+  const signature=pages=>JSON.stringify(Object.keys(pages).sort().map(key=>[key,...["title","body","url","enabled"].map(k=>pages[key]?.[k]??null),DealerSitePages.blocksForDraft(pages[key]?.blocks)]));
   return signature(first)===signature(second);
 }
 async function dealershipProfile(request,env){
@@ -90,7 +93,14 @@ async function dealershipProfile(request,env){
       const current=pageOverrides(prior.pages);
       if(input.pages!==undefined && !samePageOverrides(current,pageOverrides(input.pages)))return profileReply({error:"Review and publish franchise page changes in Website pages."},409);
       settings=validateProfile({...input,pages:{}});settings.pages=current;
-    }else settings=validateProfile(input);
+    }else {
+      const current=pageOverrides(prior.pages),pages=pageOverrides(input.pages??current);
+      // Clients that predate content blocks can still update an existing page.
+      for(const [key,value] of Object.entries(pages)){
+        if(value && !Object.hasOwn(value,"blocks") && current[key]?.blocks?.length)pages[key]={...value,blocks:current[key].blocks};
+      }
+      settings=validateProfile({...input,pages});
+    }
     if(typeof revision!=="string" || !revision)return profileReply({error:"Reload the profile before saving."},409);
     const object=await bucket.put(profileKey,JSON.stringify(settings),{onlyIf:revision==="0"?{etagDoesNotMatch:"*"}:{etagMatches:revision}});
     if(!object)return profileReply({error:"Another edit was saved. Reopen settings to review it."},409);

@@ -47,3 +47,15 @@ body .template-art-hero .herotext{max-width:48%;overflow-wrap:anywhere}
   .template-links a,.template-links button {padding:12px;min-height:55px}
   [data-store-template="independent"] .herotext {max-width:95%}
 }
+
+.page-blocks:not(:empty) {display:grid; gap:14px; max-width:54rem; margin:24px 0 32px}
+.inventory-page-blocks:not(:empty) {max-width:72rem; margin:28px auto; padding:0 5vw}
+.page-copy-section,.page-question {min-width:0; padding:clamp(16px,3vw,28px); border:1px solid var(--hair); border-radius:12px; background:var(--card); color:var(--ink); overflow-wrap:anywhere}
+.page-copy-section h2 {margin:0 0 10px; font-size:clamp(1.2rem,2.4vw,1.65rem); line-height:1.25}
+.page-blocks p {white-space:pre-line; margin:0; line-height:1.6}
+.page-copy-section ul {margin:0; padding-inline-start:1.35em; line-height:1.6}
+.page-copy-section li+li {margin-top:5px}
+.page-question {padding:0}
+.page-question summary {padding:16px 20px; cursor:pointer; font-weight:650}
+.page-question p {padding:0 20px 18px}
+.page-question summary:focus-visible {outline:2px solid var(--acid); outline-offset:2px; border-radius:10px}

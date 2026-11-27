@@ -98,6 +98,7 @@
 <div class="page-state"><span id="pageLiveState"></span><span id="pageDraftState"></span></div><p id="pageDecision" hidden></p>
 <label>Page title<input name="title" required maxlength="150"></label>
 <label>Page content<textarea name="body" rows="7" maxlength="12000"></textarea></label>
+<section class="page-block-editor" aria-labelledby="page-block-heading"><div class="page-block-tools"><h4 id="page-block-heading">Content blocks</h4><label>Block type<select id="pageBlockType"><option value="section">Text section</option><option value="checklist">Checklist</option><option value="question">Question and answer</option></select></label><button type="button" class="quiet" id="addPageBlock">Add block</button></div><div id="pageBlockList"></div><small id="pageBlockStatus" role="status"></small></section>
 <label>External action link (optional)<input type="url" name="url" maxlength="4096" placeholder="https://"></label>
 <label class="page-enabled"><input type="checkbox" name="enabled">Show this page to shoppers when published</label>
 <div class="page-editor-buttons"><button class="primary" type="submit" id="savePageDraft">Save draft</button><button class="quiet" id="reviewPage" type="button">Review changes</button><button class="quiet" id="submitPage" type="button" hidden>Request manager review</button><button class="quiet" id="withdrawPage" type="button" hidden>Withdraw request</button><button class="quiet" id="discardPage" type="button">Discard edits</button></div>
@@ -108,7 +109,7 @@
 <dialog id="pageReviewDialog" aria-labelledby="page-review-heading"><header class="modalhead"><h2 id="page-review-heading">Review page changes</h2><button type="button" class="close" id="closePageReview" aria-label="Close preview">×</button></header>
 <div class="page-compare"><section><h3>Live version</h3><div id="pageBefore"></div></section><section><h3>Proposed version</h3><div id="pageAfter"></div></section></div>
 <p id="pageReviewStatus" role="status"></p>
-<label class="page-review-check" id="pageCheckWrap" hidden><input type="checkbox" id="pageChecked">I reviewed the copy, visibility and destination for this dealership.</label>
+<label class="page-review-check" id="pageCheckWrap" hidden><input type="checkbox" id="pageChecked">I reviewed the copy, content blocks, visibility and destination for this dealership.</label>
 <button type="button" class="primary" id="publishPage">Publish saved draft</button>
 <div id="pageReturnWrap" hidden><label for="pageReturnNote">Changes the editor needs to make</label><textarea id="pageReturnNote" rows="2" maxlength="1000"></textarea><button type="button" class="quiet" id="returnPage">Return for changes</button></div></dialog>
 </main>

@@ -97,11 +97,14 @@
     form.addEventListener("input",calculate);form.onsubmit=e=>e.preventDefault();
     form.append(output,el("small","Estimate before taxes and fees. Your lender determines the final terms."));calculate();parent.append(form);
   }
+  let renderedBlocks;
   function render(){
     const all=DealerPages.list(), page=all.find(p=>p.key===pageKey&&p.enabled);
     byId("tools").replaceChildren();byId("related").replaceChildren();
     byId("group").textContent=page?.group||"";byId("heading").textContent=page?.title||"Page unavailable";
     byId("intro").textContent=page?.body||"";document.title=byId("heading").textContent+" · "+Store.settings().dealerName;
+    const blocks=byId("page-blocks"),markup=DealerSitePages.blockMarkup(page?.blocks);
+    if(renderedBlocks!==markup){blocks.innerHTML=markup;renderedBlocks=markup;}
     if(!page)return;
     const tools=byId("tools");
     if(page.url){
