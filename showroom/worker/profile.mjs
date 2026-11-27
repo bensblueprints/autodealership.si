@@ -74,7 +74,12 @@ async function dealershipProfile(request,env){
   if(!bucket)return profileReply({error:"Shared profile storage is unavailable."},503);
   if(request.method==="GET"){
     const saved=await bucket.get(profileKey);
-    return profileReply(saved?{revision:saved.etag,settings:await saved.json()}:{revision:"0",settings:null});
+    if(!saved)return profileReply({revision:"0",settings:null});
+    const settings=await saved.json();
+    if(!env.publicPageSources || !settings.pages)return profileReply({revision:saved.etag,settings});
+    const pages=pageOverrides(settings.pages),trackedPages=Object.keys(pages).filter(k=>pages[k]?.evidenceEdition);
+    const review=await env.publicPageSources(settings.pages,settings.profile?.driveTimezone);
+    return profileReply({revision:saved.etag,settings:{...settings,pages:review.pages},trackedPages,pageState:review.withheld.sort().join(","),expiresAt:review.expiresAt});
   }
   if(request.method!=="PUT")return profileReply({error:"Unsupported method"},405);
   if(!env.privateAdmin && request.headers.get("oai-authenticated-user-email")?.toLowerCase()!=="benji@benjaminboyce.com")return profileReply({error:"Dealer administrator access required."},403);
@@ -87,6 +92,18 @@ async function dealershipProfile(request,env){
     if((previous?.etag??"0")!==revision)return profileReply({error:"Another edit was saved. Reopen settings to review it."},409);
     const prior=previous?await previous.json():{};
     const wasFranchise=prior.profile?.siteTemplate==="franchise",willBeFranchise=input.profile?.siteTemplate==="franchise";
+    const original=pageOverrides(prior.pages);
+    const protectedKeys=Object.keys(original).filter(k=>original[k]?.evidenceEdition);
+    if(protectedKeys.length && input.pages!==undefined){
+      const exposed=await env.publicPageSources(original,prior.profile?.driveTimezone);
+      const requested=pageOverrides(input.pages);
+      for(const k of protectedKeys){
+        if(!requested[k] || !samePageOverrides({[k]:requested[k]},{[k]:exposed.pages[k]}))
+          return profileReply({error:"Use Website pages to change source-reviewed content."},409);
+        requested[k]=original[k];
+      }
+      input.pages=requested;
+    }
     let settings;
     if(env.canReviewPages!==undefined && (wasFranchise || willBeFranchise)){
       if(wasFranchise!==willBeFranchise && !env.canReviewPages)return profileReply({error:"A dealership administrator must change the franchise template."},403);
@@ -101,9 +118,14 @@ async function dealershipProfile(request,env){
       }
       settings=validateProfile({...input,pages});
     }
+    for(const k of protectedKeys)settings.pages[k]=original[k];
     if(typeof revision!=="string" || !revision)return profileReply({error:"Reload the profile before saving."},409);
     const object=await bucket.put(profileKey,JSON.stringify(settings),{onlyIf:revision==="0"?{etagDoesNotMatch:"*"}:{etagMatches:revision}});
     if(!object)return profileReply({error:"Another edit was saved. Reopen settings to review it."},409);
+    if(protectedKeys.length){
+      const review=await env.publicPageSources(settings.pages,settings.profile?.driveTimezone);
+      return profileReply({revision:object.etag,settings:{...settings,pages:review.pages},trackedPages:protectedKeys,pageState:review.withheld.sort().join(","),expiresAt:review.expiresAt});
+    }
     return profileReply({revision:object.etag,settings});
   }catch(error){return profileReply({error:error.message||"Could not save the dealership profile."},400);}
 }

@@ -889,6 +889,7 @@ createServer(async(req,res)=>{
         storefront=registry.templateKey(settings.profile?.siteTemplate);
         showCash=settings.options?.cash!==false && settings.options?.pricing!==false;
         showAlternatives=settings.options?.relatedVehicles!==false;
+        settings.pages=(await worker.publicEvidencePages(db,settings.pages,settings.profile?.driveTimezone)).pages;
         sitePages=registry.list(settings,!!tenant,settings.finance!==false && settings.apr!==false).filter(item=>item.enabled);
       }
       if(template || legacy){
@@ -947,7 +948,7 @@ createServer(async(req,res)=>{
       }
     }
     if(!seo)res.setHeader("X-Robots-Tag","noindex");
-    const response=await worker.default.fetch(new Request(new URL(assetUrl,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,canReviewPages:!!managesUsers||clerkRole==="org:admin",offerSnapshot,visitByConfirmation,visitByNote,clientHasVin:async vin=>(await db.query("SELECT 1 FROM client_cars WHERE vin=$1",[vin])).rowCount>0});
+    const response=await worker.default.fetch(new Request(new URL(assetUrl,base),{method:req.method,headers,body}),{BUCKET:bucket,privateAdmin,publicPageSources:(pages,zone)=>worker.publicEvidencePages(db,pages,zone),canReviewPages:!!managesUsers||clerkRole==="org:admin",offerSnapshot,visitByConfirmation,visitByNote,clientHasVin:async vin=>(await db.query("SELECT 1 FROM client_cars WHERE vin=$1",[vin])).rowCount>0});
     if((tenant || (demoBrowse && seo)) && /html|javascript/.test(response.headers.get("content-type")||"") && req.method==="GET"){
       let content=await response.text();
       if(!clerkOrg && ["/dealer-login","/dealer-signin.html"].includes(route.pathname))content=content.replace("</main>",platformSignIn(tenant.slug)+"</main>");

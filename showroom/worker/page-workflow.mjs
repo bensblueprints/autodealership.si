@@ -18,7 +18,12 @@ export async function pageReviewQueue(db){
       content#>>'{review,by}' AS actor,recorded_at AS at FROM website_page_editions
       WHERE edition=0 ORDER BY recorded_at DESC,page_key`)).rows;
     const isReview=row=>row.state==="pending" || row.state==="returned";
-    return {status:200,data:{pages:rows.filter(isReview),drafts:rows.filter(row=>!isReview(row))}};
+    const profile=(await conn.query("SELECT settings->'pages' AS pages,settings->'profile'->>'driveTimezone' AS zone FROM client_profile WHERE id=1")).rows[0]||{};
+    const published=pageOverrides(profile.pages),review=await publicEvidencePages(conn,published,profile.zone);
+    const due=Object.entries(review.deadlines).filter(([key,end])=>published[key]?.enabled!==false && Date.parse(end)<=Date.now()+14*86400000);
+    const renewals=[...review.withheld.filter(key=>published[key]?.enabled!==false).map(key=>({key,state:"withheld",title:published[key].title})),
+      ...due.map(([key,end])=>({key,state:"expiring",title:published[key].title,at:end}))];
+    return {status:200,data:{pages:rows.filter(isReview),drafts:rows.filter(row=>!isReview(row)),renewals}};
   });
 }
 function editablePage(page) {
@@ -56,7 +61,10 @@ export async function pageWorkflow({db,key,method,input,tenant,actor,manager,exp
     const live=editablePage({...published,enabled:overrides?overrides.enabled!==false:defaults.enabled});
     const apr=profile.financingEnabled!==false && profile.options?.aprFinancingEnabled!==false;
     const allowsPage=DealerSitePages.paymentPageAllowed(key,profile.options,apr);
-    const visible=allowsPage && published.enabled;
+    const zone=profile.profile?.driveTimezone;
+    const checkedLive=overrides?.evidenceEdition?await publicEvidencePages(conn,{[key]:overrides},zone):null;
+    const withheld=!!checkedLive?.withheld.length;
+    const visible=allowsPage && published.enabled && (!withheld || !base.editorial);
     const liveStamp=fingerprint(JSON.stringify([live,overrides===null,allowsPage]));
     const editions=(await conn.query(`SELECT edition,content,stamp,actor,recorded_at FROM website_page_editions
       WHERE page_key=$1 ORDER BY edition DESC LIMIT 31`,[key])).rows;
@@ -65,7 +73,10 @@ export async function pageWorkflow({db,key,method,input,tenant,actor,manager,exp
     const franchise=profile.profile?.siteTemplate==="franchise";
     const review=draft?.content.review||null;
     const pending=review?.state==="pending", returned=review?.state==="returned";
-    const governed=franchise || pending;
+    const liveEvidence=overrides?.evidenceEdition?pageEvidence(editions.find(e=>e.edition===overrides.evidenceEdition)?.content.evidence):null;
+    const evidence=draft?pageEvidence(draft.content.evidence):liveEvidence;
+    const sourceReview=!!(evidence || liveEvidence || overrides?.evidenceEdition || draft?.content.needsReview);
+    const governed=franchise || pending || sourceReview;
     const version=fingerprint(JSON.stringify([liveStamp,draft?.stamp,editions[0]?.edition,franchise]));
     if (!write && exportHistory){
       const records=(await conn.query(`SELECT id,action,draft_stamp AS revision,actor,note,content->>'preparedBy' AS author,content-'preparedBy' AS content,edition,recorded_at AS at
@@ -75,9 +86,9 @@ export async function pageWorkflow({db,key,method,input,tenant,actor,manager,exp
     if (!write) {
       const events=(await conn.query(`SELECT action,actor,note,edition,recorded_at AS at,content->>'title' AS title
         FROM website_page_review_events WHERE page_key=$1 ORDER BY recorded_at DESC,id DESC LIMIT 40`,[key])).rows;
-      return {status:200,data:{key,path:base.path,group:base.group,live,visible,allowsPage,requiresBody:base.editorial,version,manager:!!manager,franchise,events,
+      return {status:200,data:{key,path:base.path,group:base.group,live:liveEvidence?{...live,evidence:liveEvidence}:live,visible,withheld,withheldReason:checkedLive?.issues[key],sourceReview,allowsPage,requiresBody:base.editorial,version,manager:!!manager,franchise,events,
       review,canWithdraw:pending && (!!manager || review.by===actor),
-      draft:draft?{values:draft.content.values,actor:draft.actor,at:draft.recorded_at,stale:draft.content.base!==liveStamp}:null,
+      draft:draft?{values:evidence?{...draft.content.values,evidence}:draft.content.values,actor:draft.actor,at:draft.recorded_at,stale:draft.content.base!==liveStamp}:null,
       history:editions.filter(e=>e.edition>0).slice(0,30).map(e=>({edition:e.edition,title:e.content.title,actor:e.actor,at:e.recorded_at}))}};
     }
     if (input?.version!==version) return fail(409,"Someone changed this page. Reload the editor to see the latest version.");
@@ -85,8 +96,27 @@ export async function pageWorkflow({db,key,method,input,tenant,actor,manager,exp
     const snapshot=draft && editablePage(draft.content.values), reviewStamp=draft?.content.revision||draft?.stamp;
     if(snapshot && (action==="submit" || action==="publish") && snapshot.blocks?.some(block=>!block.heading || !block.text))
       return fail(422,"Complete each content block or remove it before sending the page for publication.");
+    let checkedSources;
     const event=(action,note="",edition=null)=>conn.query(`INSERT INTO website_page_review_events(id,page_key,action,draft_stamp,actor,note,content,edition)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,[uuid(),key,action,reviewStamp,actor,note,{...snapshot,preparedBy:draft.actor},edition]);
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,[uuid(),key,action,reviewStamp,actor,note,{...snapshot,...(evidence?{evidence}:{}),...(checkedSources?{checkedSources}:{}),preparedBy:draft.actor},edition]);
+    if(snapshot?.enabled && ["submit","publish"].includes(action) && (franchise || sourceReview)){
+      if(action==="publish"){
+        const vins=[...new Set((evidence?.claims||[]).map(c=>c.vin).filter(v=>sourceVIN.test(v)))].sort();
+        for(const vin of vins)await conn.query("SELECT pg_advisory_xact_lock(81451,hashtext($1))",[vin]);
+      }
+      const sources=await readPageSources(conn,evidence?.claims||[],zone);
+      const check=assessPageSources(snapshot,evidence,sources,true);
+      if(check.error)return fail(422,check.error);
+      if(evidence)checkedSources=evidence.claims.map(c=>{
+        if(c.type==="vehicle"){
+          const car=sources.cars.get(c.vin);
+          return {vin:c.vin,stock:car.stock,field:c.field,value:car[c.field]};
+        }
+        const {details,revision}=sources.programs.get(c.program);
+        return {program:c.program,revision,title:details.title,source:details.source,version:details.version,
+          startsOn:details.startsOn,endsOn:details.endsOn,disclosure:details.disclosure};
+      });
+    }
     if(pending && ["draft","restore","discard"].includes(action))return fail(409,"Withdraw the review request or return it to the editor before changing the draft.");
     if (["submit","return","withdraw"].includes(action)){
       if(!draft)return fail(409,"Save a draft first.");
@@ -114,25 +144,28 @@ export async function pageWorkflow({db,key,method,input,tenant,actor,manager,exp
     } else if (action==="discard") {
       await conn.query("DELETE FROM website_page_editions WHERE page_key=$1 AND edition=0",[key]);
     } else if (action==="draft" || action==="restore") {
-      let values;
+      let values,nextEvidence=evidence;
       if (action==="restore") {
         if (!Number.isSafeInteger(input.edition) || input.edition<1) return fail(400,"Choose a published revision.");
         values=(await conn.query("SELECT content FROM website_page_editions WHERE page_key=$1 AND edition=$2",[key,input.edition])).rows[0]?.content;
         if (!values) return fail(404,"Revision unavailable.");
-        values=editablePage(values);
+        nextEvidence=pageEvidence(values.evidence);values=editablePage(values);
       } else {
-        try {values=validatePageDraft({...input.values,blocks:input.values?.blocks===undefined?(snapshot||live).blocks:input.values.blocks});} catch(error) {return fail(422,error.message);}
+        try {
+          if(Object.hasOwn(input.values||{},"evidence"))nextEvidence=pageEvidence(input.values.evidence);
+          values=validatePageDraft({...input.values,blocks:input.values?.blocks===undefined?(snapshot||live).blocks:input.values.blocks});} catch(error) {return fail(422,error.message);}
       }
-      if(returned && JSON.stringify(editablePage(values))===JSON.stringify(snapshot))return fail(422,"Revise the draft to address the review note.");
+      if(returned && JSON.stringify(editablePage(values))===JSON.stringify(snapshot) && JSON.stringify(nextEvidence)===JSON.stringify(evidence))return fail(422,"Revise the draft to address the review note.");
       await conn.query(`INSERT INTO website_page_editions(page_key,edition,content,stamp,actor) VALUES($1,0,$2,$3,$4)
         ON CONFLICT(page_key,edition) DO UPDATE SET content=excluded.content,stamp=excluded.stamp,actor=excluded.actor,recorded_at=now()`,
-        [key,{values,base:liveStamp},uuid(),actor]);
+        [key,{values,base:liveStamp,...(nextEvidence?{evidence:nextEvidence}:{}),...(sourceReview||nextEvidence?{needsReview:true}:{})},uuid(),actor]);
     } else if (action==="publish") {
       if (!draft) return fail(409,"Save a draft first.");
       if (draft.content.base!==liveStamp) return fail(409,"The live page changed. Compare it with your draft and save the draft again.");
       if(governed && !manager)return fail(403,"A dealership administrator must review and publish this page.");
       if(returned)return fail(409,"Save a revised draft before publishing.");
       if(governed && input.checked!==true)return fail(422,"Review the saved copy, visibility and destination before approving.");
+      if(sourceReview && input.evidenceChecked!==true)return fail(422,"Review the source records before approving this revision.");
       const values=snapshot;
       if (base.editorial && values.enabled && !values.body && !values.blocks?.length) return fail(422,"Add page content before publishing.");
       const last=editions.find(e=>e.edition>0);
@@ -140,9 +173,9 @@ export async function pageWorkflow({db,key,method,input,tenant,actor,manager,exp
       const record=(number,content,by)=>conn.query("INSERT INTO website_page_editions(page_key,edition,content,stamp,actor) VALUES($1,$2,$3,$4,$5)",[key,number,content,uuid(),by]);
       if (!last || JSON.stringify(editablePage(last.content))!==JSON.stringify(live))
         await record(next++,live,"Previous site content");
-      await record(next,values,actor);
+      await record(next,{...values,...(evidence?{evidence}:{}),...(checkedSources?{checkedSources}:{})},actor);
       await event(governed?"approve":"publish","",next);
-      pages[key]=values;
+      pages[key]=evidence?{...values,evidenceEdition:next}:values;
       await conn.query("UPDATE client_profile SET settings=jsonb_set(settings,'{pages}',$1::jsonb),etag=$2 WHERE id=1",[pages,uuid()]);
       await conn.query("DELETE FROM website_page_editions WHERE page_key=$1 AND edition=0",[key]);
     } else return fail(400,"Choose a page editing action.");

@@ -55,6 +55,7 @@ export async function saveInventoryRecord(db,payload){
       if(invalid)return invalid;
     }
     await conn.query("INSERT INTO client_cars(vin,body) VALUES($1,$2) ON CONFLICT(vin) DO UPDATE SET body=client_cars.body || excluded.body",[car.vin,car]);
+    await invalidateVehiclePageSources(conn,car.vin);
     return inventoryResult(200,{});
   });
 }
@@ -67,6 +68,7 @@ export async function changeInventoryStatus(db,vin,status){
       if(car.status==="sold" && car.stock && await stockInUse(conn,car.stock,vin))return inventoryError(409,"Another current vehicle uses this stock number. Edit the sold listing's stock number before returning it to the lot.");
       await conn.query("DELETE FROM inventory_status WHERE vin=$1 AND status='sold'",[vin]);
     }else await conn.query("INSERT INTO inventory_status VALUES($1,$2) ON CONFLICT(vin) DO UPDATE SET status=excluded.status WHERE inventory_status.status<>'deleted'",[vin,status]);
+    if(status!=="available")await invalidateVehiclePageSources(conn,vin);
     return inventoryResult(200,{});
   });
 }

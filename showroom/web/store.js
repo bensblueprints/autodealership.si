@@ -192,13 +192,26 @@
   }
   const defaultProfile={salesPhone:"573-691-4287",partsPhone:"573-691-5263",servicePhone:"573-691-5912",street:"3201 Missouri Blvd",city:"Jefferson City",region:"MO",postal:"65109",country:"USA"};
   let sharedProfile=null,profileRevision="0",profileRead=0,profileLoaded=false;
+  let pageState="",evidenceTimer,sourceWatch;
+  function trackPageState(result){
+    pageState=result.pageState||"";
+    clearInterval(sourceWatch);
+    if(result.trackedPages?.length)sourceWatch=setInterval(()=>{if(!document.hidden)loadProfile().catch(()=>{});},60000);
+    clearTimeout(evidenceTimer);
+    if(result.expiresAt){
+      const delay=Math.max(1000,Math.min(2147483647,Date.parse(result.expiresAt)-Date.now()+100));
+      evidenceTimer=setTimeout(()=>loadProfile().catch(()=>{}),delay);
+    }
+  }
   async function loadProfile(){
     const readNumber=++profileRead;
     const response=await fetch("/api/dealer-profile",{cache:"no-store"});
     if(!response.ok)throw Error("Shared dealership profile is unavailable.");
     const result=await response.json();
     if(readNumber!==profileRead)return;
-    if(profileLoaded && result.revision===profileRevision)return;
+    const sameState=pageState===(result.pageState||"");
+    trackPageState(result);
+    if(profileLoaded && result.revision===profileRevision && sameState)return;
     const unblocked=sharedProfile?.financingEnabled===false && result.settings?.financingEnabled!==false;
     profileLoaded=true;
     sharedProfile=result.settings;profileRevision=result.revision;view=null;
@@ -227,7 +240,7 @@
         body:JSON.stringify({tradeUrl:changes.tradeUrl??prior.tradeUrl,options:{...prior.options,...changes.options},revision:profileRevision,financingEnabled:changes.options?.financingEnabled??prior.options.financingEnabled,dealerName:changes.dealerName||prior.dealerName,profile:{...prior.profile,...changes.profile},pages:changes.pages??prior.pages??{}})});
       const result=await response.json();
       if(!response.ok){if(response.status===409)await loadProfile();throw Error(result.error||"Could not save profile.");}
-      profileRead++;profileLoaded=true;view=null;sharedProfile=result.settings;profileRevision=result.revision;
+      trackPageState(result);profileRead++;profileLoaded=true;view=null;sharedProfile=result.settings;profileRevision=result.revision;
       if(prior.options.financingEnabled===false && sharedProfile.financingEnabled!==false)await refreshInventoryStatus().catch(()=>{});
     }
     const next={...prior,...changes,options:{...prior.options,...changes.options}};

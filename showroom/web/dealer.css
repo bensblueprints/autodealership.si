@@ -170,7 +170,14 @@ main>.desk-nav .desk-group button.active{box-shadow:inset 3px 0 currentColor}
 #pageDecisionsList article{padding:10px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}
 #pageDecisionsList p{margin:6px 0;white-space:pre-wrap}
 #pageReviewDialog .page-review-check:not([hidden]){display:flex;align-items:flex-start;gap:9px;margin:14px 0;color:var(--text);font-size:.9rem}
-#pageChecked{width:auto;flex:none;margin-top:4px}
+#pageEvidence summary{font-weight:650;cursor:pointer}
+#pageEvidence[open] summary{margin-bottom:12px}
+#pageEvidence p,#pageSources small{color:var(--sub);line-height:1.5;overflow-wrap:anywhere}
+#pageSources fieldset>button{justify-self:start}
+#addPageSource{margin-top:12px}
+.page-source-preview{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+.page-source-preview .source-detail{display:grid;gap:5px;margin:.7rem 0;overflow-wrap:anywhere}
+#evidenceChecked,#pageChecked{width:auto;flex:none;margin-top:4px}
 #pageReturnWrap:not([hidden]){display:grid;gap:7px;justify-items:start;border-top:1px solid var(--line);padding-top:14px;margin-top:16px}
 #pageReturnNote{box-sizing:border-box;width:100%;resize:vertical;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px;font:inherit}
 #pages [hidden],#pageReviewDialog [hidden]{display:none!important}

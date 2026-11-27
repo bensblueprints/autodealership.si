@@ -7,9 +7,9 @@
   const control=(tag,text)=>Object.assign(document.createElement(tag),{textContent:text});
   const blockList=$("pageBlockList"),blockKind=$("pageBlockType");
   const readBlocks=()=>Array.from(blockList.children,row=>({kind:row.dataset.kind,heading:row.querySelector("input").value,text:row.querySelector("textarea").value}));
-  const read=()=>({title:fields.title.value,body:fields.body.value,url:fields.url.value,enabled:fields.enabled.checked,blocks:readBlocks()});
+  const read=()=>({title:fields.title.value,body:fields.body.value,url:fields.url.value,enabled:fields.enabled.checked,blocks:readBlocks(),evidence:PageEvidenceEditor.read()});
   const blockOrder=values=>JSON.stringify((values.blocks||[]).map(b=>[b.kind,b.heading,b.text]));
-  const equal=(first,second)=>["title","body","url","enabled"].every(key=>first[key]===second[key]) && blockOrder(first)===blockOrder(second);
+  const equal=(first,second)=>["title","body","url","enabled"].every(key=>first[key]===second[key]) && blockOrder(first)===blockOrder(second) && PageEvidenceEditor.signature(first.evidence)===PageEvidenceEditor.signature(second.evidence);
   function blockField(label,tag,value,max){
     const wrap=control("label",label),input=document.createElement(tag);input.value=value;input.maxLength=max;
     if(tag==="textarea")input.rows=3;wrap.append(input);return wrap;
@@ -87,12 +87,12 @@
       box.replaceChildren();
       const items=[...data.pages,...(data.drafts||[])];
       draftKeys.clear();items.forEach(item=>draftKeys.add(item.key));redrawIndex();
-      for(const item of items){
+      for(const item of [...items,...(data.renewals||[])]){
         const button=control("button","");button.type="button";button.dataset.reviewKey=item.key;
-        button.append(control("strong",item.title),control("small",(item.state==="pending"?"Awaiting review":item.state==="returned"?"Changes requested":"Saved draft")+" · "+date(item.at)));
+        button.append(control("strong",item.title),control("small",item.state==="withheld"?"Source changed · review needed":(item.state==="expiring"?"Source expires":item.state==="pending"?"Awaiting review":item.state==="returned"?"Changes requested":"Saved draft")+" · "+date(item.at)));
         box.append(button);
       }
-      if(!items.length)box.append(control("p","No unpublished changes."));
+      if(!items.length && !data.renewals?.length)box.append(control("p","No unpublished changes."));
     }catch{if(n===queueRead)box.textContent="Review queue unavailable. Reopen Website pages to retry.";}
   }
   $("refreshPageQueue").onclick=refreshQueue;
@@ -106,36 +106,38 @@
   function canEnableForReview(){
     return !fields.enabled.checked && !doc.live.enabled && doc.allowsPage && doc.review?.state!=="pending";
   }
+  const reviewingSources=()=>!!(doc.sourceReview || PageEvidenceEditor.read());
   function updateControls(){
     if(!doc)return;
     $("pageControls").disabled=busy;
-    const pending=doc.review?.state==="pending", returned=doc.review?.state==="returned", governed=doc.franchise||pending;
+    const pending=doc.review?.state==="pending", returned=doc.review?.state==="returned", governed=doc.franchise||pending||reviewingSources();
     for(const k of ["title","body","url"])fields[k].readOnly=pending;
     fields.enabled.disabled=pending;
-    updateBlocks(pending||busy);
+    updateBlocks(pending||busy);PageEvidenceEditor.lock(pending||busy);
     $("savePageDraft").disabled=pending||conflicted || (!dirty() && !doc.draft?.stale);
     $("discardPage").hidden=pending;
-    $("submitPage").hidden=pending || (doc.franchise && doc.manager && !returned);
+    $("submitPage").hidden=pending || (governed && doc.manager && !returned);
     $("submitPage").disabled=busy||dirty()||conflicted||!doc.draft||doc.draft.stale||returned||missingContent();
     $("withdrawPage").hidden=!doc.canWithdraw;
     $("pageCheckWrap").hidden=!(governed && doc.manager && doc.draft);
+    $("evidenceCheckWrap").hidden=!(reviewingSources() && doc.manager && doc.draft);
     $("pageReturnWrap").hidden=!(pending && doc.manager);
     $("returnPage").disabled=busy||conflicted||!$("pageReturnNote").value.trim();
     $("publishPage").hidden=governed && !doc.manager;
     const reviewerOnly=governed && !doc.manager;
     const enableFirst=canEnableForReview();
     $("reviewHiddenPage").hidden=reviewerOnly || !enableFirst || (!doc.draft && !dirty());
-    $("reviewPage").textContent=reviewerOnly?"Preview page":enableFirst?"Enable & review page":!fields.enabled.checked && doc.visible?"Review & unpublish":"Review & publish";
+    $("reviewPage").textContent=reviewerOnly?"Preview page":doc.withheld && !doc.draft && !dirty()?"Review & renew":enableFirst?"Enable & review page":!fields.enabled.checked && doc.visible?"Review & unpublish":"Review & publish";
     $("publishPage").textContent=fields.enabled.checked?(governed?"Approve and publish":"Publish page"):(doc.visible?"Unpublish page":"Save hidden version");
     $("discardPage").disabled=!dirty() && !doc.draft;
     $("discardPage").textContent=dirty()?"Undo unsaved edits":"Discard saved draft";
     $("pageRefresh").hidden=!conflicted;
-    $("publishPage").disabled=(governed && (!doc.manager || !$("pageChecked").checked))||returned||busy||dirty()||conflicted||!doc.draft||doc.draft.stale||missingContent();
+    $("publishPage").disabled=(governed && (!doc.manager || !$("pageChecked").checked))||(reviewingSources() && !$("evidenceChecked").checked)||returned||busy||dirty()||conflicted||!doc.draft||doc.draft.stale||missingContent();
     $("pageRevisions").querySelectorAll("button").forEach(button=>button.disabled=pending||busy||conflicted||!!dirty());
   }
   function fill(values){
     for(const field of ["title","body","url"])fields[field].value=values[field];
-    fields.enabled.checked=values.enabled;blockList.replaceChildren(...(values.blocks||[]).map(blockRow));$("pageBlockStatus").textContent="";
+    PageEvidenceEditor.fill(values.evidence);fields.enabled.checked=values.enabled;blockList.replaceChildren(...(values.blocks||[]).map(blockRow));$("pageBlockStatus").textContent="";
   }
   function renderHistory(){
     const list=$("pageRevisions");list.replaceChildren();$("pageHistory").hidden=false;
@@ -161,15 +163,15 @@
       const edits=buffer.get(key);conflicted=!!edits && edits.version!==doc.version;
       fill(edits?.values||saved());form.hidden=false;
       $("pageEditHeading").textContent=doc.live.title;$("pagePreview").href=DealerPages.href(key);$("pagePreview").hidden=!doc.visible;
-      $("pageLiveState").textContent=doc.visible?"Public page":"Hidden from shoppers";
+      $("pageLiveState").textContent=doc.withheld?"Source changed · approved copy withheld":doc.visible?"Public page":"Hidden from shoppers";
       $("pageDraftState").textContent=doc.draft?"Draft saved "+date(doc.draft.at):"No saved draft";
-      $("pageDecision").hidden=!doc.franchise && !["pending","returned"].includes(doc.review?.state);
+      $("pageDecision").hidden=!doc.franchise && !doc.sourceReview && !["pending","returned"].includes(doc.review?.state);
       $("pageDecision").textContent=doc.review?.state==="pending"?"Awaiting manager review · Requested by "+doc.review.by:
         doc.review?.state==="returned"?"Changes requested by "+doc.review.by+" · "+doc.review.note:
-        doc.franchise?"A dealership administrator reviews and publishes franchise pages.":"";
-      $("pageChecked").checked=false;$("pageReturnNote").value="";
+        doc.withheld?"Approved copy withheld. "+doc.withheldReason:doc.sourceReview?"A dealership administrator reviews the sources before publishing.":doc.franchise?"A dealership administrator reviews and publishes franchise pages.":"";
+      $("evidenceChecked").checked=false;$("pageChecked").checked=false;$("pageReturnNote").value="";
       const log=$("pageDecisionsList");log.replaceChildren();$("pageDecisions").hidden=!doc.events?.length;
-      const verbs={submit:"Requested review",withdraw:"Withdrew request",return:"Requested changes",approve:"Approved and published",publish:"Published"};
+      const verbs={submit:"Requested review",withdraw:"Withdrew request",return:"Requested changes",approve:"Approved and published",publish:"Published",invalidate:"Approval invalidated by inventory change"};
       for(const event of doc.events||[]){
         const item=control("article",""),caption=control("div","");
         caption.append(control("strong",verbs[event.action]||event.action),control("small",event.actor+" · "+date(event.at)+(event.edition?" · Version "+event.edition:"")));
@@ -202,7 +204,7 @@
     finally{busy=false;updateControls();}
   }
   function preview(box,values,isLive=false){
-    const visibility=isLive?(doc.visible?"Visible to shoppers":"Hidden from shoppers"):
+    const visibility=isLive?(doc.withheld?"Previously approved copy · withheld from shoppers":doc.visible?"Visible to shoppers":"Hidden from shoppers"):
       !values.enabled?"Hidden from shoppers":missingContent()?"Page text required to publish":!doc.allowsPage?"Hidden while APR financing is disabled":"Visible when published";
     box.replaceChildren(control("small",visibility),
       control("h4",values.title));
@@ -214,15 +216,16 @@
       }
       box.append(blocks);
     }
+    PageEvidenceEditor.preview(box,values.evidence);
     if(values.url)box.append(control("small","Action destination"),control("p",values.url));
   }
   async function reviewChanges(keepHidden){
     if(!doc || busy || conflicted)return;
-    const pending=doc.review?.state==="pending", reviewerOnly=(doc.franchise || pending) && !doc.manager;
+    const pending=doc.review?.state==="pending", reviewerOnly=(doc.franchise || pending || reviewingSources()) && !doc.manager;
     if(!keepHidden && !reviewerOnly && canEnableForReview()){
       fields.enabled.checked=true;updateControls();
     }
-    if(!reviewerOnly && !pending && dirty() && !doc.draft?.stale){
+    if(!reviewerOnly && !pending && (dirty() || (doc.withheld && !doc.draft)) && !doc.draft?.stale){
       if(!form.reportValidity())return;
       if(missingContent()){
         status.textContent="Add page content and finish each content block before publishing.";
@@ -232,22 +235,25 @@
       }
       if(!await act("draft",{values:read()}))return;
     }
+    const previewVersion=doc.version,previewKey=active;
+    if(read().evidence?.claims.some(c=>c.program))await PageEvidenceEditor.loadPrograms();
+    if(doc?.version!==previewVersion || active!==previewKey || dialog.open)return;
     preview($("pageBefore"),doc.live,true);preview($("pageAfter"),read());updateControls();
     $("pageReviewStatus").textContent=missingContent()?"Add page content and finish any incomplete blocks before publishing.":dirty()?"Save your edits as a draft before publishing.":doc.draft?.stale?"Save the reviewed draft again before publishing.":doc.draft?"Publishing applies this saved draft to your dealership website.":"There is no draft to publish.";
     if(doc.review?.state==="pending")$("pageReviewStatus").textContent=doc.manager?"Approve the saved draft or return it with a note.":"This saved draft is awaiting a dealership administrator.";
     else if(doc.review?.state==="returned")$("pageReviewStatus").textContent="Revise the draft to address the manager’s note.";
-    else if(doc.franchise && !doc.manager && doc.draft)$("pageReviewStatus").textContent="Request manager review from the editor after saving your draft.";
+    else if((doc.franchise || reviewingSources()) && !doc.manager && doc.draft)$("pageReviewStatus").textContent="Request manager review from the editor after saving your draft.";
     else if(!doc.draft && !dirty() && doc.visible)$("pageReviewStatus").textContent="This version is already live.";
     else if(doc.draft && !dirty() && !doc.draft.stale && !missingContent())$("pageReviewStatus").textContent=fields.enabled.checked
       ?(doc.allowsPage?"Publish this version to "+doc.path+" on your dealership website.":"Dealership payment settings hide this page, even after publishing.")
       :(doc.visible?"Unpublishing removes this page from your public website.":"This version will be saved with shopper visibility off.");
-    $("pageChecked").checked=false;$("pageReturnNote").value="";updateControls();dialog.showModal();
+    $("evidenceChecked").checked=false;$("pageChecked").checked=false;$("pageReturnNote").value="";updateControls();dialog.showModal();
   }
   $("reviewPage").onclick=()=>reviewChanges(false);
   $("reviewHiddenPage").onclick=()=>reviewChanges(true);
   $("closePageReview").onclick=()=>dialog.close();
-  $("publishPage").onclick=()=>act("publish",{checked:$("pageChecked").checked});
-  $("pageChecked").onchange=updateControls;$("pageReturnNote").oninput=updateControls;
+  $("publishPage").onclick=()=>act("publish",{checked:$("pageChecked").checked,evidenceChecked:$("evidenceChecked").checked});
+  $("evidenceChecked").onchange=updateControls;$("pageChecked").onchange=updateControls;$("pageReturnNote").oninput=updateControls;
   $("submitPage").onclick=()=>act("submit");$("withdrawPage").onclick=()=>act("withdraw");
   $("returnPage").onclick=()=>act("return",{note:$("pageReturnNote").value.trim()});
   $("exportPageReview").onclick=async()=>{

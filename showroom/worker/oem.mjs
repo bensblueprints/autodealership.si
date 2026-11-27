@@ -154,7 +154,8 @@ export async function websiteOffers(db,tenant){
     settings->'pages' AS pages,settings->'options' AS options,settings->>'financingEnabled' AS finance,settings->'options'->>'aprFinancingEnabled' AS apr
     FROM client_profile WHERE id=1`)).rows[0]||{};
   const apr=settings.finance!=="false" && settings.apr!=="false";
-  const visible=new Set(DealerSitePages.list({pages:settings.pages,options:settings.options,profile:{siteTemplate:settings.template}},tenant,apr).filter(p=>p.enabled).map(p=>p.key));
+  const reviewed=await publicEvidencePages(db,settings.pages,settings.zone);
+  const visible=new Set(DealerSitePages.list({pages:reviewed.pages,options:settings.options,profile:{siteTemplate:settings.template}},tenant,apr).filter(p=>p.enabled).map(p=>p.key));
   const programs=(await db.query(`SELECT program_id AS id,details->'websiteOffer' AS offer,details->>'disclosure' AS disclosure,
     details->>'endsOn' AS day,(((details->>'endsOn')::date+1)::timestamp AT TIME ZONE $1) AS expires
     FROM (SELECT DISTINCT ON(program_id) program_id,state,details FROM oem_program_revisions ORDER BY program_id,revision DESC) latest
