@@ -97,7 +97,7 @@
     }catch{if(active===row)get("visit-error").textContent="Available times could not load. Select the action again to retry.";}
   }
   function open(row){
-    active=row;form.reset();
+    active=row;form.reset();get("today-visit-status").textContent="";get("visit-status").textContent="";
     get("visit-person").textContent=row.name;
     get("visit-when").textContent=[carTitle(row.car)||row.vin,time(row.slot)].join(" · ");
     const select=form.elements.action;select.replaceChildren(new Option("Choose an update",""));
@@ -117,7 +117,9 @@
       const r=await fetch("/api/test-drives/desk",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({
         confirmation:row.confirmation,revision:row.visit?.revision||0,action,slot:get("visit-slot").value,note:form.elements.note.value.trim()})});
       const data=await r.json();if(!r.ok){if(r.status===409)await refresh(true);throw Error(data.error||"Visit update failed.");}
-      dialog.close();await refresh(true);get("visit-status").textContent=action==="reschedule"?"Rescheduled to "+time(data.slot)+". Confirm the new time with the shopper.":"Visit updated to "+labels[data.state].toLowerCase()+".";
+      dialog.close();await refresh(true);
+      const status=get("today").hidden?get("visit-status"):get("today-visit-status");
+      status.textContent=action==="reschedule"?"Rescheduled to "+time(data.slot)+". Confirm the new time with the shopper.":"Visit updated to "+labels[data.state].toLowerCase()+".";
     }catch(error){get("visit-error").textContent=error.message;}
     finally{saving=false;get("visit-save").disabled=false;get("visit-close").disabled=false;}
   };

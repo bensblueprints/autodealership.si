@@ -86,6 +86,14 @@ The remaining amount must cover AI generation, support, payment processing, regi
 
 Open **Dealer dashboard → Conversations**. A showroom inquiry or incoming shopper text creates an opportunity. Staff can search the contact or stock number, see the email and SMS history, claim unassigned work and update the sales stage. Owners can reply or assign another active salesperson. Only an activated channel can send. Connecting a dealer mailbox enables staff-initiated replies from its own domain.
 
+### Checking text usage
+
+Open **Website settings → Text numbers & usage** as a dealership manager, platform owner or assigned engineer. Select a UTC calendar month. The total covers every recorded message that month, the table shows the latest 100, and **Download monthly CSV** exports the entire period. Each row includes the provider message SID, direction, stock when available, carrier status, segment count, cost and currency. Missing Twilio data stays pending. Use the message SID to match these records to Twilio. Reconcile the monthly subaccount invoice separately for carrier fees, number rentals and A2P charges.
+
+For a connected subaccount, the showroom checks up to 25 outstanding provider records every five minutes. **Check usage with Twilio** also starts a batch. A verified incoming or successful outgoing SMS contributes its provider-reported segment count to the retail preview. Failed sends, media messages and standard incoming opt-out/help controls do not contribute billable SMS segments. The preview applies the pilot's 500 segments and $0.04 overage rate for a calendar month. Whop deposits, actual wallet deductions and an invoice have separate meanings. This report is a usage estimate and does not move funds.
+
+**Find Twilio numbers** lists existing SMS-enabled numbers from this rooftop’s configured Messaging Service. **Import number** verifies ownership with Twilio and stores the assignment in PostgreSQL. Use the incoming webhook shown on the page for that service. Import leaves carrier voice routing in place. The primary outbound sender still requires the verified server-side assignment. The engineer can supply the subaccount SID, token and service in the private configuration before a primary sender has been chosen.
+
 ### Southern Ohio setup and account ownership
 
 Use one paid AutoDealership.SI Twilio parent account under the operating company's legal name. Set its primary Trust Hub business identity to **ISV or Reseller** in Twilio Console and obtain approval. Provision a separate subaccount linked to the immutable dealership ID for each store. Give the dealership one Messaging Service for its approved inquiry use case. The platform pays Twilio. Marty invites salespeople to his Clerk organization and controls their work in Conversations.

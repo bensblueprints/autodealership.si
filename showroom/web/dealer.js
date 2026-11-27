@@ -360,6 +360,7 @@
       btn.classList.toggle("active",active);
       btn.setAttribute("aria-pressed",String(active));
     }
+    if(key==="text-account"){ $("setup-menu").open=true;TextAccount.load(); }
     if(key==="conversations")ConversationDesk.load();
     if(key==="inventory")renderInventory(Store.cars(true));
     if(key==="inquiries" || key==="today")Store.loadLeads();

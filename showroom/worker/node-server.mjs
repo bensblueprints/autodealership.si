@@ -30,6 +30,7 @@ function dealerPool(name){
   return dealerPools.get(name);
 }
 await pool.query("ALTER TABLE public.client_sites ADD COLUMN IF NOT EXISTS database_name text UNIQUE");
+await worker.createNumberRegistry(pool);
 const db={async query(sql,args){
   const tenant=scope.getStore();if(!tenant)return pool.query(sql,args);
   const conn=await pool.connect();
@@ -241,6 +242,28 @@ function clerkDealerPage(org,slug){
   if(me.signedIn){location.replace("dealer");return}throw Error()
   })().catch(()=>{retry.hidden=false;message.textContent="Could not open this dealership. Check that you accepted the invitation with this email, then try again.";});</script></html>`;
 }
+function loadTwilioRoutes(){
+  try{return JSON.parse(readFileSync(join(dataDir,"sms-routes.json"),"utf8"));}
+  catch(e){if(e.code==="ENOENT")return {};throw e;}
+}
+let checkingTextUsage=false;
+const textUsageTimer=setInterval(async()=>{
+  if(checkingTextUsage)return;
+  checkingTextUsage=true;
+  try{
+    const routes=loadTwilioRoutes();
+    for(const site of Object.keys(routes)){
+      const account=worker.managedTwilioAccount(routes,site);
+      if(!account || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(site))continue;
+      const tenant=(await pool.query("SELECT id FROM public.client_sites WHERE id=$1",[site])).rows[0];
+      if(!tenant)continue;
+      tenant.schema="client_"+tenant.id.replaceAll("-","");
+      try{await scope.run(tenant,()=>worker.reconcileSmsUsage(db,account));}catch{console.warn("Dealer SMS usage sync pending for",site);}
+    }
+  }catch{console.warn("Unable to start dealer SMS usage sync.");}
+  finally{checkingTextUsage=false;}
+},300000);
+textUsageTimer.unref();
 createServer(async(req,res)=>{
   try{
     const base=new URL((req.headers["x-forwarded-proto"]==="https"?"https":"http")+"://"+req.headers.host);
@@ -290,18 +313,56 @@ createServer(async(req,res)=>{
       body=Buffer.concat(chunks);
     }
     const route=new URL(req.url,base);
-    const smsRoute=()=>{
+    const smsAccount=()=>{
       if(!tenant)return null;
-      try{return worker.dealerSmsRoute(JSON.parse(readFileSync(join(dataDir,"sms-routes.json"),"utf8")),tenant.id);}
-      catch(e){if(e.code==="ENOENT")return null;throw e;}
+      return worker.managedTwilioAccount(loadTwilioRoutes(),tenant.id);
     };
+    const smsRoute=()=>{const account=smsAccount();return account && /^\+[1-9]\d{7,14}$/.test(account.from||"")?account:null;};
     const smsOrigin=tenant?"https://"+tenant.slug+".autodealership.si":"";
     if(["/api/dealer-sms/incoming","/api/dealer-sms/status"].includes(route.pathname)){
       if(!tenant || prefix || base.hostname!==tenant.slug+".autodealership.si" || req.method!=="POST" || !req.headers["content-type"]?.startsWith("application/x-www-form-urlencoded") || body.length>24000){res.writeHead(403).end();return;}
-      const result=await worker.dealerSmsWebhook(db,{route:smsRoute(),origin:smsOrigin,path:route.pathname+route.search,params:new URLSearchParams(body.toString("utf8")),signature:req.headers["x-twilio-signature"]});
+      const params=new URLSearchParams(body.toString("utf8")),account=smsAccount();
+      const phone=params.get(route.pathname.endsWith("/incoming")?"To":"From");
+      let sender=smsRoute();
+      if(account && phone!==sender?.from && /^\+[1-9]\d{7,14}$/.test(phone||"") && params.get("AccountSid")===account.account){
+        const found=await pool.query("SELECT 1 FROM public.dealer_twilio_numbers WHERE site=$1 AND account=$2 AND service=$3 AND phone=$4",[site,account.account,account.service,phone]);
+        if(found.rowCount)sender={...account,from:phone,outbound:false};
+      }
+      const result=await worker.dealerSmsWebhook(db,{route:sender,origin:smsOrigin,path:route.pathname+route.search,params,signature:req.headers["x-twilio-signature"]});
       res.writeHead(result.status,{"Content-Type":"text/xml","Cache-Control":"no-store"}).end(result.status===200?"<Response/>":"");return;
     }
     const emailManager=!!tenant && (!!managesUsers || clerkRole==="org:admin");
+    if(route.pathname==="/api/text-account"){
+      const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
+      if(!emailManager)return reply(403,{error:"Sign in as the dealer owner or assigned platform staff."});
+      const account=smsAccount();
+      if(req.method==="GET"){
+        const exporting=route.searchParams.get("format")==="csv";
+        const result=await worker.dealerSmsUsage(db,route.searchParams.get("month")||new Date().toISOString().slice(0,7),exporting);
+        if(result.status!==200)return reply(result.status,result.data);
+        if(exporting){
+          const fields=["created_at","sid","direction","stock","status","segments","cost","currency"];
+          const cell=value=>{const s=value instanceof Date?value.toISOString():String(value??"");return '"'+(/^[\s]*[=+@-]/.test(s)?"'":"")+s.replace(/"/g,'""')+'"';};
+          const lines=[fields.join(","),...result.data.lines.map(row=>fields.map(f=>cell(row[f])).join(","))];
+          return res.writeHead(200,{"Content-Type":"text/csv; charset=utf-8","Content-Disposition":'attachment; filename="sms-usage-'+result.data.month+'.csv"',"Cache-Control":"no-store"}).end(lines.join("\r\n")+"\r\n");
+        }
+        const numbers=account?(await pool.query("SELECT sid,phone FROM public.dealer_twilio_numbers WHERE site=$1 AND account=$2 AND service=$3 ORDER BY phone",[site,account.account,account.service])).rows:[];
+        return reply(200,{...result.data,connected:!!account,numbers,primary:smsRoute()?.from||null,webhook:smsOrigin+"/api/dealer-sms/incoming"});
+      }
+      if(req.method!=="POST" || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Use the dealer dashboard."});
+      let data;try{data=JSON.parse(body);}catch{return reply(400,{error:"Invalid request."});}
+      if(!account)return reply(409,{error:"The platform administrator must connect this dealership’s Twilio subaccount and Messaging Service."});
+      if(data?.action==="reconcile"){
+        const report=await worker.reconcileSmsUsage(db,account);return reply(report.status,report.data);
+      }
+      try{
+        if(data?.action==="list")return reply(200,{numbers:await worker.listTwilioNumbers(account)});
+        if(data?.action!=="import")return reply(400,{error:"Unknown number action."});
+        const line=await worker.verifyTwilioNumber(account,data.sid);if(!line)return reply(400,{error:"Choose an SMS-enabled number from this dealership’s sender pool."});
+        const bound=await pool.query("INSERT INTO public.dealer_twilio_numbers(sid,phone,site,account,service) VALUES($1,$2,$3,$4,$5) ON CONFLICT(sid) DO UPDATE SET phone=excluded.phone WHERE dealer_twilio_numbers.site=excluded.site AND dealer_twilio_numbers.account=excluded.account AND dealer_twilio_numbers.service=excluded.service RETURNING phone",[line.sid,line.phone,site,account.account,account.service]);
+        return bound.rowCount?reply(200,line):reply(409,{error:"This number already has an assignment. Contact your platform administrator."});
+      }catch(err){return reply(err.code==="23505"?409:502,{error:"Could not verify this number with Twilio. Check its sender pool and try again."});}
+    }
     if(route.pathname==="/api/dealer-email/setup"){
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
       if(req.method!=="POST" || !emailManager || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"A dealership administrator must open email setup."});

@@ -4,6 +4,7 @@
   const me=await api("me");
   const emailSetup=id("dealer-email-setup");
   emailSetup.hidden=!me.managesEmail;
+  id("text-account-tab").hidden=!me.managesEmail;
   emailSetup.onclick=async()=>{
     emailSetup.disabled=true;
     try{
