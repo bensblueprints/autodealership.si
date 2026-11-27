@@ -7,6 +7,7 @@
     section.innerHTML='<h2>Buy Here Pay Here</h2><dl></dl><label>Payment schedule<select><option value="">Choose a schedule</option></select></label><p role="status"></p>';
     const breakdown=section.querySelector("dl");
     for(const [label,cents] of [["Cash price",offer.cash],["BHPH price",offer.price],["Cash down",offer.down],["Remaining balance",offer.balance]]){
+      if(label==="Cash price" && !Store.cashPriceVisible())continue;
       const group=document.createElement("div"),name=document.createElement("dt"),value=document.createElement("dd");
       name.textContent=label;value.textContent=money(cents);group.append(name,value);breakdown.append(group);
     }

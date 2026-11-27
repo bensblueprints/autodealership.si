@@ -55,7 +55,7 @@
     "Inventory filters": {year:"Year",make:"Make",model:"Model",trim:"Trim",features:"Vehicle features",fuel:"Fuel type",
       transmission:"Transmission",miles:"Mileage",engine:"Engine",color:"Exterior color",interior:"Interior",drivetrain:"Drivetrain",body:"Body style",doors:"Doors",location:"Location",status:"Inventory status",price:"Price or payment range"},
     "Price and payment tabs": {cash:"Cash price",finance:"Finance estimate",lease:"Lease estimate"},
-    "Shopping tools": {compare:"Compare vehicles",pricing:"Pricing and details tabs",payment:"Payment calculator",
+    "Shopping tools": {compare:"Compare vehicles",pricing:"Cash pricing details on listings",payment:"Payment calculator",
       trade:"Value a trade",availability:"Confirm availability",relatedVehicles:"Show similar vehicles on listing pages"}
   };
   const defaultOptions=Object.fromEntries(Object.values(optionGroups).flatMap(group => Object.keys(group).map(key=>[key,true])));
@@ -219,6 +219,11 @@
     window.dispatchEvent(new Event("showroom:update"));
   }
   const profileReady=loadProfile().catch(()=>{});
+  function cashPriceVisible(){
+    if(window.postgresInventory && !profileLoaded)return false;
+    const options=window.postgresInventory?(sharedProfile?.options||{}):settings().options;
+    return options.cash!==false && options.pricing!==false;
+  }
   function paymentPlansAllowed(car){return (!window.postgresInventory || profileLoaded) && sharedProfile?.financingEnabled!==false && car?.financingEnabled!==false;}
   function estimateAllowed(mode,car){
     if(!["finance","lease"].includes(mode))return false;
@@ -253,7 +258,7 @@
     const lead=read("lead:"+id,null);
     if(lead)write("lead:"+id,{...lead,notes:{...lead.notes,[field]:answer}});
   }
-  window.Store = {loadProfile,profileLoaded:()=>profileLoaded,loadLeads,inquiryState:()=>inquiryState,showroomSkin:()=>preview.previewSkin||sharedProfile?.profile?.skin||"midnight",aprAllowed,estimateAllowed,financingAllowed:aprAllowed,attachNote, cars,inventoryReady,catalogState:()=>catalogState,reloadCatalog:syncCatalog,refreshInventoryStatus,statusFor:vin=>inventoryStatus[vin],leads,addLead,setStatus,saveCar,settings,saveSettings,optionGroups,profileReady };
+  window.Store = {loadProfile,profileLoaded:()=>profileLoaded,loadLeads,inquiryState:()=>inquiryState,showroomSkin:()=>preview.previewSkin||sharedProfile?.profile?.skin||"midnight",cashPriceVisible,aprAllowed,estimateAllowed,financingAllowed:aprAllowed,attachNote, cars,inventoryReady,catalogState:()=>catalogState,reloadCatalog:syncCatalog,refreshInventoryStatus,statusFor:vin=>inventoryStatus[vin],leads,addLead,setStatus,saveCar,settings,saveSettings,optionGroups,profileReady };
   window.addEventListener("storage",e=>{if(e.key===prefix+"settings"||e.key===null)loadProfile().catch(()=>{});if (!e.key || e.key.startsWith(prefix)){view=null;window.dispatchEvent(new Event("showroom:update"));}});
 })();
 

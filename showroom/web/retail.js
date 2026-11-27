@@ -46,7 +46,7 @@
     if (Store.aprAllowed(car) && amount(car) !== null && enabled("payment") && (enabled("finance") || enabled("lease"))) actions.push(button("payment","Calculate payment"));
     if (enabled("trade")) actions.push(button("trade","Value my trade"));
     if (enabled("availability")) actions.push(button("availability","Confirm availability"));
-    const showPricing=enabled("pricing"),showCompare=enabled("compare");
+    const showPricing=Store.cashPriceVisible(),showCompare=enabled("compare");
     const link='<a class="open-vehicle" href="vehicle.html?stock='+encodeURIComponent(car.id)+'">View full vehicle details ↗</a>';
     const pricing=showPricing ? '<div class="retail-facts">'+
       (car.msrp!=null && car.msrp!=="" ? '<p>MSRP <b>'+money(car.msrp)+'</b></p>' : '')+
@@ -77,7 +77,8 @@
   }
   function compareList() {
     const cars=[...selected].map(vehicle).filter(Boolean);
-    const rows=[["Price",c=>money(c.price)],["Mileage",c=>hasNumber(c.miles) ? Number(c.miles).toLocaleString()+" mi" : "Unlisted"],["Body style",c=>c.body],["Trim",c=>c.trim],["Fuel",c=>c.fuel],["Equipment",c=>(c.features||[]).join(", ")]];
+    const rows=[["Mileage",c=>hasNumber(c.miles) ? Number(c.miles).toLocaleString()+" mi" : "Unlisted"],["Body style",c=>c.body],["Trim",c=>c.trim],["Fuel",c=>c.fuel],["Equipment",c=>(c.features||[]).join(", ")]];
+    if(Store.cashPriceVisible())rows.unshift(["Price",c=>money(c.price)]);
     present("Compare vehicles",'<div class="retail-table"><table><thead><tr><th scope="col">Vehicle</th>'+cars.map(c=>'<th scope="col">'+html(name(c))+'</th>').join("")+'</tr></thead><tbody>'+rows.map(([label,read])=>'<tr><th scope="row">'+label+'</th>'+cars.map(c=>'<td>'+html(read(c)||"Unlisted")+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>');
   }
   function num(label,key,value,max,step="1",min=0) {
@@ -92,7 +93,7 @@
       return;
     }
     const t=terms[mode];
-    present("Calculate your payment",'<p class="retail-model">'+html(name(car))+' · '+money(car.price)+'</p><div class="retail-tabs">'+modes.map(m=>button("mode",m==="finance"?"Finance":"Lease",'data-mode="'+m+'" aria-pressed="'+(m===mode)+'"')).join("")+'</div><form class="retail-form"><div class="retail-fields">'+num("Term in months","months",t.months,120,"1",1)+num(mode==="finance"?"APR (%)":"Equivalent APR (%)","rate",t.rate,50,"0.01")+num("Down payment ($)","down",Math.min(t.down,car.price),car.price,"0.01")+(mode==="lease"?num("Residual value (%)","residual",t.residual,100,"0.1"):"")+'</div><div class="retail-estimate"><small>Estimated monthly payment</small><output aria-live="polite"></output></div><p class="retail-note">Illustrative terms. Taxes, registration and fees are excluded.'+(mode==="lease"?' Residual uses '+(car.msrp?'listed MSRP':'asking price as an assumed MSRP')+'. Lease eligibility and actual terms require dealer confirmation.':' Financing is subject to lender approval.')+'</p></form>');
+    present("Calculate your payment",'<p class="retail-model">'+html(name(car))+(Store.cashPriceVisible()?' · '+money(car.price):'')+'</p><div class="retail-tabs">'+modes.map(m=>button("mode",m==="finance"?"Finance":"Lease",'data-mode="'+m+'" aria-pressed="'+(m===mode)+'"')).join("")+'</div><form class="retail-form"><div class="retail-fields">'+num("Term in months","months",t.months,120,"1",1)+num(mode==="finance"?"APR (%)":"Equivalent APR (%)","rate",t.rate,50,"0.01")+num("Down payment ($)","down",Math.min(t.down,car.price),car.price,"0.01")+(mode==="lease"?num("Residual value (%)","residual",t.residual,100,"0.1"):"")+'</div><div class="retail-estimate"><small>Estimated monthly payment</small><output aria-live="polite"></output></div><p class="retail-note">Illustrative terms. Taxes, registration and fees are excluded.'+(mode==="lease"?' Residual uses '+(car.msrp?'listed MSRP':'asking price as an assumed MSRP')+'. Lease eligibility and actual terms require dealer confirmation.':' Financing is subject to lender approval.')+'</p></form>');
     const form=dialog.querySelector("form");
     function update() {
       const inputs=Object.fromEntries([...new FormData(form)].map(([k,v])=>[k,Number(v)]));

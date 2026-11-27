@@ -60,7 +60,7 @@
   const featuredKeys = ["3rd row seat","adaptive cruise control","android auto","apple carplay","automatic climate control","awd","backup camera","blind spot monitor","bluetooth","fog lights","forward collision warning","hands free liftgate","heated seats","keyless entry","navigation","moonroof"];
   const featureKey = feature => aliases[keyFor(feature)] || keyFor(feature);
   let mode = "cash", minimum = null, maximum = null, layout = "browse", sort = "recommended", options = {};
-  const enabled = key => options[key] !== false && (!["finance","lease"].includes(key)||Store.estimateAllowed(key));
+  const enabled = key => options[key] !== false && (key!=="cash" || Store.cashPriceVisible()) && (!["finance","lease"].includes(key)||Store.estimateAllowed(key));
   function resetBhph(){
     get("bhph-only").checked=false;
     for(const id of ["max-cash-down","bhph-frequency","bhph-installment"])get(id).value="";
@@ -109,14 +109,15 @@
     }
   }
   function isNarrowed() {
-    return get("bhph-only").checked || !!get("bhph-frequency").value || !!get("bhph-installment").value || !!get("max-cash-down").value || selected.size > 0 || equipment.size > 0 || minimum !== null || maximum !== null;
+    return !!(mode && mode!=="cash") || get("bhph-only").checked || !!get("bhph-frequency").value || !!get("bhph-installment").value || !!get("max-cash-down").value || selected.size > 0 || equipment.size > 0 || minimum !== null || maximum !== null;
   }
   function amount(car) {
+    if(!mode)return null;
     const value = window.Retail?.amount(car,mode) ?? (mode === "cash" ? car.price : null);
     return value === null || value === undefined || !Number.isFinite(Number(value)) ? null : Number(value);
   }
   function matches(car) {
-    if(mode!=="cash" && !Store.estimateAllowed(mode,car))return false;
+    if(mode && mode!=="cash" && !Store.estimateAllowed(mode,car))return false;
     const down=document.getElementById("max-cash-down")?.value;
     if(down && (!car.bhph || car.bhph.down>Math.round(Number(down)*100)))return false;
     if(get("bhph-only").checked && !car.bhph)return false;
@@ -185,10 +186,15 @@
     options = window.Store.settings().options || {};
     for (const field of selected.keys()) if (!enabled(field)) selected.delete(field);
     if (!enabled("features")) equipment.clear();
-    if (!enabled(mode) || !enabled("price")) {
-      mode = Object.keys(modes).find(enabled) || "cash";
+    if (!mode || !enabled(mode) || !enabled("price")) {
+      mode = enabled("cash") && enabled("price") ? "cash" : null;
       minimum = maximum = null;
     }
+    const cash=Store.cashPriceVisible();
+    for(const option of get("sortInventory").options){
+      if(["priceLow","priceHigh"].includes(option.value))option.hidden=option.disabled=!cash;
+    }
+    if(!cash && ["priceLow","priceHigh"].includes(sort))sort="recommended";
     indexFeatures(cars);
     const catalog = featureCatalog;
     if(window.clientSite?.bhph===false || Store.settings().options?.financingEnabled===false)resetBhph();
@@ -254,10 +260,13 @@
     const choices = Object.keys(modes).filter(enabled);
     box.hidden = !enabled("price") || choices.length === 0;
     if (box.hidden) return;
+    const all=choices.includes("cash")?"":'<button data-mode="all" aria-pressed="'+(mode===null)+'">All vehicles</button>';
+    const buttons='<div class="budget-modes">'+all+choices.map(m=>'<button data-mode="'+m+'" aria-pressed="'+(mode===m)+'">'+modes[m]+'</button>').join("")+'</div>';
+    if(!mode){box.innerHTML='<h4>Shop by monthly payment</h4>'+buttons;return;}
     const ceiling = Math.max(1, ...cars.map(amount).filter(value=>value !== null).map(Math.ceil), maximum || 0, minimum || 0);
     const title = mode === "cash" ? "Cash price" : "Monthly "+modes[mode].toLowerCase()+" estimate";
     const note = mode === "cash" ? "" : (window.Retail?.assumptions?.(mode) || "Illustrative monthly estimate, before taxes and fees.");
-    box.innerHTML='<div class="budget-modes">'+choices.map(m=>'<button data-mode="'+m+'" aria-pressed="'+(mode===m)+'">'+modes[m]+'</button>').join("")+'</div><h4>'+title+'</h4><div class="budget-range">'+["min","max"].map((bound,i)=>{
+    box.innerHTML=buttons+'<h4>'+title+'</h4><div class="budget-range">'+["min","max"].map((bound,i)=>{
       const value = i ? maximum : minimum, end = i ? ceiling : 0;
       return '<label>'+ (i?"Maximum":"Minimum")+'<input type="number" step="1" min="0" inputmode="numeric" aria-label="'+title+' '+bound+'" data-budget="'+bound+'" placeholder="$'+end.toLocaleString()+'" value="'+(value ?? "")+'"><input type="range" aria-label="'+title+' '+bound+' slider" data-budget-slider="'+bound+'" min="0" max="'+ceiling+'" value="'+(value ?? end)+'"></label>';
     }).join("")+'</div>'+(note?'<small>'+escape(note)+'</small>':'');
@@ -276,7 +285,7 @@
     else if (button.dataset.layout) layout=button.dataset.layout;
     else if (button.dataset.mode) {
       if(mode===button.dataset.mode)return;
-      mode=button.dataset.mode;minimum=maximum=null;
+      mode=button.dataset.mode==="all"?null:button.dataset.mode;minimum=maximum=null;
     } else if (button.id==="clearFilters") { window.filterCars("");return; }
     else return;
     change();
@@ -321,6 +330,6 @@
   const mobile=window.matchMedia("(max-width: 760px)");
   get("filterpanel").open=!mobile.matches;
   mobile.addEventListener("change",e=>get("filterpanel").open=!e.matches);
-  window.Facets={fields,searchState,restore,chips,remove,prepare,matches,order,sync,reset,isNarrowed,amount,get paymentMode(){return enabled("price") && enabled(mode) ? mode : "cash"},get layout(){return layout},get sorted(){return sort!=="recommended"}};
+  window.Facets={fields,searchState,restore,chips,remove,prepare,matches,order,sync,reset,isNarrowed,amount,get paymentMode(){return mode},get layout(){return layout},get sorted(){return sort!=="recommended"}};
 })();
 

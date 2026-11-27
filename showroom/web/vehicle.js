@@ -200,10 +200,10 @@
     panel.append(makeNode("h2","Window sticker"),link);panel.hidden=false;get("sticker-link").hidden=false;
   }
   if(sticker){get("factory").hidden=false;get("sticker-link").hidden=false;FactorySticker.render(get("factory"),sticker);}
-  const pricing=enabled("pricing");
+  const pricing=Store.cashPriceVisible();
   get("price-detail").hidden=!pricing;get("pricing-link").hidden=!pricing;
-  describe(get("pricing"),[["Original MSRP",exists(car.msrp)?money(car.msrp):null],["Internet price",exists(car.internetPrice)?money(car.internetPrice):null],[car.sourceUrl?"Admin fee included":"Listed admin fee",exists(car.adminFee)?money(car.adminFee):null],["Asking price",money(car.price)]]);
-  const modes=["cash","finance","lease"].filter(mode=>enabled(mode) && (mode==="cash" || (enabled("payment") && exists(car.price))));
+  if(pricing)describe(get("pricing"),[["Original MSRP",exists(car.msrp)?money(car.msrp):null],["Internet price",exists(car.internetPrice)?money(car.internetPrice):null],[car.sourceUrl?"Admin fee included":"Listed admin fee",exists(car.adminFee)?money(car.adminFee):null],["Asking price",money(car.price)]]);
+  const modes=["cash","finance","lease"].filter(mode=>mode==="cash"?pricing:enabled(mode) && enabled("payment") && exists(car.price));
   const labels={cash:"Cash",finance:"Finance",lease:"Lease"};
   function changeMode(mode){
     const monthly=mode==="finance"||mode==="lease";
@@ -217,7 +217,8 @@
     const btn=makeNode("button",labels[mode]);btn.type="button";btn.dataset.mode=mode;
     btn.onclick=()=>changeMode(mode);get("modes").append(btn);
   }
-  changeMode(modes[0]||"cash");
+  if(modes.length)changeMode(modes[0]);
+  else for(const id of ["modes","price-label","price","terms"])get(id).hidden=true;
   const actions=get("vehicle-actions");actions.dataset.retailCar=car.id;
   for(const btn of actions.querySelectorAll("[data-retail]")){
     const key=btn.dataset.retail;

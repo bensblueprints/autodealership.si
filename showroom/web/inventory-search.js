@@ -37,7 +37,7 @@ const InventorySearch = (() => {
     if (state.query.trim()) p.set("q",state.query.trim());
     for (const [key,value] of state.selected) p.set(key,value);
     for (const value of state.equipment) p.append("feature",value);
-    if (state.mode!=="cash") p.set("mode",state.mode);
+    if (state.mode && state.mode!=="cash") p.set("mode",state.mode);
     for (const [key,n] of [["min",state.minimum],["max",state.maximum],["down",state.down],["installment",state.installment]]) {
       if (n!=null && n!=="") p.set(key,String(n));
     }

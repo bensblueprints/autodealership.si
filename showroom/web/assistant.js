@@ -18,7 +18,7 @@
   panel.id = "showroom-concierge";
   panel.hidden = true;
   panel.setAttribute("aria-label", "Showroom assistant");
-  panel.innerHTML = '<header><div><small>PERSONAL SHOPPER</small><h2>Showroom concierge</h2></div><button type="button" class="ac-close" aria-label="Minimize concierge">Minimize</button></header><div class="ac-log" role="log" aria-live="polite"></div><div class="ac-suggestions"><button type="button">SUVs under $30k</button><button type="button">Show all cars</button></div><form class="ac-form"><input aria-label="Ask about inventory" placeholder="Ask about the inventory…" maxlength="300" required><button aria-label="Send message">Send Message</button></form><footer><button type="button" class="ac-voice">Start Voice Chat</button><span class="ac-status" role="status">Voice by ElevenLabs</span></footer>';
+  panel.innerHTML = '<header><div><small>PERSONAL SHOPPER</small><h2>Showroom concierge</h2></div><button type="button" class="ac-close" aria-label="Minimize concierge">Minimize</button></header><div class="ac-log" role="log" aria-live="polite"></div><div class="ac-suggestions"><button type="button">Show SUVs</button><button type="button">Show all cars</button></div><form class="ac-form"><input aria-label="Ask about inventory" placeholder="Ask about the inventory…" maxlength="300" required><button aria-label="Send message">Send Message</button></form><footer><button type="button" class="ac-voice">Start Voice Chat</button><span class="ac-status" role="status">Voice by ElevenLabs</span></footer>';
   document.body.append(panel);
   const log = panel.querySelector(".ac-log");
   const field = panel.querySelector("input");
@@ -163,7 +163,7 @@
     words = words.replace(/\b(under|below|less than|up to|at most|over|above|more than)\s*(\d+(?:\.\d+)?)\s*(k|thousand)?\s*(miles?|mi\b)?/g, (_, op, amount, scale, unit) => {
       const value = Number(amount) * (scale ? 1000 : 1);
       limits.push(car => {
-        const values = !unit && monthly ? monthlyPayments(car) : [car[unit ? "miles" : "price"]];
+        const values = unit ? [car.miles] : monthly ? monthlyPayments(car) : Store.cashPriceVisible() ? [car.price] : [];
         return values.some(raw=>{
           if(raw==null || String(raw).trim()==="" || !Number.isFinite(Number(raw)))return false;
           const n=Number(raw);
@@ -212,11 +212,12 @@
     const o=car?.bhph;
     const aprAvailable=Store.aprAllowed(car);
     const modes=["finance","lease"].filter(mode=>Store.estimateAllowed(mode,car));
-    const policy=modes.length===1?" The only conventional estimate available is "+modes[0]+".":"";
-    if(!o)return aprAvailable?policy:" Only the cash price is listed for this vehicle.";
+    const cash=Store.cashPriceVisible();
+    const policy=modes.length===1?" The only conventional estimate available is "+modes[0]+". ":"";
+    if(!o)return policy+(cash?(aprAvailable?"":" Only the cash price is listed for this vehicle."):" Ask the sales team for a cash price.");
     const choice=vehicleDoc()?.defaultView?.bhphChoice;
     const selected=currentCar()?.id===car.id && choice?.revision===o.revision && o.schedules.find(s=>s.frequency===choice.frequency && s.months===choice.months);
-    const intro=policy+"Stock "+(car.stock||car.id)+". Cash price "+BHPH.money(o.cash)+". "+(aprAvailable?"":"This listing offers Buy Here Pay Here. APR estimates are turned off. ");
+    const intro=policy+"Stock "+(car.stock||car.id)+". "+(cash?"Cash price "+BHPH.money(o.cash)+". ":"")+(aprAvailable?"":"This listing offers Buy Here Pay Here. APR estimates are turned off. ");
     if(selected)return intro+"Selected schedule: "+BHPH.summary(o,selected);
     return intro+"BHPH price "+BHPH.money(o.price)+", cash down "+BHPH.money(o.down)+", remaining "+BHPH.money(o.balance)+". Available schedules: "+o.schedules.map(s=>s.months+" months "+s.frequency.toLowerCase()+" ("+(s.count-1)+" payments of "+BHPH.money(s.payment)+", final payment "+BHPH.money(s.final)+")").join("; ")+".";
   }
@@ -400,7 +401,7 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "ac-car";
-      button.textContent = title(car) + " · " + money(car.price) + (car.stock ? " · Stock # "+car.stock : "");
+      button.textContent = title(car) + (Store.cashPriceVisible()?" · "+money(car.price):"") + (car.stock ? " · Stock # "+car.stock : "");
       button.addEventListener("click", () => openCar(car,book));
       entry.append(button);
     }
@@ -421,6 +422,9 @@
     if(!/test.drive|book/i.test(query)){
       const asksAboutPlan=/(?:pay(?:ment|out)?|pay[ -]off) schedule|read.*schedule|selected plan|buy here|bhph|cash down|down payment|weekly|biweekly|monthly payment|cash price/i.test(query);
       const asksAboutFinance=/financ|lease|payments?|\bapr\b/i.test(query);
+      if(/\b(?:cash|asking|selling) price\b/i.test(query) && !Store.cashPriceVisible()){
+        addLine("Ask the sales team for a cash price."+(shown?.bhph?" "+financingContext(shown).trim():""));return;
+      }
       const requested=/\bleas(?:e|ing)\b/i.test(query)?"lease":/\bapr\b|bank financ/i.test(query)?"finance":null;
       if(requested && !Store.estimateAllowed(requested,shown)){
         addLine("The dealership has turned off "+requested+" estimates"+(shown?" for this vehicle.":".")+(shown?financingContext(shown):""));return;
@@ -431,7 +435,7 @@
       if(!shown && !Store.aprAllowed() && (asksAboutPlan || asksAboutFinance) && !/\d/.test(query)){
         const offers=Store.cars().filter(car=>car.bhph);
         if(offers.length)list("These vehicles have published Buy Here Pay Here payments. Choose one to see its schedule.",offers);
-        else addLine("The dealership lists cash prices only.");
+        else addLine(Store.cashPriceVisible()?"The dealership lists cash prices only.":"Contact the sales team for pricing and payment options.");
         return;
       }
     }
@@ -480,7 +484,7 @@
       return;
     }
     const results = search(query);
-    if (!results.length) addLine("I couldn’t match that search. Try a make, model, body style, or price limit.");
+    if (!results.length) addLine("I couldn’t match that search. Try a make, model, or stock number.");
     else list(results.length + (results.length === 1 ? " vehicle matches." : " vehicles match.") + " Select one for details or a test drive.", results);
   }
   panel.querySelector("form").addEventListener("submit", event => {
@@ -540,7 +544,7 @@
               vehicles:matches.slice(0,8).map(car=>({
                 id:car.id,stock:car.stock,vin:car.vin,year:car.year,make:car.make,model:car.model,trim:car.trim,
                 aprEstimates:Store.estimateAllowed("finance",car),leaseEstimates:Store.estimateAllowed("lease",car),buyHerePayHere:car.bhph?financingContext(car).trim():null,
-                body:car.body,price:car.price??null,miles:car.miles??null,location:car.location,condition:car.condition,
+                body:car.body,price:Store.cashPriceVisible()?(car.price??null):null,miles:car.miles??null,location:car.location,condition:car.condition,
                 availability:car.availability || "Confirm with dealer",observedAt:car.observedAt,
                 features:relevant(car.features||[],query,12),packages:relevant(car.packages||[],query,6)
               }))

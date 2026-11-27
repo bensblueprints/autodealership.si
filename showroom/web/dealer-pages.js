@@ -82,6 +82,7 @@ const DealerSitePages=(()=>{
     }).join("");
   }
   function paymentPageAllowed(key,options={},apr=true){
+    if(key==="under-20k")return options.cash!==false && options.pricing!==false;
     if(!requiresApr.has(key))return true;
     if(!apr)return false;
     if(["leasing","lease-specials"].includes(key))return options.lease!==false;

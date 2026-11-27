@@ -17,14 +17,15 @@
     if (!Facets.matches(car)) return false;
     if(selectedIds)return selectedIds.has(String(car.id)) && (!category || car.body===category);
     const words = query.trim().toLowerCase();
-    const haystack=[title(car),car.trim,car.body,car.id,car.stock,car.vin,car.miles,miles(car),car.price,currency(car.price),car.fuel,car.transmission,car.engine,car.color,car.interior,InventorySearch.drivetrain(car),car.doors,car.location,car.status,...(car.features || [])].join(' ').toLowerCase();
+    const haystack=[title(car),car.trim,car.body,car.id,car.stock,car.vin,car.miles,miles(car),...(Store.cashPriceVisible()?[car.price,currency(car.price)]:[]),car.fuel,car.transmission,car.engine,car.color,car.interior,InventorySearch.drivetrain(car),car.doors,car.location,car.status,...(car.features || [])].join(' ').toLowerCase();
     return (!savedOnly || saved.includes(String(car.id))) && (!category || car.body===category) && (!words || words.split(/\s+/).every(word => haystack.includes(word)));
   }
   function card(car) {
     const id=escape(car.id), favorite=saved.includes(String(car.id));
-    const monthly=!exists(car.price) || Facets.paymentMode==='cash' ? null : Facets.amount(car);
+    const asking=Store.cashPriceVisible()?'<strong>'+(car.bhph?'Cash '+BHPH.money(car.bhph.cash):currency(car.price))+'</strong>':'';
+    const monthly=Facets.paymentMode && Facets.paymentMode!=='cash' ? Facets.amount(car) : null;
     const payment=monthly===null ? '' : '<div class="monthly-estimate">Est. '+currency(monthly)+'/mo · '+escape(Facets.paymentMode)+'</div>';
-    return '<article class="card"><a class="carlink" href="vehicle.html?stock='+encodeURIComponent(car.id)+'" data-car="'+id+'">'+(car.image?'<img loading="lazy" src="'+escape(car.image)+'" alt="">':'<div class="photo-missing"><svg aria-hidden="true"><use href="assets/inventory-icons.svg#car-side"></use></svg><span>Photo unavailable</span></div>')+'<div class="cardinfo">'+(car.imageType==='stock'?'<small>Representative photo</small>':'')+'<h4>'+escape(title(car))+'</h4><div class="spec">'+escape(specs(car))+'</div><div class="card-identifiers"><span>Stock # <b>'+escape(car.stock || "Unavailable")+'</b></span><span>VIN <b>'+escape(car.vin || "Unavailable")+'</b></span></div><strong>'+(car.bhph?'Cash '+BHPH.money(car.bhph.cash):currency(car.price))+'</strong>'+(car.bhph?'<p>Buy Here Pay Here '+BHPH.money(car.bhph.price)+' · '+BHPH.money(car.bhph.down)+' down</p>':'')+payment+'<span class="inventory-offer" data-offer-vin="'+id+'" hidden></span></div></a><button class="save" aria-label="'+(favorite?'Unsave ':'Save ')+escape(title(car))+'" aria-pressed="'+favorite+'" data-save="'+id+'">'+(favorite?'♥':'♡')+'</button>'+(window.Retail?.card(car) || '')+'</article>';
+    return '<article class="card"><a class="carlink" href="vehicle.html?stock='+encodeURIComponent(car.id)+'" data-car="'+id+'">'+(car.image?'<img loading="lazy" src="'+escape(car.image)+'" alt="">':'<div class="photo-missing"><svg aria-hidden="true"><use href="assets/inventory-icons.svg#car-side"></use></svg><span>Photo unavailable</span></div>')+'<div class="cardinfo">'+(car.imageType==='stock'?'<small>Representative photo</small>':'')+'<h4>'+escape(title(car))+'</h4><div class="spec">'+escape(specs(car))+'</div><div class="card-identifiers"><span>Stock # <b>'+escape(car.stock || "Unavailable")+'</b></span><span>VIN <b>'+escape(car.vin || "Unavailable")+'</b></span></div>'+asking+(car.bhph?'<p>Buy Here Pay Here '+BHPH.money(car.bhph.price)+' · '+BHPH.money(car.bhph.down)+' down</p>':'')+payment+'<span class="inventory-offer" data-offer-vin="'+id+'" hidden></span></div></a><button class="save" aria-label="'+(favorite?'Unsave ':'Save ')+escape(title(car))+'" aria-pressed="'+favorite+'" data-save="'+id+'">'+(favorite?'♥':'♡')+'</button>'+(window.Retail?.card(car) || '')+'</article>';
   }
   const pageSize=24;
   const initialParams=new URLSearchParams(location.search);
@@ -185,7 +186,7 @@
     page=Math.max(0,Math.min(page,pages-1));
     updateSearch();
     const batch=filtered.slice(page*pageSize,(page+1)*pageSize);
-    const budget=filtered.filter(car=>exists(car.price)&&car.price<30000).slice(0,8);
+    const budget=Store.cashPriceVisible()?filtered.filter(car=>exists(car.price)&&car.price<30000).slice(0,8):[];
     const utility=filtered.filter(car=>['SUV','Truck'].includes(car.body)).slice(0,8);
     $('cards').innerHTML=browse ? [shelf('Inventory',batch),page===0&&budget.length?shelf('Under $30,000',budget):'',page===0&&utility.length?shelf('SUVs & trucks',utility):''].join(''):batch.map(card).join('');
     $('inventoryPager').hidden=pages<2;
@@ -208,7 +209,7 @@
       $('heroimg').alt=title(hero);
       $('heroyear').textContent=hero.year+' '+hero.make;
       $('heroname').textContent=hero.model;
-      $('herospec').textContent=[hero.trim,miles(hero),currency(hero.price),hero.imageType==="stock"?"Representative photo":""].filter(Boolean).join('  ·  ');
+      $('herospec').textContent=[hero.trim,miles(hero),Store.cashPriceVisible()?currency(hero.price):'',hero.imageType==="stock"?"Representative photo":""].filter(Boolean).join('  ·  ');
       $('slidecount').textContent=String(slide%list.length+1).padStart(2,'0')+' / '+String(list.length).padStart(2,'0');
     }
     if(scrollToSearch){scrollToSearch=false;requestAnimationFrame(()=>$('inventory').scrollIntoView({block:'start'}));}

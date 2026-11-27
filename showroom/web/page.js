@@ -59,7 +59,7 @@
         const copy=el("div",undefined,"copy");copy.append(el("h2",[c.year,c.make,c.model].filter(Boolean).join(" ")));
         if(c.imageType==="stock")copy.append(el("p","Representative image"));
         copy.append(el("p",[c.trim,Number.isFinite(c.miles)?c.miles.toLocaleString()+" mi":""].filter(Boolean).join(" · ")),
-          el("strong",typeof c.price==="number"&&c.price>0?usd.format(c.price):"Ask for price"));
+          el("strong",Store.cashPriceVisible() && typeof c.price==="number"&&c.price>0?usd.format(c.price):"Ask for price"));
                   const ids=el("div",undefined,"card-identifiers");
           for(const [label,value] of [["Stock #",c.stock],["VIN",c.vin]]){
             const line=el("span",label+" ");line.append(el("b",value||"Unavailable"));ids.append(line);
