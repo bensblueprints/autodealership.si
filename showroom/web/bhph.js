@@ -4,14 +4,20 @@
   const summary=(o,s)=>`BHPH price ${money(o.price)}, cash down ${money(o.down)}, remaining ${money(o.balance)}. ${s.months} months, ${s.frequency.toLowerCase()}: ${s.count-1} payments of ${money(s.payment)}, then ${money(s.final)}.`;
   function show(car){
     const offer=car.bhph,section=document.createElement("section");section.className="bhph-offer";section.id="vehicle-payment-schedules";
-    section.innerHTML='<h2>Buy Here Pay Here</h2><p></p><label>Payment schedule <select><option value="">Choose a schedule</option></select></label><p role="status"></p>';
-    section.querySelector("p").textContent=`Cash price ${money(offer.cash)} · BHPH price ${money(offer.price)} · Cash down ${money(offer.down)} · Remaining ${money(offer.balance)}`;
+    section.innerHTML='<h2>Buy Here Pay Here</h2><dl></dl><label>Payment schedule<select><option value="">Choose a schedule</option></select></label><p role="status"></p>';
+    const breakdown=section.querySelector("dl");
+    for(const [label,cents] of [["Cash price",offer.cash],["BHPH price",offer.price],["Cash down",offer.down],["Remaining balance",offer.balance]]){
+      const group=document.createElement("div"),name=document.createElement("dt"),value=document.createElement("dd");
+      name.textContent=label;value.textContent=money(cents);group.append(name,value);breakdown.append(group);
+    }
     const select=section.querySelector("select");
     offer.schedules.forEach((s,i)=>select.add(new Option(s.months+" months · "+s.frequency+" · "+money(s.payment),i)));
     select.onchange=()=>{
       const s=select.value===""?null:offer.schedules[Number(select.value)];
       window.bhphChoice=s?{revision:offer.revision,frequency:s.frequency,months:s.months}:null;
-      section.lastChild.textContent=s?summary(offer,s):"";
+      const installments=section.querySelector("[role=status]");
+      installments.textContent=!s?"":s.count===1?`One payment of ${money(s.final)}.`:
+        `${s.count-1} ${s.frequency.toLowerCase()} ${s.count===2?"payment":"payments"} of ${money(s.payment)}, then a final payment of ${money(s.final)}.`;
       window.dispatchEvent(new Event("bhph-schedule-change"));
       if(parent!==window && parent.location.origin===location.origin)parent.dispatchEvent(new Event("bhph-schedule-change"));
     };
