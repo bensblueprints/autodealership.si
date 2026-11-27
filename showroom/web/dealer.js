@@ -28,25 +28,6 @@
     if(link) { const a=node("a","Open showroom ↗");a.href="index.html";box.append(a); }
     return box;
   }
-  function openTextDraft(lead){
-    const modal=node("dialog"),form=node("form"),heading=node("h2","Prepare text reply"),label=node("label","Reply draft");
-    modal.setAttribute("aria-label","Prepare text reply");
-    const vehicle=[lead.car?.year,lead.car?.make,lead.car?.model].filter(Boolean).join(" ");
-    const field=node("textarea");field.rows=5;field.maxLength=1000;field.required=true;
-    field.value=lead.textDraft?.text||"Hi "+lead.name+", this is "+Store.settings().dealerName+". Thanks for asking about the "+vehicle+(lead.car?.stock?" (stock "+lead.car.stock+")":"")+".";
-    const status=node("p"),save=node("button","Save draft","primary"),cancel=node("button","Close","quiet");
-    status.setAttribute("role","status");save.type="submit";cancel.type="button";cancel.onclick=()=>modal.close();
-    label.append(field);form.append(heading,node("p","Shopper requested a reply at "+lead.textReplyRequest.number+"."),node("p",lead.message),label,node("small","Saving keeps this draft in the dealer inbox."),status,save,cancel);
-    modal.append(form);document.body.append(modal);modal.onclose=()=>modal.remove();modal.showModal();
-    form.onsubmit=async event=>{
-      event.preventDefault();save.disabled=true;
-      try{
-        const response=await fetch("/api/inquiries",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"save-text-draft",id:lead.id,text:field.value,revision:lead.textDraft?.revision||""})});
-        const data=await response.json();if(!response.ok)throw Error(data.error||"Could not save the draft.");
-        lead.textDraft=data;await Store.loadLeads();modal.close();notice("Reply draft saved");
-      }catch(err){status.textContent=err.message;}finally{save.disabled=false;}
-    };
-  }
   function renderLeads(leads,list,filter) {
     list.replaceChildren();
     if(Store.inquiryState()){list.textContent=Store.inquiryState();return;}
@@ -68,8 +49,8 @@
       if(lead.email){const a=node("a",lead.email);a.href="mailto:"+encodeURIComponent(lead.email);contact.append(a);}
       if(lead.phone){const a=node("a",lead.phone);a.href="tel:"+lead.phone.replace(/[^+\d]/g,"");contact.append(a);}
       if(window.postgresInventory && lead.textReplyRequest?.version===InquiryContact.version){
-        const draft=node("button",lead.textDraft?"Edit text draft":"Prepare text reply","quiet");
-        draft.type="button";draft.onclick=()=>openTextDraft(lead);
+        const draft=node("button","Text conversation","quiet");
+        draft.type="button";draft.onclick=()=>DealerTexts.open(lead,draft);
         details.append(node("small","Text reply requested for this inquiry"),draft);
       }
       details.append(contact,node("small",(lead.source||"Showroom inquiry")+" · "+new Date(lead.createdAt).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}),"leadtime"));

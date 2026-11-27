@@ -1,0 +1,22 @@
+#recent-texts {margin:12px 0 20px;padding:12px 16px;background:var(--panel,var(--bg));border:1px solid var(--line);border-radius:10px}
+#recent-texts summary {font-weight:650;cursor:pointer}
+#recent-texts[open] summary {margin-bottom:10px}
+#recent-text-list {display:grid;gap:4px}
+.text-recent-row {display:grid;grid-template-columns:auto 1fr auto;align-items:baseline;gap:12px;text-align:left}
+.text-recent-row span {overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#text-conversation {width:min(610px,calc(100% - 24px));max-height:90dvh;overflow-y:auto;padding:clamp(16px,3vw,26px);color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:14px}
+.sms-head,.sms-subhead,.sms-actions {display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sms-head {align-items:flex-start}
+.sms-head h2,.sms-subhead h3 {margin:0}
+.sms-head p,#text-conversation [data-info],.sms-transcript small,.sms-empty,#recent-text-list small {color:var(--sub);font-size:.875rem}
+.sms-head p {margin:6px 0 0;overflow-wrap:anywhere}
+.sms-transcript {margin:18px 0;border-block:1px solid var(--line);padding-block:12px}
+.sms-transcript ol {display:grid;gap:8px;align-content:start;max-height:32vh;overflow:auto;padding:0 4px 0 0;list-style:none}
+.sms-transcript li {max-width:86%;padding:9px 12px;border:1px solid var(--line);border-radius:9px;overflow-wrap:anywhere}
+.sms-transcript li.sms-out {justify-self:end;background:#233344}.sms-transcript li.sms-in {justify-self:start}.sms-transcript li.sms-empty {border:0;padding:0}
+.sms-transcript p {margin:4px 0;white-space:pre-wrap}.sms-transcript strong {font-size:.8rem}
+#text-conversation form {display:grid;gap:10px}#text-conversation form[hidden],#text-conversation button[hidden]{display:none}
+#text-conversation textarea {display:block;width:100%;margin-top:5px;resize:vertical}
+.sms-actions {justify-content:flex-start}#text-conversation [data-status]:empty {display:none}
+#text-conversation button:disabled {opacity:.55}
+@media(max-width:520px){.text-recent-row{grid-template-columns:1fr auto}.text-recent-row span{grid-column:1/-1;grid-row:2}.sms-transcript ol{max-height:28vh}}

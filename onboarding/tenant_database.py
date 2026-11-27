@@ -19,6 +19,8 @@ TABLES = {
     "oem_program_revisions": "program_id uuid NOT NULL, revision integer NOT NULL, state text NOT NULL, details jsonb NOT NULL, actor text NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(program_id,revision)",
     "oem_banner_reviews": "digest text PRIMARY KEY, program_id uuid NOT NULL, program_revision integer NOT NULL, creative jsonb NOT NULL, actor text NOT NULL, approved_at timestamptz NOT NULL DEFAULT now()",
     "marketing_campaigns": "id uuid PRIMARY KEY, revision integer NOT NULL, state text NOT NULL, brief jsonb NOT NULL, history jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now()",
+    "inquiry_sms_messages": "id uuid PRIMARY KEY,sid text UNIQUE,phone text NOT NULL,sender text NOT NULL,inquiry uuid,stock text,direction text NOT NULL,body text NOT NULL,state text NOT NULL,actor text,created_at timestamptz NOT NULL DEFAULT now()",
+    "inquiry_sms_contacts": "phone text PRIMARY KEY,blocked boolean NOT NULL,changed_at timestamptz NOT NULL",
     "shopper_leads": "id uuid PRIMARY KEY,body jsonb NOT NULL",
 }
 
@@ -38,11 +40,9 @@ def provision(control, site_id, name, legacy=False, template="independent"):
                 continue
             if table == "vehicle_photo_assets":
                 source = sql.SQL("SELECT * FROM public.vehicle_photo_assets WHERE site={}").format(sql.Literal(str(site_id)))
-            elif table in ("marketing_campaigns","oem_program_revisions","oem_banner_reviews","website_page_editions","website_page_review_events","inventory_lot_dates") and not control.execute(
+            elif table in ("marketing_campaigns","oem_program_revisions","oem_banner_reviews","website_page_editions","website_page_review_events","inventory_lot_dates","inquiry_sms_contacts","inquiry_sms_messages","shopper_leads") and not control.execute(
                 "SELECT to_regclass(%s) AS name", (database + "." + table,)
             ).fetchone()["name"]:
-                continue
-            elif table == "shopper_leads":
                 continue
             else:
                 source = sql.SQL("SELECT * FROM {}.{}").format(sql.Identifier(database), ident)
@@ -55,6 +55,7 @@ def provision(control, site_id, name, legacy=False, template="independent"):
             expected = control.execute(sql.SQL("SELECT count(*) AS n FROM ({}) AS source_rows").format(source)).fetchone()["n"]
             if target.execute(sql.SQL("SELECT count(*) FROM {}").format(ident)).fetchone()[0] != expected:
                 raise RuntimeError("Copy verification failed for " + table)
+        target.execute("CREATE INDEX IF NOT EXISTS sms_phone_time ON inquiry_sms_messages(phone,created_at DESC)")
         if not legacy:
             from psycopg.types.json import Jsonb
             target.execute("INSERT INTO client_profile VALUES(1,%s,%s)", (Jsonb({"dealerName":name,"profile":{"skin":"midnight","siteTemplate":template},"pages":{}}),uuid.uuid4().hex))

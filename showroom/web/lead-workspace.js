@@ -21,7 +21,7 @@ const LeadWorkspace=(()=>{
   const narrowed=()=>Boolean(get("lead-search").value.trim() || get("lead-queue").value!=="all");
   function filter(rows){
     const search=get("lead-search").value.trim().toLowerCase();
-    const digits=search.replace(/\D/g,""),phoneSearch=digits.length>=3 && /^[+\d().\s-]+$/.test(search);
+    const digits=search.replace(/\D/g,"").replace(/^1(?=\d{10}$)/,""),phoneSearch=digits.length>=3 && /^[+\d().\s-]+$/.test(search);
     const queue=get("lead-queue").value,now=Date.now();
     const matches=rows.filter(row=>{
       const work=row.followUp||{},due=Date.parse(work.task?.dueAt);

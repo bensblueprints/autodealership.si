@@ -290,6 +290,17 @@ createServer(async(req,res)=>{
       body=Buffer.concat(chunks);
     }
     const route=new URL(req.url,base);
+    const smsRoute=()=>{
+      if(!tenant)return null;
+      try{return worker.dealerSmsRoute(JSON.parse(readFileSync(join(dataDir,"sms-routes.json"),"utf8")),tenant.id);}
+      catch(e){if(e.code==="ENOENT")return null;throw e;}
+    };
+    const smsOrigin=tenant?"https://"+tenant.slug+".autodealership.si":"";
+    if(["/api/dealer-sms/incoming","/api/dealer-sms/status"].includes(route.pathname)){
+      if(!tenant || prefix || base.hostname!==tenant.slug+".autodealership.si" || req.method!=="POST" || !req.headers["content-type"]?.startsWith("application/x-www-form-urlencoded") || body.length>24000){res.writeHead(403).end();return;}
+      const result=await worker.dealerSmsWebhook(db,{route:smsRoute(),origin:smsOrigin,path:route.pathname+route.search,params:new URLSearchParams(body.toString("utf8")),signature:req.headers["x-twilio-signature"]});
+      res.writeHead(result.status,{"Content-Type":"text/xml","Cache-Control":"no-store"}).end(result.status===200?"<Response/>":"");return;
+    }
     const emailManager=!!tenant && (!!managesUsers || clerkRole==="org:admin");
     if(route.pathname==="/api/dealer-email/setup"){
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
@@ -563,7 +574,7 @@ createServer(async(req,res)=>{
         await db.query("UPDATE bhph_offers SET offer=$2,revision=revision+1 WHERE vehicle=$1 AND revision=$3 RETURNING revision",[vehicle,offer,data.revision]);
       return result.rowCount?reply(200,result.rows[0]):reply(409,{error:"Pricing changed in another session. Reopen the editor."});
     }
-    if(route.pathname==="/api/inquiries" || route.pathname==="/api/inquiries/team" || route.pathname==="/api/inquiries/history"){
+    if(route.pathname==="/api/inquiries" || route.pathname==="/api/inquiries/team" || route.pathname==="/api/inquiries/history" || route.pathname==="/api/inquiries/texts"){
       const reply=(code,data)=>res.writeHead(code,{"Content-Type":"application/json","Cache-Control":"no-store"}).end(JSON.stringify(data));
       const currentActor=()=>{
         if(clerkRole || platformStaff)return {id:"clerk:"+claims.subject,label:platformStaff?"Platform staff":"Dealership staff"};
@@ -572,6 +583,18 @@ createServer(async(req,res)=>{
         return {id:"dealer",label:"Dealer administrator"};
       };
       const team=()=>worker.followupTeam(pool,{site,organization:clerkOrg,actor:currentActor(),manager:!!managesUsers||clerkRole==="org:admin"});
+      const smsActor=()=>({...currentActor(),manager:!!managesUsers || clerkRole==="org:admin"});
+      if(route.pathname==="/api/inquiries/texts"){
+        if(!privateAdmin)return reply(403,{error:"Dealer sign-in required."});
+        if(req.method==="GET"){
+          const result=await worker.dealerSmsThread(db,{id:route.searchParams.get("id"),message:route.searchParams.get("message"),actor:smsActor(),route:smsRoute()});
+          return reply(result.status,result.data);
+        }
+        if(req.method!=="POST" || req.headers.origin!==base.origin || !req.headers["content-type"]?.startsWith("application/json"))return reply(403,{error:"Open the conversation in the dealer dashboard."});
+        let payload;try{payload=JSON.parse(body);}catch{return reply(400,{error:"Invalid draft reference."});}
+        const result=await worker.sendInquirySms(db,{id:payload?.id,revision:payload?.revision,actor:smsActor(),route:smsRoute(),origin:smsOrigin});
+        return reply(result.status,result.data);
+      }
       if(route.pathname!=="/api/inquiries"){
         if(!privateAdmin)return reply(403,{error:"Dealer sign-in required."});
         if(req.method!=="GET")return reply(405,{error:"Use GET."});
@@ -589,8 +612,12 @@ createServer(async(req,res)=>{
         if(input?.action==="save-text-draft"){
           if(!/^[0-9a-f-]{36}$/i.test(input.id) || typeof input.text!=="string" || !input.text.trim() || input.text.length>1000 || typeof input.revision!=="string")return reply(400,{error:"Check the draft and reopen the inquiry."});
           const draft={text:input.text.trim(),revision:randomUUID(),updatedAt:new Date().toISOString()};
-          const saved=await db.query("UPDATE shopper_leads SET body=jsonb_set(body,'{textDraft}',$2::jsonb) WHERE id=$1 AND body->'textReplyRequest'->>'version'=$3 AND COALESCE(body->'textDraft'->>'revision','')=$4 RETURNING id",[input.id,draft,worker.InquiryContact.version,input.revision]);
-          return saved.rowCount?reply(200,draft):reply(409,{error:"This inquiry changed or has no text request. Reopen it to review."});
+          const actor=smsActor();
+          const saved=await db.query(`UPDATE shopper_leads SET body=jsonb_set(body,'{textDraft}',CASE WHEN body#>>'{textDraft,text}'=$5 THEN body->'textDraft' ELSE $2::jsonb END)
+            WHERE id=$1 AND body#>>'{textReplyRequest,version}'=$3 AND coalesce(body#>>'{textDraft,revision}','')=$4
+              AND ($6 OR body#>>'{followUp,owner,id}' IS NULL OR body#>>'{followUp,owner,id}'=$7) RETURNING body->'textDraft' AS draft`,
+            [input.id,draft,worker.InquiryContact.version,input.revision,draft.text,actor.manager,actor.id]);
+          return saved.rowCount?reply(200,saved.rows[0].draft):reply(409,{error:"Reopen this inquiry to check its draft, salesperson and text request."});
         }
         if(input?.action && input.action!=="save-follow-up")return reply(400,{error:"Unknown inquiry action."});
         const result=await worker.updateInquiry(db,input,await team(),!input?.action);
