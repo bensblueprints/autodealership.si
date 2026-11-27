@@ -1,0 +1,29 @@
+#template-preview {
+  width: min(1080px, calc(100vw - 2rem)); max-height: 94dvh; box-sizing: border-box;
+  padding: clamp(16px, 2vw, 26px); overflow: auto; color: var(--text); background: var(--panel, #182331);
+}
+#template-preview header, #template-preview .preview-tools, #template-preview [role=group] { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#template-preview header { justify-content: space-between; padding: 0 0 12px; background: transparent; border-bottom: 1px solid var(--line); }
+#template-preview-full { margin-left: auto; color: var(--lime, #8cdecd); padding: 6px 0; text-underline-offset: 3px; font-size: .875rem; }
+#template-preview h2, #template-preview h3, #template-preview p { margin: 0; }
+#template-preview h2 { font-size: clamp(1.3rem,3vw,1.85rem); }
+#template-preview-selection, #template-preview .preview-help, #template-preview-impact small { color: var(--sub); }
+#template-preview .preview-tools { margin: 1rem 0 .7rem; }
+#template-preview [role=group] { gap: 2px; padding: 3px; background: #101926; border: 1px solid var(--line); border-radius: 9px; }
+#template-preview button { min-height: 44px; padding: 7px 12px; font: 600 .875rem/1.2 system-ui; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+#template-preview [data-preview-size] { border-color: transparent; }
+#template-preview [aria-pressed=true] { background: var(--lime, #8cdecd); color: #11241f; }
+#template-preview button:focus-visible, #template-preview summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+#template-preview-stage { position: relative; width: 100%; height: clamp(240px, 53dvh, 660px); overflow: hidden; background: #101721; border: 1px solid var(--line); border-radius: 6px; box-sizing: border-box; }
+#template-preview-stage iframe { position: absolute; top: 0; min-width: 0; max-width: none; padding: 0; border: 0; transform-origin: top left; background: #fff; }
+#template-preview-impact { margin-top: .9rem; }
+#template-preview-impact h3 { margin: 0 0 .25rem; font-size: 1rem; }
+#template-preview-impact summary { padding: .35rem 0; cursor: pointer; }
+#template-preview-impact ul { margin: .15rem 0 .5rem; padding-inline-start: 1.5rem; }
+#template-preview-impact li { overflow-wrap: anywhere; }
+#template-preview .preview-help { margin-top: .8rem; font-size: .85rem; }
+@media (max-width: 600px) {
+  #template-preview { width: calc(100vw - 1rem); padding: 12px; }
+  #template-preview header { align-items: flex-start; }
+  #template-preview-stage { height: 48dvh; }
+}

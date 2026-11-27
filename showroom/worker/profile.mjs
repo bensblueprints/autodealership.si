@@ -1,10 +1,11 @@
+export const showroomSkinKeys=["midnight","pearl","navy","forest","burgundy","plum","slate","sand"];
 const profileKey="dealer-profile.json";
 const profileKeys=["logo","logoLightBackground","salesPhone","partsPhone","servicePhone","street","city","region","postal","country","facebook","instagram","youtube","tiktok","x","linkedin"];
 function profileReply(body,status=200){return Response.json(body,{status,headers:{"Cache-Control":"no-store"}});}
 function validateProfile(input){
   if(!input || typeof input.dealerName!=="string" || !(input.dealerName.trim()) || input.dealerName.length>120 || typeof input.profile!=="object" || !input.profile)throw Error("Enter a dealership name and profile.");
   const skin=input.profile.skin||"midnight";
-  if(!["midnight", "pearl", "navy", "forest", "burgundy", "plum", "slate", "sand"].includes(skin))throw Error("Unknown showroom skin.");
+  if(!showroomSkinKeys.includes(skin))throw Error("Unknown showroom skin.");
   const profile={skin};
   profile.siteTemplate=input.profile.siteTemplate||"classic";
   if(!Object.hasOwn(DealerSitePages.templates,profile.siteTemplate))throw Error("Choose a supported showroom template.");

@@ -339,6 +339,26 @@ createServer(async(req,res)=>{
       body=Buffer.concat(chunks);
     }
     const route=new URL(req.url,base);
+    const previewHome=route.pathname==="/dealer-preview";
+    const previewApi=route.pathname.startsWith("/api/storefront-preview/");
+    let previewLayout=null,previewSkin=null,previewPages;
+    if(previewHome || previewApi){
+      res.setHeader("Cache-Control","private, no-store");res.setHeader("X-Robots-Tag","noindex, nofollow");
+      if(!privateAdmin || prefix || (!tenant && base.hostname!=="demo.autodealership.si")){res.writeHead(403).end("Sign in to preview this dealership.");return;}
+      if(req.method!=="GET"){res.writeHead(405,{Allow:"GET"}).end();return;}
+      previewLayout=route.searchParams.get("layout");previewSkin=route.searchParams.get("skin")||"midnight";
+      if(!Object.hasOwn(worker.DealerSitePages.templates,previewLayout)||!worker.showroomSkinKeys.includes(previewSkin)){res.writeHead(400).end("Choose a supported layout and color.");return;}
+      if(previewHome){
+        route.pathname="/";
+        res.setHeader("Content-Security-Policy","frame-ancestors 'self'; form-action 'none'; connect-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'");
+        res.setHeader("Referrer-Policy","no-referrer");res.setHeader("Permissions-Policy","microphone=(), camera=()");
+      }else{
+        const part=route.pathname.slice("/api/storefront-preview/".length);
+        if(["banners","website-offers"].includes(part))route.pathname="/api/"+part;
+        else if(part.startsWith("manufacturer-marks/"))route.pathname="/"+part;
+        else{res.writeHead(404).end();return;}
+      }
+    }
     const smsAccount=()=>{
       if(!tenant)return null;
       return worker.managedTwilioAccount(loadTwilioRoutes(),tenant.id);
@@ -507,7 +527,7 @@ createServer(async(req,res)=>{
       const headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","X-Robots-Tag":"noindex","Cross-Origin-Resource-Policy":"same-origin"};
       if(!["GET","HEAD"].includes(req.method)){res.writeHead(405,{...headers,Allow:"GET, HEAD"}).end();return;}
       if(!match || Number(match[2])>2147483647 || prefix || (!tenant && base.hostname!=="demo.autodealership.si")){res.writeHead(404,headers).end();return;}
-      const [row]=await worker.publicBrandPlacements(db,{brand:match[1],sequence:Number(match[2]),digest:match[3],image:true});
+      const [row]=await worker.publicBrandPlacements(db,{brand:match[1],sequence:Number(match[2]),digest:match[3],image:true,layout:previewLayout});
       if(!row){res.writeHead(404,headers).end();return;}
       res.writeHead(200,{...headers,"Content-Type":"image/png","Content-Security-Policy":"default-src 'none'; sandbox"}).end(req.method==="HEAD"?undefined:row.image);return;
     }
@@ -551,7 +571,7 @@ createServer(async(req,res)=>{
     if(route.pathname==="/api/website-offers"){
       const headers={"Content-Type":"application/json","Cache-Control":"private, no-store","X-Robots-Tag":"noindex"};
       if(req.method!=="GET"){res.writeHead(405,{...headers,Allow:"GET"}).end();return;}
-      const offers=(await worker.websiteOffers(db,!!tenant)).map(({id,...publicOffer})=>publicOffer);
+      const offers=(await worker.websiteOffers(db,!!tenant,previewLayout)).map(({id,...publicOffer})=>publicOffer);
       res.writeHead(200,headers).end(JSON.stringify(offers));return;
     }
     if(route.pathname==="/api/storefront-reports"){
@@ -915,8 +935,8 @@ createServer(async(req,res)=>{
         const row=(await db.query("SELECT revision,config FROM homepage_banners WHERE id=1")).rows[0];
         const config=row?.config??{enabled:false,slides:[]};
         const settings=(await db.query("SELECT settings->'profile'->>'siteTemplate' AS template,settings->'profile'->>'driveTimezone' AS timezone FROM client_profile WHERE id=1")).rows[0]||{};
-        const franchise=settings.template==="franchise",timezone=settings.timezone||"America/Chicago";
-        const checked=await worker.governedSlides(db,config.slides||[],franchise,timezone,!!tenant);
+        const franchise=(previewLayout||settings.template)==="franchise",timezone=settings.timezone||"America/Chicago";
+        const checked=await worker.governedSlides(db,config.slides||[],franchise,timezone,!!tenant,previewLayout);
         if(editor){
           const art=(await pool.query("SELECT id,layout,title FROM public.template_hero_art ORDER BY layout,title,id")).rows;
           return reply(200,{...config,art,revision:row?.revision??0,franchise,timezone,states:checked.map(row=>row.status)});
@@ -968,7 +988,7 @@ createServer(async(req,res)=>{
     const esc=value=>String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
     const origin=publicDealer?"https://"+(tenant.verified_domain || tenant.slug+".autodealership.si"):demoBrowse?"https://demo.autodealership.si":"";
     const available=" FROM client_cars c WHERE NOT EXISTS (SELECT 1 FROM inventory_status s WHERE s.vin=c.vin)";
-    let publicLocation,publicName,seo,page,vehicleFacts,storefront="classic",showCash=true,showAlternatives=true,unavailableTitle="",relatedHtml="",sitePages=[],pageTools="",assetUrl=req.url;
+    let publicLocation,publicName,seo,page,vehicleFacts,storefront="classic",showCash=true,showAlternatives=true,unavailableTitle="",relatedHtml="",sitePages=[],pageTools="",assetUrl=previewHome?"/index.html":req.url;
     if(publicDealer || demoBrowse){
       let displayName=tenant?.name||"Capital City CDJR";
       if(demoBrowse)res.setHeader("X-Robots-Tag","noindex");
@@ -981,11 +1001,18 @@ createServer(async(req,res)=>{
         displayName=settings.name||displayName;
         publicName=displayName;
         publicLocation=worker.DealerLocation.facts(settings.profile||{});
-        storefront=registry.templateKey(settings.profile?.siteTemplate);
+        storefront=previewLayout||registry.templateKey(settings.profile?.siteTemplate);
         showCash=settings.options?.cash!==false && settings.options?.pricing!==false;
         showAlternatives=settings.options?.relatedVehicles!==false;
         settings.pages=(await worker.publicEvidencePages(db,settings.pages,settings.profile?.driveTimezone)).pages;
-        sitePages=registry.list(settings,!!tenant,settings.finance!==false && settings.apr!==false).filter(item=>item.enabled);
+        const visiblePages=value=>registry.list(value,!!tenant,settings.finance!==false && settings.apr!==false).filter(item=>item.enabled);
+        sitePages=visiblePages(settings);
+        if(previewHome){
+          const live=sitePages;
+          sitePages=visiblePages({...settings,profile:{...settings.profile,siteTemplate:previewLayout}});
+          const difference=(a,b)=>a.filter(item=>!b.some(other=>other.key===item.key)).map(({title,path})=>({title,path}));
+          previewPages={added:difference(sitePages,live),removed:difference(live,sitePages)};
+        }
       }
       if(template || legacy){
         page=sitePages.find(item=>item.key===template?.key);
@@ -1151,8 +1178,8 @@ createServer(async(req,res)=>{
         }
       }
       if(seo && storefront==="franchise"){
-        const marks=await worker.publicBrandPlacements(db);
-        if(marks.length)content=content.replace('<footer aria-label="Dealer access"',()=>worker.brandFooterMarkup(marks,esc)+'<footer aria-label="Dealer access"');
+        const marks=await worker.publicBrandPlacements(db,{layout:previewLayout});
+        if(marks.length)content=content.replace('<footer aria-label="Dealer access"',()=>worker.brandFooterMarkup(marks,esc,previewLayout)+'<footer aria-label="Dealer access"');
       }
       if(seo && storefront!=="classic"){
         content=content.replace(/<body(?=[\s>])/i,()=>'<body data-store-template="'+storefront+'"');
@@ -1168,7 +1195,15 @@ createServer(async(req,res)=>{
         content=content.replace('<footer aria-label="Dealer access"',()=>'<footer id="dealer-page-links"><nav aria-label="Dealership pages"><div class="dealer-page-groups">'+links+'</div></nav></footer><footer aria-label="Dealer access"');
       }
       if(seo)content=content.replace(/<title>.*?<[/]title>/i,()=>"<title>"+esc(seo.title)+"</title>").replace("</head>",()=>'<meta name="description" content="'+esc(seo.description)+'">'+(seo.path?'<link rel="canonical" href="'+esc(origin+seo.path)+'">':'')+'</head>');
-      res.writeHead(unavailableTitle?404:response.status,{"Content-Type":response.headers.get("content-type"),"Cache-Control":"no-store"}).end(content);return;
+      if(previewHome){
+        content=content.replace("<head>",'<head><base href="/"><meta name="robots" content="noindex,nofollow">')
+          .replace('<html lang="en">',()=>'<html lang="en" data-preview-layout="'+previewLayout+'" data-preview-skin="'+previewSkin+'">')
+          .replace(/<body(?=[\s>])/, "<body inert")
+          .replace(/<script[^>]+src="assistant\.js[^"]*"[^>]*><\/script>/g,"")
+          .replace(/<link rel="canonical"[^>]*>/g,"")
+          .replace("</body>",()=>'<script type="application/json" id="preview-pages">'+JSON.stringify(previewPages).replaceAll("<","\\u003c")+'</script></body>');
+      }
+      res.writeHead(unavailableTitle?404:response.status,{"Content-Type":response.headers.get("content-type"),"Cache-Control":previewHome?"private, no-store":"no-store"}).end(content);return;
     }
     res.writeHead(response.status,Object.fromEntries(response.headers));
     if(req.method==="HEAD"||!response.body)res.end();

@@ -48,7 +48,7 @@ async function oemDigest(slide){
   const bytes=new TextEncoder().encode(JSON.stringify([slide.program.id,slide.program.revision,slide.image,slide.alt,slide.link]));
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes)),b=>b.toString(16).padStart(2,"0")).join("");
 }
-export async function governedSlides(db,slides,franchise,timezone,tenant=true){
+export async function governedSlides(db,slides,franchise,timezone,tenant=true,layout=null){
   const results=slides.map(slide=>({slide,status:slide.program?"Program needs approval":"Standard banner"}));
   const linked=results.filter(row=>oemBinding(row.slide));
   if(linked.length){
@@ -72,7 +72,7 @@ export async function governedSlides(db,slides,franchise,timezone,tenant=true){
     });
     const scoped=linked.filter(row=>row.status==="Approved" && byId.get(row.slide.program.id)?.details.websiteOffer);
     if(scoped.length){
-      const active=new Set((await websiteOffers(db,tenant)).map(offer=>offer.id));
+      const active=new Set((await websiteOffers(db,tenant,layout)).map(offer=>offer.id));
       for(const row of scoped)if(!active.has(row.slide.program.id))row.status="No eligible website placement";
     }
   }
@@ -148,14 +148,14 @@ async function offerInventory(db,vins){
     AND lower(coalesce(body->>'status','')) NOT IN ('sold','deleted','reserved') ORDER BY vin`,[vins])).rows;
 }
 
-export async function websiteOffers(db,tenant){
+export async function websiteOffers(db,tenant,layout=null){
   if(!(await db.query("SELECT to_regclass('oem_program_revisions') AS present")).rows[0].present)return [];
   const settings=(await db.query(`SELECT settings->'profile'->>'siteTemplate' AS template,settings->'profile'->>'driveTimezone' AS zone,
     settings->'pages' AS pages,settings->'options' AS options,settings->>'financingEnabled' AS finance,settings->'options'->>'aprFinancingEnabled' AS apr
     FROM client_profile WHERE id=1`)).rows[0]||{};
   const apr=settings.finance!=="false" && settings.apr!=="false";
   const reviewed=await publicEvidencePages(db,settings.pages,settings.zone);
-  const visible=new Set(DealerSitePages.list({pages:reviewed.pages,options:settings.options,profile:{siteTemplate:settings.template}},tenant,apr).filter(p=>p.enabled).map(p=>p.key));
+  const visible=new Set(DealerSitePages.list({pages:reviewed.pages,options:settings.options,profile:{siteTemplate:layout||settings.template}},tenant,apr).filter(p=>p.enabled).map(p=>p.key));
   const programs=(await db.query(`SELECT program_id AS id,details->'websiteOffer' AS offer,details->>'disclosure' AS disclosure,
     details->>'endsOn' AS day,(((details->>'endsOn')::date+1)::timestamp AT TIME ZONE $1) AS expires
     FROM (SELECT DISTINCT ON(program_id) program_id,state,details FROM oem_program_revisions ORDER BY program_id,revision DESC) latest
@@ -245,7 +245,7 @@ async function hasBrandPlacement(db) {
 
 // This join is shared by the footer, its image endpoint, and the workspace. Matching a digest
 // alone would let an old approval survive a rights change that kept the same PNG.
-async function brandPlacements(db, {publicOnly=false, brand=null, sequence=null, digest=null, image=false}={}) {
+async function brandPlacements(db, {publicOnly=false, brand=null, sequence=null, digest=null, image=false, layout=null}={}) {
   if (!await hasBrandPlacement(db)) return [];
   const {rows} = await db.query(`
     WITH placements AS (${latestBrandPlacement}), checked AS (
@@ -254,12 +254,12 @@ async function brandPlacements(db, {publicOnly=false, brand=null, sequence=null,
         CASE WHEN NOT p.published THEN 'Withdrawn'
           WHEN a.revision IS DISTINCT FROM p.revision OR a.digest IS DISTINCT FROM p.digest THEN 'Artwork changed'
           WHEN p.ends_on < (now() AT TIME ZONE coalesce(s.settings->'profile'->>'driveTimezone','America/Chicago'))::date THEN 'Expired'
-          WHEN s.settings->'profile'->>'siteTemplate' IS DISTINCT FROM 'franchise' THEN 'Franchise template required'
+          WHEN coalesce($5::text,s.settings->'profile'->>'siteTemplate') IS DISTINCT FROM 'franchise' THEN 'Franchise template required'
           ELSE 'Published' END AS state ${image?',a.image':''}
       FROM placements p LEFT JOIN oem_dealer_art a USING(brand) LEFT JOIN client_profile s ON s.id=1
       WHERE ($1::text IS NULL OR p.brand=$1) AND ($2::integer IS NULL OR p.sequence=$2) AND ($3::text IS NULL OR p.digest=$3)
     ) SELECT * FROM checked WHERE NOT $4::boolean OR state='Published' ORDER BY name,brand`,
-    [brand,sequence,digest,publicOnly]);
+    [brand,sequence,digest,publicOnly,layout]);
   return rows;
 }
 export function publicBrandPlacements(db, match={}) {
@@ -297,8 +297,8 @@ export async function changeBrandPlacement(db,{brand,name,actor,input}) {
     return oemResult(200,{sequence:sequence+1});
   });
 }
-export function brandFooterMarkup(rows,esc) {
+export function brandFooterMarkup(rows,esc,layout=null) {
   if (!rows.length) return "";
-  const items=rows.map(p=>'<li class="mark-'+p.surface+'"><img loading="lazy" src="/manufacturer-marks/'+encodeURIComponent(p.brand)+'/'+p.sequence+'-'+p.digest+'.png" alt="'+esc(p.name)+'"></li>');
+  const items=rows.map(p=>'<li class="mark-'+p.surface+'"><img loading="lazy" src="'+(layout?'/api/storefront-preview':'')+'/manufacturer-marks/'+encodeURIComponent(p.brand)+'/'+p.sequence+'-'+p.digest+'.png'+(layout?'?layout='+encodeURIComponent(layout):'')+'" alt="'+esc(p.name)+'"></li>');
   return '<section class="manufacturer-strip" aria-label="Manufacturer brands"><ul>'+items.join("")+'</ul></section>';
 }

@@ -41,7 +41,9 @@ const WebsiteOffers=(()=>{
       if(document.hidden)return;
       const serial=++request;
       try{
-        const res=await fetch("api/website-offers",{cache:"no-store",signal:AbortSignal.timeout(9000)});
+        const layout=document.documentElement.dataset.previewLayout;
+        const endpoint=layout?"/api/storefront-preview/website-offers?layout="+encodeURIComponent(layout):"api/website-offers";
+        const res=await fetch(endpoint,{cache:"no-store",signal:AbortSignal.timeout(9000)});
         if(!res.ok)throw Error();
         const offers=await res.json();if(serial!==request)return;
         const server=Date.parse(res.headers.get("Date"));offset=Number.isFinite(server)?server-Date.now():0;

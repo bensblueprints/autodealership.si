@@ -1,6 +1,8 @@
 const panel=document.querySelector("#sale-slides");
 async function showPromotions(){
-  const response=await fetch("/api/banners");
+  const layout=document.documentElement.dataset.previewLayout;
+  const endpoint=layout?"/api/storefront-preview/banners?layout="+encodeURIComponent(layout):"/api/banners";
+  const response=await fetch(endpoint);
   if(!response.ok)return;
   const config=await response.json(),heroImage=config.heroImage;
   let slides=config.slides,governed=config.governed,tag=response.headers.get("ETag");
@@ -63,7 +65,7 @@ async function showPromotions(){
     if(!governed || document.hidden || pending)return;
     pending=true;
     try{
-      const res=await fetch("/api/banners",{cache:"no-store",headers:tag?{"If-None-Match":tag}:{}});
+      const res=await fetch(endpoint,{cache:"no-store",headers:tag?{"If-None-Match":tag}:{}});
       if(res.status===304 || !res.ok)return;
       const next=await res.json();slides=next.slides;tag=res.headers.get("ETag");governed=next.governed;draw();
     }catch{/* Expiry still applies while the network is unavailable. */}
