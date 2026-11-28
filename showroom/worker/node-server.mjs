@@ -1,10 +1,9 @@
 import vm from "node:vm";
 import {gzip} from "node:zlib";
-import pg from "pg";
 import {AsyncLocalStorage} from "node:async_hooks";
 import {promisify} from "node:util";
 import {scrypt,randomBytes,createHmac,createHash,createPublicKey,verify} from "node:crypto";
-import {bookingDatabase} from "./booking-database.mjs";
+import {bookingDatabase,showroomPool} from "./booking-database.mjs";
 import {timingSafeEqual} from "node:crypto";
 import {createServer} from "node:http";
 import {Readable} from "node:stream";
@@ -22,7 +21,7 @@ const pool=await bookingDatabase(),scope=new AsyncLocalStorage();
 const dealerPools=new Map();
 function dealerPool(name){
   if(!dealerPools.has(name)){
-    const pool=new pg.Pool({host:"database",database:name,user:"showroom",password:process.env.POSTGRES_PASSWORD,max:3,idleTimeoutMillis:5000});
+    const pool=showroomPool(name);
     pool.on("error",()=>console.error("Idle dealer database connection closed"));
     pool.on("remove",()=>{if(pool.totalCount===0 && dealerPools.get(name)===pool){dealerPools.delete(name);pool.end().catch(()=>{});}});
     dealerPools.set(name,pool);

@@ -1,7 +1,36 @@
 import pg from "pg";
 
+export function showroomPool(database) {
+  const limits = database ? { max: 3, idleTimeoutMillis: 5000 } : {};
+  const configured = process.env.SHOWROOM_DATABASE_URL;
+  if (!configured) {
+    return new pg.Pool({
+      host: "database",
+      database: database || "showroom",
+      user: "showroom",
+      password: process.env.POSTGRES_PASSWORD,
+      ...limits,
+    });
+  }
+
+  let url;
+  try {
+    url = new URL(configured);
+  } catch {
+    throw new Error("Invalid SHOWROOM_DATABASE_URL");
+  }
+  if (!["postgresql:", "postgres:"].includes(url.protocol) || !url.hostname || url.pathname.length <= 1) {
+    throw new Error("SHOWROOM_DATABASE_URL must name a PostgreSQL server and control database");
+  }
+  if (url.searchParams.has("database") || url.searchParams.has("dbname")) {
+    throw new Error("Specify the control database in the URL path");
+  }
+  if (database) url.pathname = "/" + encodeURIComponent(database);
+  return new pg.Pool({ connectionString: url.toString(), ...limits });
+}
+
 export async function bookingDatabase(){
-  const pool=new pg.Pool({host:"database",database:"showroom",user:"showroom",password:process.env.POSTGRES_PASSWORD});
+  const pool=showroomPool();
   const client=await pool.connect();
   try{
     await client.query("BEGIN");

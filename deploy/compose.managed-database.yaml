@@ -1,0 +1,7 @@
+services:
+  showroom:
+    depends_on: !reset {}
+    environment:
+      SHOWROOM_DATABASE_URL: ${SHOWROOM_DATABASE_URL:?set the direct managed PostgreSQL URL}
+  database:
+    profiles: [local-db]
