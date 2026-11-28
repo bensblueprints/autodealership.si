@@ -1,0 +1,6 @@
+name = "autodealership-netlify-sales"
+main = "sales-router.mjs"
+compatibility_date = "2026-01-01"
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "autodealership.si/company/our-approach/*", zone_name = "autodealership.si" }]
